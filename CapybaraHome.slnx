@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CapybaraHome.Application/CapybaraHome.Application.csproj" />
+    <Project Path="src/CapybaraHome.Domain/CapybaraHome.Domain.csproj" />
+    <Project Path="src/CapybaraHome.Infrastructure/CapybaraHome.Infrastructure.csproj" />
+    <Project Path="src/CapybaraHome.Web/CapybaraHome.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CapybaraHome.Tests/CapybaraHome.Tests.csproj" />
+  </Folder>
+</Solution>

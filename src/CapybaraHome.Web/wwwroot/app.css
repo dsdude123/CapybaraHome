@@ -1,0 +1,67 @@
+:root {
+    --surface: #fbfaf8;
+    --surface-raised: #ffffff;
+    --surface-sunken: #f1efea;
+    --border: #e0ddd6;
+    --text: #23201c;
+    --text-muted: #6b665e;
+    --accent: #7a5230;
+    --accent-soft: #f0e7de;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --surface: #181715;
+        --surface-raised: #21201d;
+        --surface-sunken: #2b2927;
+        --border: #38352f;
+        --text: #f2efe9;
+        --text-muted: #a9a399;
+        --accent: #d9b08c;
+        --accent-soft: #332b23;
+    }
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    background: var(--surface);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    margin: 0;
+}
+
+h1 {
+    font-size: 1.5rem;
+    margin: 0 0 1rem;
+}
+
+h1:focus {
+    outline: none;
+}
+
+a {
+    color: var(--accent);
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
+}
+
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid #26b050;
+}
+
+.invalid {
+    outline: 1px solid #e50000;
+}
+
+.validation-message {
+    color: #e50000;
+}
