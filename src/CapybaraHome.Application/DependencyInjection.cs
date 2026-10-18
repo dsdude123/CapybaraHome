@@ -1,3 +1,9 @@
+using CapybaraHome.Application.Categories;
+using CapybaraHome.Application.Dashboards;
+using CapybaraHome.Application.DataTransfer;
+using CapybaraHome.Application.Jira;
+using CapybaraHome.Application.Tasks;
+using CapybaraHome.Application.Users;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CapybaraHome.Application;
@@ -8,6 +14,25 @@ public static class DependencyInjection
     /// <summary>Adds the handlers and validators this layer provides.</summary>
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        services.TryAddTimeProvider();
+
+        services.AddScoped<TaskService>();
+        services.AddScoped<CategoryService>();
+        services.AddScoped<DashboardService>();
+        services.AddScoped<UserService>();
+        services.AddScoped<ApiTokenService>();
+        services.AddScoped<DataTransferService>();
+        services.AddScoped<BackupWriter>();
+        services.AddScoped<JiraImportService>();
+
         return services;
+    }
+
+    private static void TryAddTimeProvider(this IServiceCollection services)
+    {
+        if (services.All(s => s.ServiceType != typeof(TimeProvider)))
+        {
+            services.AddSingleton(TimeProvider.System);
+        }
     }
 }

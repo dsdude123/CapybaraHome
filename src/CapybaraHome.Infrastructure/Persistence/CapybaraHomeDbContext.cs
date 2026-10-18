@@ -1,16 +1,32 @@
+using CapybaraHome.Application.Abstractions;
+using CapybaraHome.Domain.Dashboards;
 using CapybaraHome.Domain.Tasks;
+using CapybaraHome.Domain.Users;
 using Microsoft.EntityFrameworkCore;
 
 namespace CapybaraHome.Infrastructure.Persistence;
 
 /// <summary>EF Core context over the CapybaraHome SQLite database.</summary>
-public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> options) : DbContext(options)
+public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> options)
+    : DbContext(options), ICapybaraHomeDbContext
 {
     /// <summary>Task categories.</summary>
     public DbSet<Category> Categories => Set<Category>();
 
     /// <summary>Tasks.</summary>
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
+
+    /// <summary>Cards on the shared dashboard.</summary>
+    public DbSet<DashboardCard> DashboardCards => Set<DashboardCard>();
+
+    /// <summary>Users allowed to sign in.</summary>
+    public DbSet<AppUser> Users => Set<AppUser>();
+
+    /// <summary>Outstanding and spent invites.</summary>
+    public DbSet<UserInvite> UserInvites => Set<UserInvite>();
+
+    /// <summary>Bearer tokens issued to the connector.</summary>
+    public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 
     /// <summary>Stamps <c>CreatedAt</c> and <c>UpdatedAt</c> on tasks before saving.</summary>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -32,6 +48,8 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CapybaraHomeDbContext).Assembly);
     }
 
+    // An import carries the JIRA timestamps across, so a value the caller set explicitly is
+    // left alone and only the untouched ones are stamped.
     private void StampTimestamps()
     {
         var now = DateTimeOffset.UtcNow;
@@ -40,10 +58,17 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
         {
             if (entry.State == EntityState.Added)
             {
-                entry.Entity.CreatedAt = now;
-                entry.Entity.UpdatedAt = now;
+                if (entry.Entity.CreatedAt == default)
+                {
+                    entry.Entity.CreatedAt = now;
+                }
+
+                if (entry.Entity.UpdatedAt == default)
+                {
+                    entry.Entity.UpdatedAt = now;
+                }
             }
-            else if (entry.State == EntityState.Modified)
+            else if (entry.State == EntityState.Modified && !entry.Property(t => t.UpdatedAt).IsModified)
             {
                 entry.Entity.UpdatedAt = now;
             }

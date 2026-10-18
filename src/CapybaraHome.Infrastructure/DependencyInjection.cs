@@ -1,3 +1,4 @@
+using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,7 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString)
     {
         services.AddDbContext<CapybaraHomeDbContext>(options => options.UseSqlite(connectionString));
+        services.AddScoped<ICapybaraHomeDbContext>(provider => provider.GetRequiredService<CapybaraHomeDbContext>());
         return services;
     }
 }
