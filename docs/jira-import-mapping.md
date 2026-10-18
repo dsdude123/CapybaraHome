@@ -110,9 +110,11 @@ Field names are C#/EF-friendly; table names are suggestions, not decided.
 **Meals side**
 
 - `Meal` — Name, Directions (markdown, nullable), Status, IsOneTime, JiraKey, CreatedAt,
-  UpdatedAt, `NeedsIngredientSplit` (bool). **No recipe blob:** directions and
-  ingredients are separate, and ingredients are their own rows (below) so that future
-  planning can work with quantities.
+  UpdatedAt, `NeedsIngredientSplit` (bool), `ImportedText` (nullable). **No recipe blob:**
+  directions and ingredients are separate, and ingredients are their own rows (below) so
+  that future planning can work with quantities. `ImportedText` holds the original
+  imported description untouched; it is what "Clear all" on the split screen falls back
+  to, and it can be dropped once a meal's split is confirmed.
 - `MealIngredient` — MealId, Quantity (string, e.g. "2 cups"), IngredientName, SortOrder.
   One row per ingredient, quantity and name in separate columns on purpose.
 - `MealTag` + `MealTags` join — the 18 tags, each with a `Facet` column (Cuisine,
@@ -179,7 +181,7 @@ map one-to-one:
 |---|---|---|
 | `key` (FOOD-n) | `Meal.JiraKey` | — |
 | `summary` | `Meal.Name` | Strip a leading `[One-Time]` marker and set `IsOneTime` (1 meal today: FOOD-75) |
-| `description` (ADF) | `Meal.Directions`, plus `NeedsIngredientSplit = true` | ADF → markdown into Directions as-is. **The importer does not parse ingredients out of it.** The 48 meals with a description come in flagged, and the app prompts Conner to split each one into directions and ingredient rows by hand. An empty rich-text field can come back as `{"type":"doc","version":1,"content":[]}` instead of null (seen on FOOD-12) — import that as NULL and leave the flag false |
+| `description` (ADF) | `Meal.ImportedText` and `Meal.Directions`, plus `NeedsIngredientSplit = true` | ADF → markdown, stored in both: `ImportedText` as the untouched original, `Directions` as the working copy. **The importer does not parse ingredients out of it** (§6 item 3). An empty rich-text field can come back as `{"type":"doc","version":1,"content":[]}` instead of null (seen on FOOD-12) — import that as NULL and leave the flag false |
 | `status` | `Meal.Status` | See §4 |
 | `labels` | `MealTags` | 18 tags; assign each a facet (Cuisine / Protein / Effort / Trait) |
 | `customfield_10135` Frequency | drop | Legacy, from the retired automation (§1) |
@@ -197,10 +199,15 @@ map one-to-one:
 2. **"Planned Shared" semantics** *(phase 2, not blocking)*. Planned with another person,
    versus a dish taken somewhere to share, changes whether meals want a `SharedWith`
    field. The other five statuses are settled (§4).
-3. **Ingredient splitting is manual** *(phase 2)*. 48 meals arrive with their description
-   in `Directions` and `NeedsIngredientSplit` set; the app needs a screen that walks
-   through them one at a time. Open: whether the prompt offers a suggested split for
-   Conner to correct, or a blank pair of fields.
+3. **Ingredient splitting is a review screen, not an importer job** *(phase 2)*. 48 meals
+   arrive with `NeedsIngredientSplit` set, their description in both `ImportedText` and
+   `Directions`. The screen works one meal at a time and **offers a suggested split for
+   Conner to correct**: ingredient lines guessed into Quantity and IngredientName rows,
+   the rest left as directions. It needs a **Clear all** button that throws the whole
+   suggestion away and restores `ImportedText` verbatim, for when the guess is bad enough
+   that correcting it is slower than starting over. The guess runs on that screen, never
+   at import time, so the imported data is never silently rewritten and re-running the
+   suggestion is always possible.
 4. **Finite epics vs standing categories.** Three of the eight epics are finite projects
    (one of them fully Done), not standing categories. Plan is one `Category` table with
    an `IsProject` flag, so they can be archived out of the everyday view.
