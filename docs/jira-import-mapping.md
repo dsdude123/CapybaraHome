@@ -44,19 +44,18 @@ Counts below are the full data set, not a sample (949 CAPY issues, 121 FOOD issu
 | Issue links | none |
 | Created | 2024-04-30 → 2026-10-17 (44 issues predate the current epic set) |
 
-The 8 epics are two different things mixed together — five standing categories and three
-finite projects:
+The 8 epics, by size:
 
-| Epic | Children | Nature |
-|---|---|---|
-| CAPY-1 | 501 | standing category |
-| CAPY-10 | 76 | standing category |
-| CAPY-104 | 33 | finite project |
-| CAPY-11 | 30 | standing category |
-| CAPY-782 | 21 | finite project |
-| CAPY-316 | 10 | finite project, all Done |
-| CAPY-253 | 7 | standing category |
-| CAPY-63 | 5 | standing category |
+| Epic | Children |
+|---|---|
+| CAPY-1 | 501 |
+| CAPY-10 | 76 |
+| CAPY-104 | 33 |
+| CAPY-11 | 30 |
+| CAPY-782 | 21 |
+| CAPY-316 | 10 |
+| CAPY-253 | 7 |
+| CAPY-63 | 5 |
 
 ### FOOD — 121 issues (phase 2)
 
@@ -99,9 +98,8 @@ Field names are C#/EF-friendly; table names are suggestions, not decided.
 
 **Tasks side**
 
-- `Category` — one row per standing CAPY epic, plus an `IsProject` flag and optional date
-  window for the finite ones. One category named "Uncategorized" absorbs the 216
-  epic-less tasks.
+- `Category` — one row per CAPY epic, all eight treated the same. One category named
+  "Uncategorized" absorbs the 216 epic-less tasks.
 - `Task` — Title, Notes (markdown), CategoryId (nullable), ParentTaskId (nullable, if
   subtasks stay), Status, DueDate (nullable), CompletedAt (nullable), CreatedAt,
   UpdatedAt, JiraKey (nullable, unique).
@@ -134,7 +132,7 @@ back to the original issue.
 |---|---|---|
 | `key` (e.g. CAPY-317) | `Task.JiraKey` | Keep for traceability and idempotency. Keys are sparse; do not use as the primary key |
 | `summary` | `Task.Title` | Trim whitespace |
-| `description` (ADF) | `Task.Notes` | Convert ADF → markdown. Struck-through bullets are completed checklist lines; keep them as `~~text~~` unless checklists get a real model (§6, item 4) |
+| `description` (ADF) | `Task.Notes` | Convert ADF → markdown. Struck-through bullets are completed checklist lines; keep them as `~~text~~` (§6, item 3) |
 | `issuetype` = Epic | `Category` row | Not a task |
 | `issuetype` = Task | `Task` | — |
 | `issuetype` = Subtask | `Task` with `ParentTaskId` | 42 rows, under 7 parents |
@@ -206,23 +204,16 @@ nothing further into them.
    that correcting it is slower than starting over. The guess runs on that screen, never
    at import time, so the imported data is never silently rewritten and re-running the
    suggestion is always possible.
-3. **Finite epics vs standing categories.** Three of the eight epics are finite projects
-   (one of them fully Done), not standing categories. Plan is one `Category` table with
-   an `IsProject` flag, so they can be archived out of the everyday view.
-4. **Checklists inside descriptions.** Several CAPY descriptions are bullet lists with
-   struck-through lines used as checkboxes (CAPY-114 is the clearest). Markdown keeps
-   them readable; a real `ChecklistItem` model would make them usable. Not in scope of
-   this plan — flagged so the data model does not foreclose it.
-5. ~~Title normalization~~ **Settled.** Titles copy verbatim, typos and duplicate
+3. **Struck-through lines in descriptions.** Several CAPY descriptions are bullet lists
+   with lines struck through (CAPY-114 is the clearest). They import as markdown
+   verbatim, `~~like this~~`, so nothing is lost; noted only so the conversion is not
+   mistaken for stray formatting.
+4. ~~Title normalization~~ **Settled.** Titles copy verbatim, typos and duplicate
    spellings included; tidy them in the app afterwards if they annoy.
-6. **Software and homelab epics.** Three epics, 113 tasks between them, are software or
-   homelab work rather than home chores. They fit the same model, but if CapybaraHome is
-   meant to be home-only they could stay in JIRA instead. Default: import them.
-7. **Attachments (5 files) and comments (3)** have no automated path worth building;
+5. **Attachments (5 files) and comments (3)** have no automated path worth building;
    handle by hand after the import.
-8. **Pre-epic backlog.** 44 CAPY issues predate the current epic set (2024-04 onward)
-   and mostly land in "Uncategorized". They import like everything else; worth a skim in
-   the app afterwards for things that are simply dead.
+6. **Pre-epic backlog.** 44 CAPY issues predate the current epic set (2024-04 onward)
+   and mostly land in "Uncategorized". They import like everything else.
 
 ## 7. Import mechanics
 
