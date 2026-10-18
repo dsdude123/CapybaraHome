@@ -1,0 +1,25 @@
+@page "/access-denied"
+@attribute [AllowAnonymous]
+
+<PageTitle>Not allowed in</PageTitle>
+
+<h1>Not allowed in</h1>
+
+<p>@Message</p>
+
+<p><a class="btn" href="/">Back to the dashboard</a></p>
+
+@code {
+    /// <summary>Why the sign-in was turned away, as the sign-in flow reported it.</summary>
+    [SupplyParameterFromQuery(Name = "reason")]
+    public string? Reason { get; set; }
+
+    private string Message => Reason switch
+    {
+        "not-invited" => "This installation only lets in people someone already here has invited. Ask them to add your email address under Settings.",
+        "no-email" => "The sign-in provider sent no email address, so there was no invite to match. Allow the email scope and try again.",
+        "no-subject" => "The sign-in provider sent no stable account id, so there is nothing to recognise you by next time.",
+        "not-configured" => "Sign-in is not set up yet. Set the OpenID Connect authority, client id and client secret in the environment and restart.",
+        _ => "That sign-in could not be completed.",
+    };
+}

@@ -48,3 +48,19 @@
         padding-inline: 2rem;
     }
 }
+
+.nav-bar {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.nav-actions {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.nav-actions form {
+    margin: 0;
+}

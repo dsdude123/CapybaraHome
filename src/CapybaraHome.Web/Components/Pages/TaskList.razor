@@ -1,0 +1,85 @@
+@page "/tasks"
+@rendermode InteractiveServer
+@inject TaskService Tasks
+@inject CategoryService Categories
+
+<PageTitle>Tasks</PageTitle>
+
+<div class="page-head">
+    <h1>Tasks</h1>
+    <a class="btn btn-primary btn-small" href="tasks/new">Create</a>
+</div>
+
+<div class="card" style="margin-bottom:1rem">
+    <div class="filters">
+        <div>
+            <label for="filter-text">Search</label>
+            <input id="filter-text" type="text" @bind="text" @bind:after="ReloadAsync" />
+        </div>
+        <div>
+            <label for="filter-category">Category</label>
+            <select id="filter-category" @bind="categoryId" @bind:after="ReloadAsync">
+                <option value="">All</option>
+                <option value="none">Uncategorized</option>
+                @foreach (var category in categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="filter-status">Status</label>
+            <select id="filter-status" @bind="status" @bind:after="ReloadAsync">
+                <option value="">All</option>
+                @foreach (var value in StatusNames.All)
+                {
+                    <option value="@value">@StatusNames.Label(value)</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="filter-due">Due within (days)</label>
+            <input id="filter-due" type="number" min="0" @bind="dueWithinDays" @bind:after="ReloadAsync" />
+        </div>
+    </div>
+    <label style="margin-top:0.5rem">
+        <input type="checkbox" @bind="overdue" @bind:after="ReloadAsync" style="width:auto;min-height:auto" />
+        Overdue only
+    </label>
+</div>
+
+<p class="muted">@tasks.Count task@(tasks.Count == 1 ? string.Empty : "s")</p>
+
+<div class="card">
+    <TaskLines Tasks="tasks" />
+</div>
+
+@code {
+    private IReadOnlyList<TaskView> tasks = [];
+    private IReadOnlyList<CategoryView> categories = [];
+    private string text = string.Empty;
+    private string categoryId = string.Empty;
+    private string status = string.Empty;
+    private int? dueWithinDays;
+    private bool overdue;
+
+    /// <summary>Loads the categories and the unfiltered list.</summary>
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await Categories.ListAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var filter = new TaskFilter(
+            Text: string.IsNullOrWhiteSpace(text) ? null : text,
+            Status: Enum.TryParse<TaskItemStatus>(status, out var parsedStatus) ? parsedStatus : null,
+            CategoryId: int.TryParse(categoryId, out var parsedCategory) ? parsedCategory : null,
+            Uncategorized: categoryId == "none",
+            DueWithinDays: dueWithinDays,
+            Overdue: overdue);
+
+        tasks = await Tasks.ListAsync(filter);
+    }
+}

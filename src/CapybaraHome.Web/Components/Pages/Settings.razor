@@ -1,0 +1,374 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject CategoryService Categories
+@inject UserService Users
+@inject ApiTokenService Tokens
+@inject DataTransferService Transfer
+@inject JiraImportService JiraImport
+@inject BackupWriter Backups
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Settings</h1>
+
+<section class="card stack" style="margin-bottom:1rem">
+    <h2 class="card-title">Categories</h2>
+
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Tasks</th><th>Done</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var category in categories)
+            {
+                <tr>
+                    <td>@category.Name</td>
+                    <td>@category.TaskCount</td>
+                    <td>@category.DoneCount</td>
+                    <td><button class="btn btn-small btn-danger" @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="row">
+        <input type="text" placeholder="New category" @bind="newCategoryName" style="flex:1 1 12rem" />
+        <button class="btn" @onclick="AddCategoryAsync">Add</button>
+    </div>
+    @if (categoryError is not null)
+    {
+        <p class="error">@categoryError</p>
+    }
+</section>
+
+<section class="card stack" style="margin-bottom:1rem">
+    <h2 class="card-title">People</h2>
+    <p class="muted">Everyone here shares the same tasks. Only someone already in can let someone else in.</p>
+
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Email</th><th>Added</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var user in users)
+            {
+                <tr>
+                    <td>@user.DisplayName</td>
+                    <td>@user.Email</td>
+                    <td>@user.CreatedAt.ToString("d MMM yyyy")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="row">
+        <input type="email" placeholder="Invite an email address" @bind="inviteEmail" style="flex:1 1 14rem" />
+        <button class="btn" @onclick="InviteAsync">Invite</button>
+    </div>
+    @if (inviteError is not null)
+    {
+        <p class="error">@inviteError</p>
+    }
+
+    @if (invites.Count > 0)
+    {
+        <table>
+            <thead>
+                <tr><th>Invited</th><th>State</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var invite in invites)
+                {
+                    <tr>
+                        <td>@invite.Email</td>
+                        <td>@InviteState(invite)</td>
+                        <td>
+                            @if (invite.AcceptedAt is null && invite.RevokedAt is null)
+                            {
+                                <button class="btn btn-small" @onclick="() => RevokeAsync(invite.Id)">Withdraw</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<section class="card stack" style="margin-bottom:1rem">
+    <h2 class="card-title">Connector tokens</h2>
+    <p class="muted">
+        A token lets the Claude connector reach this installation. Point the connector at
+        <code>@McpUrl</code> and send the token as a bearer token.
+    </p>
+
+    @if (mintedSecret is not null)
+    {
+        <div class="notice">
+            <p>Copy this now. It is not shown again.</p>
+            <code class="secret">@mintedSecret</code>
+        </div>
+    }
+
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Starts with</th><th>Last used</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var token in tokens)
+            {
+                <tr>
+                    <td>@token.Name</td>
+                    <td><code>@token.Prefix…</code></td>
+                    <td>@(token.LastUsedAt?.ToString("d MMM yyyy") ?? "never")</td>
+                    <td>
+                        @if (token.RevokedAt is null)
+                        {
+                            <button class="btn btn-small btn-danger" @onclick="() => RevokeTokenAsync(token.Id)">Revoke</button>
+                        }
+                        else
+                        {
+                            <span class="muted">revoked</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="row">
+        <input type="text" placeholder="Token name" @bind="newTokenName" style="flex:1 1 12rem" />
+        <button class="btn" @onclick="MintTokenAsync">Mint a token</button>
+    </div>
+    @if (tokenError is not null)
+    {
+        <p class="error">@tokenError</p>
+    }
+</section>
+
+<section class="card stack">
+    <h2 class="card-title">Data</h2>
+
+    <div class="row">
+        <a class="btn" href="api/export">Download an export</a>
+        <button class="btn" @onclick="BackupNowAsync">Back up now</button>
+    </div>
+
+    <div class="field">
+        <label for="import-json">Paste an export to import</label>
+        <textarea id="import-json" @bind="importJson"></textarea>
+    </div>
+    <div class="row">
+        <select @bind="importMode" style="flex:0 1 12rem">
+            <option value="@ImportMode.Merge">Merge into what is here</option>
+            <option value="@ImportMode.Replace">Replace everything</option>
+        </select>
+        <button class="btn" @onclick="ImportAsync">Import</button>
+    </div>
+
+    <div class="field">
+        <label for="jira-json">Paste a JIRA snapshot to import</label>
+        <textarea id="jira-json" @bind="jiraJson"></textarea>
+    </div>
+    <button class="btn" @onclick="ImportJiraAsync">Import from JIRA</button>
+
+    @if (dataMessage is not null)
+    {
+        <p class="notice">@dataMessage</p>
+    }
+    @if (dataError is not null)
+    {
+        <p class="error">@dataError</p>
+    }
+</section>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private IReadOnlyList<CategoryView> categories = [];
+    private IReadOnlyList<UserView> users = [];
+    private IReadOnlyList<InviteView> invites = [];
+    private IReadOnlyList<ApiTokenView> tokens = [];
+
+    private string newCategoryName = string.Empty;
+    private string? categoryError;
+    private string inviteEmail = string.Empty;
+    private string? inviteError;
+    private string newTokenName = string.Empty;
+    private string? tokenError;
+    private string? mintedSecret;
+    private string importJson = string.Empty;
+    private string jiraJson = string.Empty;
+    private ImportMode importMode = ImportMode.Merge;
+    private string? dataMessage;
+    private string? dataError;
+
+    private static string McpUrl => "/mcp";
+
+    /// <summary>Loads every list the page shows.</summary>
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        categories = await Categories.ListAsync();
+        users = await Users.ListAsync();
+        invites = await Users.ListInvitesAsync();
+        tokens = await Tokens.ListAsync();
+    }
+
+    private async Task<int?> CurrentUserIdAsync()
+    {
+        if (AuthenticationState is null)
+        {
+            return null;
+        }
+
+        var state = await AuthenticationState;
+        return state.User.GetUserId();
+    }
+
+    private async Task AddCategoryAsync()
+    {
+        categoryError = null;
+        try
+        {
+            await Categories.CreateAsync(new CategoryRequest(newCategoryName));
+            newCategoryName = string.Empty;
+        }
+        catch (ArgumentException ex)
+        {
+            categoryError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task DeleteCategoryAsync(int id)
+    {
+        await Categories.DeleteAsync(id);
+        await ReloadAsync();
+    }
+
+    private async Task InviteAsync()
+    {
+        inviteError = null;
+        var userId = await CurrentUserIdAsync();
+        if (userId is null)
+        {
+            inviteError = "Sign in again before inviting someone.";
+            return;
+        }
+
+        try
+        {
+            await Users.InviteAsync(inviteEmail, userId.Value);
+            inviteEmail = string.Empty;
+        }
+        catch (ArgumentException ex)
+        {
+            inviteError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task RevokeAsync(int id)
+    {
+        await Users.RevokeInviteAsync(id);
+        await ReloadAsync();
+    }
+
+    private async Task MintTokenAsync()
+    {
+        tokenError = null;
+        var userId = await CurrentUserIdAsync();
+        if (userId is null)
+        {
+            tokenError = "Sign in again before minting a token.";
+            return;
+        }
+
+        try
+        {
+            var minted = await Tokens.CreateAsync(newTokenName, userId.Value);
+            mintedSecret = minted.Secret;
+            newTokenName = string.Empty;
+        }
+        catch (ArgumentException ex)
+        {
+            tokenError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task RevokeTokenAsync(int id)
+    {
+        await Tokens.RevokeAsync(id);
+        await ReloadAsync();
+    }
+
+    private async Task BackupNowAsync()
+    {
+        dataError = null;
+        try
+        {
+            var path = await Backups.WriteAsync();
+            dataMessage = $"Wrote a backup to {path}.";
+        }
+        catch (Exception ex)
+        {
+            dataError = ex.Message;
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        dataMessage = null;
+        dataError = null;
+
+        try
+        {
+            var summary = await Transfer.ImportFromJsonAsync(importJson, importMode);
+            dataMessage = $"Added {summary.CategoriesAdded} categories, {summary.TasksAdded} tasks and {summary.CardsAdded} cards; updated {summary.TasksUpdated} tasks.";
+            importJson = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            dataError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ImportJiraAsync()
+    {
+        dataMessage = null;
+        dataError = null;
+
+        try
+        {
+            var report = await JiraImport.ImportAsync(jiraJson);
+            var warnings = report.Warnings.Count == 0 ? string.Empty : " " + string.Join(" ", report.Warnings);
+            dataMessage = $"Added {report.CategoriesAdded} categories and {report.TasksAdded} tasks, updated {report.TasksUpdated}.{warnings}";
+            jiraJson = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            dataError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private static string InviteState(InviteView invite) =>
+        invite.AcceptedAt is not null ? "accepted"
+        : invite.RevokedAt is not null ? "withdrawn"
+        : "waiting";
+}
