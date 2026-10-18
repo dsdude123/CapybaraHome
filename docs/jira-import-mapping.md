@@ -134,7 +134,7 @@ back to the original issue.
 |---|---|---|
 | `key` (e.g. CAPY-317) | `Task.JiraKey` | Keep for traceability and idempotency. Keys are sparse; do not use as the primary key |
 | `summary` | `Task.Title` | Trim whitespace |
-| `description` (ADF) | `Task.Notes` | Convert ADF → markdown. Struck-through bullets are completed checklist lines; keep them as `~~text~~` unless checklists get a real model (§6, item 5) |
+| `description` (ADF) | `Task.Notes` | Convert ADF → markdown. Struck-through bullets are completed checklist lines; keep them as `~~text~~` unless checklists get a real model (§6, item 4) |
 | `issuetype` = Epic | `Category` row | Not a task |
 | `issuetype` = Task | `Task` | — |
 | `issuetype` = Subtask | `Task` with `ParentTaskId` | 42 rows, under 7 parents |
@@ -163,17 +163,18 @@ back to the original issue.
 | On Hold (3) | `OnHold` | Easy to miss — all 3 sit under one epic. Needs its own state, not a fold into ToDo |
 | Done (754) | `Done` | `CompletedAt` from `resolutiondate` |
 
-**FOOD** (phase 2) — the six statuses are a real workflow, not a to-do/done pair, so they
-map one-to-one:
+**FOOD** (phase 2) — six statuses, each mapping one-to-one onto a `MealStatus` value.
+They are statuses and nothing more; the import carries them across unchanged and reads
+nothing further into them.
 
-| JIRA status (count) | CapybaraHome | Semantics |
-|---|---|---|
-| Pooled (98) | `Pooled` | The full catalogue; not currently in the rotation |
-| Available (10) | `Available` | **The ingredients for it are in stock** |
-| Queued (5) | `Queued` | Short-listed for an upcoming week |
-| Planned (3) | `Planned` | Picked for the next cook |
-| Planned Shared (2) | `PlannedShared` | Planned, with someone else involved — confirm (§6 item 2) |
-| Closed (3) | `Closed` | Retired, or a one-off that has been eaten |
+| JIRA status (count) | CapybaraHome |
+|---|---|
+| Pooled (98) | `Pooled` |
+| Available (10) | `Available` — the ingredients for it are in stock |
+| Queued (5) | `Queued` |
+| Planned (3) | `Planned` |
+| Planned Shared (2) | `PlannedShared` |
+| Closed (3) | `Closed` |
 
 ## 5. FOOD field mapping (phase 2)
 
@@ -181,7 +182,7 @@ map one-to-one:
 |---|---|---|
 | `key` (FOOD-n) | `Meal.JiraKey` | — |
 | `summary` | `Meal.Name` | Strip a leading `[One-Time]` marker and set `IsOneTime` (1 meal today: FOOD-75) |
-| `description` (ADF) | `Meal.ImportedText` and `Meal.Directions`, plus `NeedsIngredientSplit = true` | ADF → markdown, stored in both: `ImportedText` as the untouched original, `Directions` as the working copy. **The importer does not parse ingredients out of it** (§6 item 3). An empty rich-text field can come back as `{"type":"doc","version":1,"content":[]}` instead of null (seen on FOOD-12) — import that as NULL and leave the flag false |
+| `description` (ADF) | `Meal.ImportedText` and `Meal.Directions`, plus `NeedsIngredientSplit = true` | ADF → markdown, stored in both: `ImportedText` as the untouched original, `Directions` as the working copy. **The importer does not parse ingredients out of it** (§6 item 2). An empty rich-text field can come back as `{"type":"doc","version":1,"content":[]}` instead of null (seen on FOOD-12) — import that as NULL and leave the flag false |
 | `status` | `Meal.Status` | See §4 |
 | `labels` | `MealTags` | 18 tags; assign each a facet (Cuisine / Protein / Effort / Trait) |
 | `customfield_10135` Frequency | drop | Legacy, from the retired automation (§1) |
@@ -196,10 +197,7 @@ map one-to-one:
 
 1. ~~Recurrence history depth~~ **Not a question.** All 949 issues come across as tasks.
    The importer derives nothing and groups nothing.
-2. **"Planned Shared" semantics** *(phase 2, not blocking)*. Planned with another person,
-   versus a dish taken somewhere to share, changes whether meals want a `SharedWith`
-   field. The other five statuses are settled (§4).
-3. **Ingredient splitting is a review screen, not an importer job** *(phase 2)*. 48 meals
+2. **Ingredient splitting is a review screen, not an importer job** *(phase 2)*. 48 meals
    arrive with `NeedsIngredientSplit` set, their description in both `ImportedText` and
    `Directions`. The screen works one meal at a time and **offers a suggested split for
    Conner to correct**: ingredient lines guessed into Quantity and IngredientName rows,
@@ -208,21 +206,21 @@ map one-to-one:
    that correcting it is slower than starting over. The guess runs on that screen, never
    at import time, so the imported data is never silently rewritten and re-running the
    suggestion is always possible.
-4. **Finite epics vs standing categories.** Three of the eight epics are finite projects
+3. **Finite epics vs standing categories.** Three of the eight epics are finite projects
    (one of them fully Done), not standing categories. Plan is one `Category` table with
    an `IsProject` flag, so they can be archived out of the everyday view.
-5. **Checklists inside descriptions.** Several CAPY descriptions are bullet lists with
+4. **Checklists inside descriptions.** Several CAPY descriptions are bullet lists with
    struck-through lines used as checkboxes (CAPY-114 is the clearest). Markdown keeps
    them readable; a real `ChecklistItem` model would make them usable. Not in scope of
    this plan — flagged so the data model does not foreclose it.
-6. ~~Title normalization~~ **Settled.** Titles copy verbatim, typos and duplicate
+5. ~~Title normalization~~ **Settled.** Titles copy verbatim, typos and duplicate
    spellings included; tidy them in the app afterwards if they annoy.
-7. **Software and homelab epics.** Three epics, 113 tasks between them, are software or
+6. **Software and homelab epics.** Three epics, 113 tasks between them, are software or
    homelab work rather than home chores. They fit the same model, but if CapybaraHome is
    meant to be home-only they could stay in JIRA instead. Default: import them.
-8. **Attachments (5 files) and comments (3)** have no automated path worth building;
+7. **Attachments (5 files) and comments (3)** have no automated path worth building;
    handle by hand after the import.
-9. **Pre-epic backlog.** 44 CAPY issues predate the current epic set (2024-04 onward)
+8. **Pre-epic backlog.** 44 CAPY issues predate the current epic set (2024-04 onward)
    and mostly land in "Uncategorized". They import like everything else; worth a skim in
    the app afterwards for things that are simply dead.
 
