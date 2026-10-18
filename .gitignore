@@ -7,3 +7,6 @@ obj/
 .vs/
 .vscode/
 .idea/
+
+# Automatic backups written by a local run
+backups/
