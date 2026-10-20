@@ -31,7 +31,13 @@ EXPOSE 8080
 
 COPY --from=build /app ./
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=20s \
-    CMD ["/bin/sh", "-c", "wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1"]
+# The runtime image carries no HTTP client — no wget, no curl — so the check
+# opens the socket with bash's /dev/tcp and matches the body of /health. That
+# also makes it a real check rather than a liveness ping: a process that is
+# listening but not serving fails it. /bin/sh is dash here, which has no
+# /dev/tcp, so bash is named outright. The start period covers the EF Core
+# migrations and the dashboard seed, which both run before the port opens.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s \
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"ok\"' <&3"]
 
 ENTRYPOINT ["dotnet", "CapybaraHome.Web.dll"]
