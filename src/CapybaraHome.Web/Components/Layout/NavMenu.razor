@@ -3,7 +3,31 @@
 
     <ul class="nav-links">
         <li>
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Today</NavLink>
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Dashboard</NavLink>
+        </li>
+        <li>
+            <NavLink class="nav-link" href="board">Board</NavLink>
+        </li>
+        <li>
+            <NavLink class="nav-link" href="tasks">Tasks</NavLink>
+        </li>
+        <li>
+            <NavLink class="nav-link" href="settings">Settings</NavLink>
+        </li>
+        <li>
+            <NavLink class="nav-link" href="account">Account</NavLink>
         </li>
     </ul>
+
+    <div class="nav-actions">
+        <AuthorizeView>
+            <Authorized>
+                <a class="btn btn-primary btn-small" href="tasks/new">Create</a>
+                <form method="post" action="sign-out">
+                    <AntiforgeryToken />
+                    <button class="btn btn-small" type="submit">Sign out</button>
+                </form>
+            </Authorized>
+        </AuthorizeView>
+    </div>
 </nav>

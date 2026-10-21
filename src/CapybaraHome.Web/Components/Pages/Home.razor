@@ -1,7 +1,215 @@
 @page "/"
+@rendermode InteractiveServer
+@inject DashboardService Dashboard
+@inject CategoryService Categories
 
-<PageTitle>Today</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
-<h1>Today</h1>
+<div class="page-head">
+    <h1>Dashboard</h1>
+    <button class="btn btn-small" @onclick="() => showAdd = !showAdd">@(showAdd ? "Cancel" : "Add a card")</button>
+</div>
 
-<p>Nothing here yet. Tasks arrive with the next change.</p>
+@if (showAdd)
+{
+    <div class="card" style="margin-bottom:1rem">
+        <div class="field">
+            <label for="card-title">Title</label>
+            <input id="card-title" type="text" @bind="newTitle" />
+        </div>
+        <div class="filters">
+            <div>
+                <label for="card-kind">Shows</label>
+                <select id="card-kind" @bind="newKind">
+                    <option value="@DashboardCardKind.TaskCount">A count</option>
+                    <option value="@DashboardCardKind.TaskList">A list of tasks</option>
+                    <option value="@DashboardCardKind.CategoryProgress">Progress of a project</option>
+                </select>
+            </div>
+            <div>
+                <label for="card-category">Category</label>
+                <select id="card-category" @bind="newCategoryId">
+                    <option value="">Any</option>
+                    @foreach (var category in categories)
+                    {
+                        <option value="@category.Id">@category.Name</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="card-status">Status</label>
+                <select id="card-status" @bind="newStatus">
+                    <option value="">Any</option>
+                    @foreach (var status in StatusNames.All)
+                    {
+                        <option value="@status">@StatusNames.Label(status)</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="card-due">Due within (days)</label>
+                <input id="card-due" type="number" min="0" @bind="newDueWithinDays" />
+            </div>
+        </div>
+        @if (addError is not null)
+        {
+            <p class="error">@addError</p>
+        }
+        <button class="btn btn-primary" @onclick="AddCardAsync">Add card</button>
+    </div>
+}
+
+@if (cards.Count == 0)
+{
+    <p class="muted">No cards yet. Add one to watch a project or a filter.</p>
+}
+
+<div class="card-grid">
+    @foreach (var card in cards)
+    {
+        <section class="card">
+            <div class="card-head">
+                @if (renamingId == card.Id)
+                {
+                    <input type="text" @bind="renameTitle" @bind:event="oninput" />
+                }
+                else
+                {
+                    <h2 class="card-title">@card.Title</h2>
+                }
+                <div class="row">
+                    @if (renamingId == card.Id)
+                    {
+                        <button class="btn btn-small" @onclick="() => SaveRenameAsync(card.Id)">Save</button>
+                        <button class="btn btn-small" @onclick="() => renamingId = null">Cancel</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-small" @onclick="() => StartRename(card)">Rename</button>
+                        <button class="btn btn-small btn-danger" @onclick="() => RemoveCardAsync(card.Id)">Remove</button>
+                    }
+                </div>
+            </div>
+
+            @switch (card.Kind)
+            {
+                case DashboardCardKind.CategoryProgress:
+                    <p class="metric">@((int)Math.Round(card.Progress * 100))%</p>
+                    <div class="progress"><span style="width:@((int)Math.Round(card.Progress * 100))%"></span></div>
+                    <p class="muted">@card.Done of @card.Total done</p>
+                    break;
+
+                case DashboardCardKind.TaskList:
+                    <p class="muted">@card.Total matching</p>
+                    <TaskLines Tasks="card.Tasks" />
+                    break;
+
+                default:
+                    <p class="metric">@card.Total</p>
+                    <p class="muted">@Describe(card)</p>
+                    break;
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<DashboardCardView> cards = [];
+    private IReadOnlyList<CategoryView> categories = [];
+    private bool showAdd;
+    private string newTitle = string.Empty;
+    private DashboardCardKind newKind = DashboardCardKind.TaskCount;
+    private string newCategoryId = string.Empty;
+    private string newStatus = string.Empty;
+    private int? newDueWithinDays;
+    private string? addError;
+    private int? renamingId;
+    private string renameTitle = string.Empty;
+
+    /// <summary>Loads the cards and the categories the add form offers.</summary>
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        cards = await Dashboard.GetDashboardAsync();
+        categories = await Categories.ListAsync();
+    }
+
+    private async Task AddCardAsync()
+    {
+        addError = null;
+
+        var request = new DashboardCardRequest(
+            newTitle,
+            newKind,
+            int.TryParse(newCategoryId, out var categoryId) ? categoryId : null,
+            Enum.TryParse<TaskItemStatus>(newStatus, out var status) ? status : null,
+            newDueWithinDays);
+
+        try
+        {
+            await Dashboard.CreateAsync(request);
+        }
+        catch (ArgumentException ex)
+        {
+            addError = ex.Message;
+            return;
+        }
+
+        newTitle = string.Empty;
+        newCategoryId = string.Empty;
+        newStatus = string.Empty;
+        newDueWithinDays = null;
+        showAdd = false;
+        await ReloadAsync();
+    }
+
+    private void StartRename(DashboardCardView card)
+    {
+        renamingId = card.Id;
+        renameTitle = card.Title;
+    }
+
+    private async Task SaveRenameAsync(int id)
+    {
+        if (!string.IsNullOrWhiteSpace(renameTitle))
+        {
+            await Dashboard.RenameAsync(id, renameTitle);
+        }
+
+        renamingId = null;
+        await ReloadAsync();
+    }
+
+    private async Task RemoveCardAsync(int id)
+    {
+        await Dashboard.DeleteAsync(id);
+        await ReloadAsync();
+    }
+
+    private string Describe(DashboardCardView card)
+    {
+        var parts = new List<string>();
+
+        if (card.Status is { } status)
+        {
+            parts.Add(StatusNames.Label(status).ToLowerInvariant());
+        }
+
+        if (card.CategoryId is { } categoryId)
+        {
+            var name = categories.FirstOrDefault(c => c.Id == categoryId)?.Name;
+            if (name is not null)
+            {
+                parts.Add($"in {name}");
+            }
+        }
+
+        if (card.DueWithinDays is { } days)
+        {
+            parts.Add(days == 0 ? "due today" : $"due within {days} days");
+        }
+
+        return parts.Count == 0 ? "tasks" : $"tasks {string.Join(", ", parts)}";
+    }
+}

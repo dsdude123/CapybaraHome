@@ -1,0 +1,103 @@
+@page "/setup"
+@attribute [AllowAnonymous]
+@inject UserService Users
+@inject NavigationManager Navigation
+
+<PageTitle>Set up CapybaraHome</PageTitle>
+
+@if (claimed)
+{
+    <h1>Already set up</h1>
+    <p>This installation has an account. <a href="sign-in">Sign in</a>.</p>
+}
+else
+{
+    <h1>Set up CapybaraHome</h1>
+
+    <p>
+        This is the first account. It is the one that can add and remove the others, so keep the
+        password somewhere safe; nothing here can email you a reset.
+    </p>
+
+    <EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="setup">
+        <div class="field">
+            <label for="username">Username</label>
+            <InputText id="username" @bind-Value="form.Username" autocomplete="username" autofocus />
+        </div>
+
+        <div class="field">
+            <label for="display-name">Name to show</label>
+            <InputText id="display-name" @bind-Value="form.DisplayName" autocomplete="name" />
+        </div>
+
+        <div class="field">
+            <label for="password">Password</label>
+            <InputText id="password" type="password" @bind-Value="form.Password" autocomplete="new-password" />
+            <p class="muted">At least @PasswordHasher.MinimumLength characters.</p>
+        </div>
+
+        <div class="field">
+            <label for="confirm">Password again</label>
+            <InputText id="confirm" type="password" @bind-Value="form.Confirm" autocomplete="new-password" />
+        </div>
+
+        @if (error is not null)
+        {
+            <p class="error">@error</p>
+        }
+
+        <button class="btn btn-primary" type="submit">Create the account</button>
+    </EditForm>
+}
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private SetupForm form { get; set; } = new();
+
+    private bool claimed;
+    private string? error;
+
+    /// <summary>Checks whether the installation already has an account.</summary>
+    protected override async Task OnInitializedAsync() => claimed = await Users.AnyUsersAsync();
+
+    private async Task SubmitAsync()
+    {
+        error = null;
+
+        if (form.Password != form.Confirm)
+        {
+            error = "The two passwords are not the same.";
+            return;
+        }
+
+        try
+        {
+            var user = await Users.CreateFirstUserAsync(form.Username ?? string.Empty, form.DisplayName ?? string.Empty, form.Password ?? string.Empty);
+            await SignInManager.SignInAsync(HttpContext, user, stayedSignedIn: true);
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            error = ex.Message;
+        }
+    }
+
+    /// <summary>What the setup form posts back.</summary>
+    private class SetupForm
+    {
+        /// <summary>Username for the first account.</summary>
+        public string? Username { get; set; }
+
+        /// <summary>Name to show in the UI.</summary>
+        public string? DisplayName { get; set; }
+
+        /// <summary>Password for the first account.</summary>
+        public string? Password { get; set; }
+
+        /// <summary>The same password again.</summary>
+        public string? Confirm { get; set; }
+    }
+}

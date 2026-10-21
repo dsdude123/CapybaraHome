@@ -1,0 +1,462 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject CategoryService Categories
+@inject UserService Users
+@inject ApiTokenService Tokens
+@inject DataTransferService Transfer
+@inject JiraImportService JiraImport
+@inject BackupWriter Backups
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Settings</h1>
+
+<section class="card stack" style="margin-bottom:1rem">
+    <h2 class="card-title">Categories</h2>
+
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Tasks</th><th>Done</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var category in categories)
+            {
+                <tr>
+                    <td>@category.Name</td>
+                    <td>@category.TaskCount</td>
+                    <td>@category.DoneCount</td>
+                    <td><button class="btn btn-small btn-danger" @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="row">
+        <input type="text" placeholder="New category" @bind="newCategoryName" style="flex:1 1 12rem" />
+        <button class="btn" @onclick="AddCategoryAsync">Add</button>
+    </div>
+    @if (categoryError is not null)
+    {
+        <p class="error">@categoryError</p>
+    }
+</section>
+
+<section class="card stack" style="margin-bottom:1rem">
+    <h2 class="card-title">People</h2>
+    <p class="muted">Everyone here shares the same tasks. Only the first account can add or remove accounts.</p>
+
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Username</th><th>Codes</th><th>Added</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var user in users)
+            {
+                <tr>
+                    <td>@user.DisplayName</td>
+                    <td>@user.Username</td>
+                    <td>@(user.TotpEnabled ? "on" : "off")</td>
+                    <td>@user.CreatedAt.ToString("d MMM yyyy")</td>
+                    <td>
+                        @if (isFirstUser && !user.IsFirstUser)
+                        {
+                            <button class="btn btn-small btn-danger" @onclick="() => RemoveUserAsync(user.Id)">Remove</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (isFirstUser)
+    {
+        <div class="filters">
+            <div>
+                <label for="new-username">Username</label>
+                <input id="new-username" type="text" @bind="newUsername" autocomplete="off" />
+            </div>
+            <div>
+                <label for="new-display-name">Name to show</label>
+                <input id="new-display-name" type="text" @bind="newDisplayName" autocomplete="off" />
+            </div>
+            <div>
+                <label for="new-password">Password</label>
+                <input id="new-password" type="password" @bind="newPassword" autocomplete="new-password" />
+            </div>
+        </div>
+        <p class="muted">At least @PasswordHasher.MinimumLength characters. Tell them the password yourself; they can change it under Your account.</p>
+        <button class="btn" @onclick="AddUserAsync">Add the account</button>
+
+        @if (resetUserId is not null)
+        {
+            <div class="field" style="margin-top:1rem">
+                <label for="reset-password">New password for @(users.FirstOrDefault(u => u.Id == resetUserId)?.Username)</label>
+                <input id="reset-password" type="password" @bind="resetPassword" autocomplete="new-password" />
+            </div>
+            <div class="row">
+                <button class="btn" @onclick="ResetPasswordAsync">Set the password</button>
+                <button class="btn" @onclick="() => resetUserId = null">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <div class="row" style="margin-top:0.5rem">
+                <select @bind="resetTargetId" style="flex:0 1 14rem">
+                    <option value="">Reset someone's password</option>
+                    @foreach (var user in users)
+                    {
+                        <option value="@user.Id">@user.Username</option>
+                    }
+                </select>
+                <button class="btn" @onclick="StartReset">Choose</button>
+            </div>
+        }
+    }
+
+    @if (peopleError is not null)
+    {
+        <p class="error">@peopleError</p>
+    }
+    @if (peopleMessage is not null)
+    {
+        <p class="notice">@peopleMessage</p>
+    }
+</section>
+
+<section class="card stack" style="margin-bottom:1rem">
+    <h2 class="card-title">Connector tokens</h2>
+    <p class="muted">
+        A token lets the Claude connector reach this installation. Point the connector at
+        <code>@McpUrl</code> and send the token as a bearer token.
+    </p>
+
+    @if (mintedSecret is not null)
+    {
+        <div class="notice">
+            <p>Copy this now. It is not shown again.</p>
+            <code class="secret">@mintedSecret</code>
+        </div>
+    }
+
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Starts with</th><th>Last used</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var token in tokens)
+            {
+                <tr>
+                    <td>@token.Name</td>
+                    <td><code>@token.Prefix…</code></td>
+                    <td>@(token.LastUsedAt?.ToString("d MMM yyyy") ?? "never")</td>
+                    <td>
+                        @if (token.RevokedAt is null)
+                        {
+                            <button class="btn btn-small btn-danger" @onclick="() => RevokeTokenAsync(token.Id)">Revoke</button>
+                        }
+                        else
+                        {
+                            <span class="muted">revoked</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="row">
+        <input type="text" placeholder="Token name" @bind="newTokenName" style="flex:1 1 12rem" />
+        <button class="btn" @onclick="MintTokenAsync">Mint a token</button>
+    </div>
+    @if (tokenError is not null)
+    {
+        <p class="error">@tokenError</p>
+    }
+</section>
+
+<section class="card stack">
+    <h2 class="card-title">Data</h2>
+
+    <div class="row">
+        <a class="btn" href="api/export">Download an export</a>
+        <button class="btn" @onclick="BackupNowAsync">Back up now</button>
+    </div>
+
+    <div class="field">
+        <label for="import-json">Paste an export to import</label>
+        <textarea id="import-json" @bind="importJson"></textarea>
+    </div>
+    <div class="row">
+        <select @bind="importMode" style="flex:0 1 12rem">
+            <option value="@ImportMode.Merge">Merge into what is here</option>
+            <option value="@ImportMode.Replace">Replace everything</option>
+        </select>
+        <button class="btn" @onclick="ImportAsync">Import</button>
+    </div>
+
+    <div class="field">
+        <label for="jira-json">Paste a JIRA snapshot to import</label>
+        <textarea id="jira-json" @bind="jiraJson"></textarea>
+    </div>
+    <button class="btn" @onclick="ImportJiraAsync">Import from JIRA</button>
+
+    @if (dataMessage is not null)
+    {
+        <p class="notice">@dataMessage</p>
+    }
+    @if (dataError is not null)
+    {
+        <p class="error">@dataError</p>
+    }
+</section>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private IReadOnlyList<CategoryView> categories = [];
+    private IReadOnlyList<UserView> users = [];
+    private IReadOnlyList<ApiTokenView> tokens = [];
+    private bool isFirstUser;
+
+    private string newCategoryName = string.Empty;
+    private string? categoryError;
+    private string newUsername = string.Empty;
+    private string newDisplayName = string.Empty;
+    private string newPassword = string.Empty;
+    private string resetTargetId = string.Empty;
+    private int? resetUserId;
+    private string resetPassword = string.Empty;
+    private string? peopleError;
+    private string? peopleMessage;
+    private string newTokenName = string.Empty;
+    private string? tokenError;
+    private string? mintedSecret;
+    private string importJson = string.Empty;
+    private string jiraJson = string.Empty;
+    private ImportMode importMode = ImportMode.Merge;
+    private string? dataMessage;
+    private string? dataError;
+
+    private static string McpUrl => "/mcp";
+
+    /// <summary>Loads every list the page shows.</summary>
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        categories = await Categories.ListAsync();
+        users = await Users.ListAsync();
+        tokens = await Tokens.ListAsync();
+
+        var state = AuthenticationState is null ? null : await AuthenticationState;
+        isFirstUser = state?.User.IsFirstUser() ?? false;
+    }
+
+    private async Task<int?> CurrentUserIdAsync()
+    {
+        if (AuthenticationState is null)
+        {
+            return null;
+        }
+
+        var state = await AuthenticationState;
+        return state.User.GetUserId();
+    }
+
+    private async Task AddCategoryAsync()
+    {
+        categoryError = null;
+        try
+        {
+            await Categories.CreateAsync(new CategoryRequest(newCategoryName));
+            newCategoryName = string.Empty;
+        }
+        catch (ArgumentException ex)
+        {
+            categoryError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task DeleteCategoryAsync(int id)
+    {
+        await Categories.DeleteAsync(id);
+        await ReloadAsync();
+    }
+
+    private async Task AddUserAsync()
+    {
+        peopleError = null;
+        peopleMessage = null;
+
+        var actingId = await CurrentUserIdAsync();
+        if (actingId is null)
+        {
+            peopleError = "Sign in again before adding an account.";
+            return;
+        }
+
+        try
+        {
+            var created = await Users.CreateUserAsync(newUsername, newDisplayName, newPassword, actingId.Value);
+            peopleMessage = $"Added {created.Username}.";
+            newUsername = newDisplayName = newPassword = string.Empty;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            peopleError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private void StartReset()
+    {
+        peopleError = null;
+        peopleMessage = null;
+        resetUserId = int.TryParse(resetTargetId, out var id) ? id : null;
+        resetPassword = string.Empty;
+    }
+
+    private async Task ResetPasswordAsync()
+    {
+        peopleError = null;
+        peopleMessage = null;
+
+        var actingId = await CurrentUserIdAsync();
+        if (actingId is null || resetUserId is null)
+        {
+            peopleError = "Sign in again before resetting a password.";
+            return;
+        }
+
+        try
+        {
+            await Users.ResetPasswordAsync(resetUserId.Value, resetPassword, actingId.Value);
+            peopleMessage = "The password is set. Tell them what it is.";
+            resetUserId = null;
+            resetTargetId = string.Empty;
+            resetPassword = string.Empty;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            peopleError = ex.Message;
+        }
+    }
+
+    private async Task RemoveUserAsync(int id)
+    {
+        peopleError = null;
+        peopleMessage = null;
+
+        var actingId = await CurrentUserIdAsync();
+        if (actingId is null)
+        {
+            peopleError = "Sign in again before removing an account.";
+            return;
+        }
+
+        try
+        {
+            await Users.DeleteUserAsync(id, actingId.Value);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            peopleError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task MintTokenAsync()
+    {
+        tokenError = null;
+        var userId = await CurrentUserIdAsync();
+        if (userId is null)
+        {
+            tokenError = "Sign in again before minting a token.";
+            return;
+        }
+
+        try
+        {
+            var minted = await Tokens.CreateAsync(newTokenName, userId.Value);
+            mintedSecret = minted.Secret;
+            newTokenName = string.Empty;
+        }
+        catch (ArgumentException ex)
+        {
+            tokenError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task RevokeTokenAsync(int id)
+    {
+        await Tokens.RevokeAsync(id);
+        await ReloadAsync();
+    }
+
+    private async Task BackupNowAsync()
+    {
+        dataError = null;
+        try
+        {
+            var path = await Backups.WriteAsync();
+            dataMessage = $"Wrote a backup to {path}.";
+        }
+        catch (Exception ex)
+        {
+            dataError = ex.Message;
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        dataMessage = null;
+        dataError = null;
+
+        try
+        {
+            var summary = await Transfer.ImportFromJsonAsync(importJson, importMode);
+            dataMessage = $"Added {summary.CategoriesAdded} categories, {summary.TasksAdded} tasks and {summary.CardsAdded} cards; updated {summary.TasksUpdated} tasks.";
+            importJson = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            dataError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ImportJiraAsync()
+    {
+        dataMessage = null;
+        dataError = null;
+
+        try
+        {
+            var report = await JiraImport.ImportAsync(jiraJson);
+            var warnings = report.Warnings.Count == 0 ? string.Empty : " " + string.Join(" ", report.Warnings);
+            dataMessage = $"Added {report.CategoriesAdded} categories and {report.TasksAdded} tasks, updated {report.TasksUpdated}.{warnings}";
+            jiraJson = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            dataError = ex.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+}

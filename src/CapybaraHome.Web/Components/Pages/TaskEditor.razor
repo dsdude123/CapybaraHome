@@ -1,0 +1,152 @@
+@page "/tasks/new"
+@page "/tasks/{Id:int}"
+@rendermode InteractiveServer
+@inject TaskService Tasks
+@inject CategoryService Categories
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "Create a task" : "Edit a task")</PageTitle>
+
+<h1>@(Id is null ? "Create a task" : "Edit a task")</h1>
+
+@if (Id is not null && !loaded)
+{
+    <p class="muted">Loading.</p>
+}
+else
+{
+    <div class="field">
+        <label for="task-title">Title</label>
+        <input id="task-title" type="text" @bind="title" />
+    </div>
+
+    <div class="field">
+        <label for="task-notes">Description</label>
+        <textarea id="task-notes" @bind="notes"></textarea>
+    </div>
+
+    <div class="filters">
+        <div class="field">
+            <label for="task-status">Status</label>
+            <select id="task-status" @bind="status">
+                @foreach (var value in StatusNames.All)
+                {
+                    <option value="@value">@StatusNames.Label(value)</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="task-category">Category</label>
+            <select id="task-category" @bind="categoryId">
+                <option value="">Uncategorized</option>
+                @foreach (var category in categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="task-due">Due date</label>
+            <input id="task-due" type="date" @bind="dueDate" />
+        </div>
+    </div>
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+
+    <div class="row">
+        <button class="btn btn-primary" @onclick="SaveAsync">Save</button>
+        <a class="btn" href="tasks">Cancel</a>
+        @if (Id is not null)
+        {
+            <button class="btn btn-danger" @onclick="DeleteAsync">Delete</button>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>Id of the task being edited, or null when creating one.</summary>
+    [Parameter]
+    public int? Id { get; set; }
+
+    private IReadOnlyList<CategoryView> categories = [];
+    private bool loaded;
+    private string title = string.Empty;
+    private string notes = string.Empty;
+    private TaskItemStatus status = TaskItemStatus.ToDo;
+    private string categoryId = string.Empty;
+    private DateTime? dueDate;
+    private string? error;
+
+    /// <summary>Loads the categories and, when editing, the task itself.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        categories = await Categories.ListAsync();
+
+        if (Id is null)
+        {
+            loaded = true;
+            return;
+        }
+
+        var task = await Tasks.GetAsync(Id.Value);
+        if (task is null)
+        {
+            Navigation.NavigateTo("tasks");
+            return;
+        }
+
+        title = task.Title;
+        notes = task.Notes ?? string.Empty;
+        status = task.Status;
+        categoryId = task.CategoryId?.ToString() ?? string.Empty;
+        dueDate = task.DueDate?.ToDateTime(TimeOnly.MinValue);
+        loaded = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        error = null;
+        var category = int.TryParse(categoryId, out var parsed) ? parsed : (int?)null;
+        var due = dueDate is { } value ? DateOnly.FromDateTime(value) : (DateOnly?)null;
+
+        try
+        {
+            if (Id is null)
+            {
+                var created = await Tasks.CreateAsync(new CreateTaskRequest(title, notes, status, category, due));
+                Navigation.NavigateTo($"tasks/{created.Id}");
+                return;
+            }
+
+            await Tasks.UpdateAsync(Id.Value, new UpdateTaskRequest(
+                Title: title,
+                Notes: notes,
+                Status: status,
+                CategoryId: category,
+                ClearCategory: category is null,
+                DueDate: due,
+                ClearDueDate: due is null));
+
+            Navigation.NavigateTo("tasks");
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Id is not null)
+        {
+            await Tasks.DeleteAsync(Id.Value);
+        }
+
+        Navigation.NavigateTo("tasks");
+    }
+}

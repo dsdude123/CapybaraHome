@@ -1,0 +1,103 @@
+@page "/sign-in"
+@attribute [AllowAnonymous]
+@inject UserService Users
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in</PageTitle>
+
+<h1>Sign in</h1>
+
+<EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="sign-in">
+    <div class="field">
+        <label for="username">Username</label>
+        <InputText id="username" @bind-Value="form.Username" autocomplete="username" autofocus />
+    </div>
+
+    <div class="field">
+        <label for="password">Password</label>
+        <InputText id="password" type="password" @bind-Value="form.Password" autocomplete="current-password" />
+    </div>
+
+    @if (codeNeeded)
+    {
+        <div class="field">
+            <label for="code">Authenticator code</label>
+            <InputText id="code" @bind-Value="form.Code" autocomplete="one-time-code" inputmode="numeric" />
+        </div>
+    }
+
+    <label style="margin-bottom:1rem">
+        <InputCheckbox @bind-Value="form.StaySignedIn" style="width:auto;min-height:auto" />
+        Stay signed in
+    </label>
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+
+    <button class="btn btn-primary" type="submit">Sign in</button>
+</EditForm>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private SignInForm form { get; set; } = new();
+
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    private string? error;
+    private bool codeNeeded;
+
+    private async Task SubmitAsync()
+    {
+        var result = await Users.SignInAsync(form.Username, form.Password, form.Code);
+
+        switch (result.Outcome)
+        {
+            case SignInOutcome.Succeeded:
+                await SignInManager.SignInAsync(HttpContext, result.User!, form.StaySignedIn);
+                Navigation.NavigateTo(SafeReturnUrl(), forceLoad: true);
+                return;
+
+            case SignInOutcome.CodeRequired:
+                codeNeeded = true;
+                error = "This account uses an authenticator. Enter the current code.";
+                return;
+
+            case SignInOutcome.WrongCode:
+                codeNeeded = true;
+                error = "That code is not right. Try the current one.";
+                return;
+
+            default:
+                codeNeeded = false;
+                error = "That username and password do not match an account.";
+                return;
+        }
+    }
+
+    private string SafeReturnUrl() =>
+        string.IsNullOrWhiteSpace(ReturnUrl) || !ReturnUrl.StartsWith('/') || ReturnUrl.StartsWith("//")
+            ? "/"
+            : ReturnUrl;
+
+    /// <summary>What the sign-in form posts back.</summary>
+    private class SignInForm
+    {
+        /// <summary>Username typed in.</summary>
+        public string? Username { get; set; }
+
+        /// <summary>Password typed in.</summary>
+        public string? Password { get; set; }
+
+        /// <summary>Authenticator code, when the account asks for one.</summary>
+        public string? Code { get; set; }
+
+        /// <summary>Whether the cookie outlives the browser session.</summary>
+        public bool StaySignedIn { get; set; } = true;
+    }
+}

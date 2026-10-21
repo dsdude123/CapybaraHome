@@ -1,0 +1,38 @@
+@* A list of tasks with their category and due date, used on the dashboard and the task list. *@
+
+@if (Tasks.Count == 0)
+{
+    <p class="muted">Nothing here.</p>
+}
+else
+{
+    <ul class="task-list">
+        @foreach (var task in Tasks)
+        {
+            <li>
+                <div class="task-line">
+                    <a class="task-link" href="@($"tasks/{task.Id}")">@task.Title</a>
+                    <span class="pill">@StatusNames.Label(task.Status)</span>
+                </div>
+                <div class="task-meta">
+                    <span>@(task.CategoryName ?? "Uncategorized")</span>
+                    @if (task.DueDate is { } due)
+                    {
+                        <span class="@(IsOverdue(task) ? "overdue" : null)">Due @due.ToString("ddd d MMM")</span>
+                    }
+                </div>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    /// <summary>Tasks to list.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<TaskView> Tasks { get; set; } = [];
+
+    private static bool IsOverdue(TaskView task) =>
+        task.Status != TaskItemStatus.Done
+        && task.DueDate is { } due
+        && due < DateOnly.FromDateTime(DateTime.UtcNow);
+}

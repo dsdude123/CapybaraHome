@@ -1,0 +1,121 @@
+@page "/board"
+@rendermode InteractiveServer
+@inject TaskService Tasks
+@inject CategoryService Categories
+
+<PageTitle>Board</PageTitle>
+
+<div class="page-head">
+    <h1>Board</h1>
+    <a class="btn btn-primary btn-small" href="tasks/new">Create</a>
+</div>
+
+<div class="card" style="margin-bottom:1rem">
+    <div class="filters">
+        <div>
+            <label for="board-category">Category</label>
+            <select id="board-category" @bind="categoryId" @bind:after="ReloadAsync">
+                <option value="">All</option>
+                @foreach (var category in categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="board-due">Due within (days)</label>
+            <input id="board-due" type="number" min="0" @bind="dueWithinDays" @bind:after="ReloadAsync" />
+        </div>
+    </div>
+</div>
+
+<div class="board">
+    @foreach (var status in StatusNames.All)
+    {
+        <section class="board-column">
+            <h2>
+                <span>@StatusNames.Label(status)</span>
+                <span class="muted">@Column(status).Count</span>
+            </h2>
+
+            @foreach (var task in Column(status))
+            {
+                <article class="board-card">
+                    <a class="task-link" href="@($"tasks/{task.Id}")">@task.Title</a>
+                    <div class="task-meta">
+                        <span>@(task.CategoryName ?? "Uncategorized")</span>
+                        @if (task.DueDate is { } due)
+                        {
+                            <span class="@(IsOverdue(task) ? "overdue" : null)">@due.ToString("d MMM")</span>
+                        }
+                    </div>
+                    <div class="row" style="margin-top:0.4rem">
+                        @if (Previous(status) is { } previous)
+                        {
+                            <button class="btn btn-small" title="@($"Move to {StatusNames.Label(previous)}")"
+                                    @onclick="() => MoveAsync(task.Id, previous)">←</button>
+                        }
+                        @if (Next(status) is { } next)
+                        {
+                            <button class="btn btn-small" title="@($"Move to {StatusNames.Label(next)}")"
+                                    @onclick="() => MoveAsync(task.Id, next)">→</button>
+                        }
+                    </div>
+                </article>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private readonly Dictionary<TaskItemStatus, IReadOnlyList<TaskView>> columns = [];
+    private IReadOnlyList<CategoryView> categories = [];
+    private string categoryId = string.Empty;
+    private int? dueWithinDays;
+
+    /// <summary>Loads the four columns and the category filter.</summary>
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await Categories.ListAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var category = int.TryParse(categoryId, out var parsed) ? parsed : (int?)null;
+
+        foreach (var status in StatusNames.All)
+        {
+            columns[status] = await Tasks.ListAsync(new TaskFilter(
+                Status: status,
+                CategoryId: category,
+                DueWithinDays: dueWithinDays));
+        }
+    }
+
+    private IReadOnlyList<TaskView> Column(TaskItemStatus status) =>
+        columns.TryGetValue(status, out var tasks) ? tasks : [];
+
+    private async Task MoveAsync(int id, TaskItemStatus status)
+    {
+        await Tasks.UpdateAsync(id, new UpdateTaskRequest(Status: status));
+        await ReloadAsync();
+    }
+
+    private static TaskItemStatus? Previous(TaskItemStatus status)
+    {
+        var index = Array.IndexOf(StatusNames.All, status);
+        return index > 0 ? StatusNames.All[index - 1] : null;
+    }
+
+    private static TaskItemStatus? Next(TaskItemStatus status)
+    {
+        var index = Array.IndexOf(StatusNames.All, status);
+        return index >= 0 && index < StatusNames.All.Length - 1 ? StatusNames.All[index + 1] : null;
+    }
+
+    private static bool IsOverdue(TaskView task) =>
+        task.Status != TaskItemStatus.Done
+        && task.DueDate is { } due
+        && due < DateOnly.FromDateTime(DateTime.UtcNow);
+}
