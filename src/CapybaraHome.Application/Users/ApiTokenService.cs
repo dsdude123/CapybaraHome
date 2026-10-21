@@ -99,7 +99,14 @@ public class ApiTokenService(ICapybaraHomeDbContext context, TimeProvider clock)
         var user = await context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == token.UserId, cancellationToken);
         return user is null
             ? null
-            : new UserView(user.Id, user.Email, user.DisplayName, user.IsFirstUser, user.CreatedAt, user.LastSignInAt);
+            : new UserView(
+                user.Id,
+                user.Username,
+                user.DisplayName,
+                user.IsFirstUser,
+                user.TotpEnabled,
+                user.CreatedAt,
+                user.LastSignInAt);
     }
 
     private static string Hash(string secret) =>

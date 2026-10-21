@@ -22,9 +22,10 @@ public class WebAppTests
     [InlineData("/tasks")]
     [InlineData("/tasks/new")]
     [InlineData("/settings")]
+    [InlineData("/account")]
     public async Task Every_page_renders(string path)
     {
-        await using var app = new AppFactory();
+        await using var app = await AppFactory.CreateAsync();
         var client = app.CreateClient();
 
         var response = await client.GetAsync(path);
@@ -36,7 +37,7 @@ public class WebAppTests
     [Fact]
     public async Task Health_answers_without_signing_in()
     {
-        await using var app = new AppFactory();
+        await using var app = await AppFactory.CreateAsync();
         var client = app.CreateClient();
 
         var response = await client.GetAsync("/health");
@@ -47,7 +48,7 @@ public class WebAppTests
     [Fact]
     public async Task A_task_created_through_the_api_comes_back_from_it()
     {
-        await using var app = new AppFactory();
+        await using var app = await AppFactory.CreateAsync();
         var client = app.CreateClient();
 
         var created = await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Bleed the radiators"));
@@ -63,7 +64,7 @@ public class WebAppTests
     [Fact]
     public async Task Statuses_travel_as_names()
     {
-        await using var app = new AppFactory();
+        await using var app = await AppFactory.CreateAsync();
         var client = app.CreateClient();
 
         await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Sweep the chimney", Status: TaskItemStatus.OnHold));
@@ -75,7 +76,7 @@ public class WebAppTests
     [Fact]
     public async Task A_task_with_no_title_is_refused()
     {
-        await using var app = new AppFactory();
+        await using var app = await AppFactory.CreateAsync();
         var client = app.CreateClient();
 
         var response = await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("  "));
@@ -86,7 +87,7 @@ public class WebAppTests
     [Fact]
     public async Task An_export_round_trips_through_the_api()
     {
-        await using var app = new AppFactory();
+        await using var app = await AppFactory.CreateAsync();
         var client = app.CreateClient();
         await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Wash the windows"));
 
@@ -103,7 +104,7 @@ public class WebAppTests
     [Fact]
     public async Task A_fresh_installation_comes_up_with_a_dashboard()
     {
-        await using var app = new AppFactory();
+        await using var app = await AppFactory.CreateAsync();
         var client = app.CreateClient();
 
         var cards = await client.GetFromJsonAsync<List<Dictionary<string, object>>>("/api/dashboard/cards");

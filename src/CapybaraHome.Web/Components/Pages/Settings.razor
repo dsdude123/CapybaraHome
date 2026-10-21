@@ -43,55 +43,83 @@
 
 <section class="card stack" style="margin-bottom:1rem">
     <h2 class="card-title">People</h2>
-    <p class="muted">Everyone here shares the same tasks. Only someone already in can let someone else in.</p>
+    <p class="muted">Everyone here shares the same tasks. Only the first account can add or remove accounts.</p>
 
     <table>
         <thead>
-            <tr><th>Name</th><th>Email</th><th>Added</th></tr>
+            <tr><th>Name</th><th>Username</th><th>Codes</th><th>Added</th><th></th></tr>
         </thead>
         <tbody>
             @foreach (var user in users)
             {
                 <tr>
                     <td>@user.DisplayName</td>
-                    <td>@user.Email</td>
+                    <td>@user.Username</td>
+                    <td>@(user.TotpEnabled ? "on" : "off")</td>
                     <td>@user.CreatedAt.ToString("d MMM yyyy")</td>
+                    <td>
+                        @if (isFirstUser && !user.IsFirstUser)
+                        {
+                            <button class="btn btn-small btn-danger" @onclick="() => RemoveUserAsync(user.Id)">Remove</button>
+                        }
+                    </td>
                 </tr>
             }
         </tbody>
     </table>
 
-    <div class="row">
-        <input type="email" placeholder="Invite an email address" @bind="inviteEmail" style="flex:1 1 14rem" />
-        <button class="btn" @onclick="InviteAsync">Invite</button>
-    </div>
-    @if (inviteError is not null)
+    @if (isFirstUser)
     {
-        <p class="error">@inviteError</p>
+        <div class="filters">
+            <div>
+                <label for="new-username">Username</label>
+                <input id="new-username" type="text" @bind="newUsername" autocomplete="off" />
+            </div>
+            <div>
+                <label for="new-display-name">Name to show</label>
+                <input id="new-display-name" type="text" @bind="newDisplayName" autocomplete="off" />
+            </div>
+            <div>
+                <label for="new-password">Password</label>
+                <input id="new-password" type="password" @bind="newPassword" autocomplete="new-password" />
+            </div>
+        </div>
+        <p class="muted">At least @PasswordHasher.MinimumLength characters. Tell them the password yourself; they can change it under Your account.</p>
+        <button class="btn" @onclick="AddUserAsync">Add the account</button>
+
+        @if (resetUserId is not null)
+        {
+            <div class="field" style="margin-top:1rem">
+                <label for="reset-password">New password for @(users.FirstOrDefault(u => u.Id == resetUserId)?.Username)</label>
+                <input id="reset-password" type="password" @bind="resetPassword" autocomplete="new-password" />
+            </div>
+            <div class="row">
+                <button class="btn" @onclick="ResetPasswordAsync">Set the password</button>
+                <button class="btn" @onclick="() => resetUserId = null">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <div class="row" style="margin-top:0.5rem">
+                <select @bind="resetTargetId" style="flex:0 1 14rem">
+                    <option value="">Reset someone's password</option>
+                    @foreach (var user in users)
+                    {
+                        <option value="@user.Id">@user.Username</option>
+                    }
+                </select>
+                <button class="btn" @onclick="StartReset">Choose</button>
+            </div>
+        }
     }
 
-    @if (invites.Count > 0)
+    @if (peopleError is not null)
     {
-        <table>
-            <thead>
-                <tr><th>Invited</th><th>State</th><th></th></tr>
-            </thead>
-            <tbody>
-                @foreach (var invite in invites)
-                {
-                    <tr>
-                        <td>@invite.Email</td>
-                        <td>@InviteState(invite)</td>
-                        <td>
-                            @if (invite.AcceptedAt is null && invite.RevokedAt is null)
-                            {
-                                <button class="btn btn-small" @onclick="() => RevokeAsync(invite.Id)">Withdraw</button>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        <p class="error">@peopleError</p>
+    }
+    @if (peopleMessage is not null)
+    {
+        <p class="notice">@peopleMessage</p>
     }
 </section>
 
@@ -188,13 +216,19 @@
 
     private IReadOnlyList<CategoryView> categories = [];
     private IReadOnlyList<UserView> users = [];
-    private IReadOnlyList<InviteView> invites = [];
     private IReadOnlyList<ApiTokenView> tokens = [];
+    private bool isFirstUser;
 
     private string newCategoryName = string.Empty;
     private string? categoryError;
-    private string inviteEmail = string.Empty;
-    private string? inviteError;
+    private string newUsername = string.Empty;
+    private string newDisplayName = string.Empty;
+    private string newPassword = string.Empty;
+    private string resetTargetId = string.Empty;
+    private int? resetUserId;
+    private string resetPassword = string.Empty;
+    private string? peopleError;
+    private string? peopleMessage;
     private string newTokenName = string.Empty;
     private string? tokenError;
     private string? mintedSecret;
@@ -213,8 +247,10 @@
     {
         categories = await Categories.ListAsync();
         users = await Users.ListAsync();
-        invites = await Users.ListInvitesAsync();
         tokens = await Tokens.ListAsync();
+
+        var state = AuthenticationState is null ? null : await AuthenticationState;
+        isFirstUser = state?.User.IsFirstUser() ?? false;
     }
 
     private async Task<int?> CurrentUserIdAsync()
@@ -251,33 +287,89 @@
         await ReloadAsync();
     }
 
-    private async Task InviteAsync()
+    private async Task AddUserAsync()
     {
-        inviteError = null;
-        var userId = await CurrentUserIdAsync();
-        if (userId is null)
+        peopleError = null;
+        peopleMessage = null;
+
+        var actingId = await CurrentUserIdAsync();
+        if (actingId is null)
         {
-            inviteError = "Sign in again before inviting someone.";
+            peopleError = "Sign in again before adding an account.";
             return;
         }
 
         try
         {
-            await Users.InviteAsync(inviteEmail, userId.Value);
-            inviteEmail = string.Empty;
+            var created = await Users.CreateUserAsync(newUsername, newDisplayName, newPassword, actingId.Value);
+            peopleMessage = $"Added {created.Username}.";
+            newUsername = newDisplayName = newPassword = string.Empty;
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
-            inviteError = ex.Message;
+            peopleError = ex.Message;
             return;
         }
 
         await ReloadAsync();
     }
 
-    private async Task RevokeAsync(int id)
+    private void StartReset()
     {
-        await Users.RevokeInviteAsync(id);
+        peopleError = null;
+        peopleMessage = null;
+        resetUserId = int.TryParse(resetTargetId, out var id) ? id : null;
+        resetPassword = string.Empty;
+    }
+
+    private async Task ResetPasswordAsync()
+    {
+        peopleError = null;
+        peopleMessage = null;
+
+        var actingId = await CurrentUserIdAsync();
+        if (actingId is null || resetUserId is null)
+        {
+            peopleError = "Sign in again before resetting a password.";
+            return;
+        }
+
+        try
+        {
+            await Users.ResetPasswordAsync(resetUserId.Value, resetPassword, actingId.Value);
+            peopleMessage = "The password is set. Tell them what it is.";
+            resetUserId = null;
+            resetTargetId = string.Empty;
+            resetPassword = string.Empty;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            peopleError = ex.Message;
+        }
+    }
+
+    private async Task RemoveUserAsync(int id)
+    {
+        peopleError = null;
+        peopleMessage = null;
+
+        var actingId = await CurrentUserIdAsync();
+        if (actingId is null)
+        {
+            peopleError = "Sign in again before removing an account.";
+            return;
+        }
+
+        try
+        {
+            await Users.DeleteUserAsync(id, actingId.Value);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            peopleError = ex.Message;
+            return;
+        }
+
         await ReloadAsync();
     }
 
@@ -367,8 +459,4 @@
         await ReloadAsync();
     }
 
-    private static string InviteState(InviteView invite) =>
-        invite.AcceptedAt is not null ? "accepted"
-        : invite.RevokedAt is not null ? "withdrawn"
-        : "waiting";
 }

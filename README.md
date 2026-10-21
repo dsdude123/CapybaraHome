@@ -41,26 +41,42 @@ dotnet test
   date, or overdue only.
 - **Create** — the button in the header goes to `/tasks/new`; the same page edits an existing
   task at `/tasks/{id}`.
-- **Settings** (`/settings`) — categories, people and invites, connector tokens, and the
-  export, import and backup controls.
+- **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
+  import and backup controls.
+- **Your account** (`/account`) — your own password and your authenticator.
 
 ## Signing in
 
-Sign-in is OpenID Connect against whichever provider you register the app with. Nothing
-about it lives in the repository; it is read from configuration, so in practice from the
-environment:
+CapybaraHome holds its own accounts. There is no identity provider to register and nothing to
+configure before the first run.
+
+The first time it starts, every page redirects to `/setup`, where you create the first account:
+a username, a name to show and a password of at least ten characters. That account is the one
+that can add and remove the others, under Settings. Everyone shares the same tasks.
+
+Passwords are stored as PBKDF2-HMAC-SHA256 hashes, each with its own salt and the iteration
+count alongside it. Nothing emails a reset: the first account resets other people's passwords
+under Settings, and everyone changes their own under Your account.
+
+An authenticator is optional and per account, set up under Your account. The secret is shown
+once as text and as an `otpauth://` link; sign-in asks for a six-digit code from then on. The
+setup is not in force until a code confirms it, so a half-finished setup cannot lock anyone out.
+Turning it off again needs the account's password.
+
+## Behind a reverse proxy
+
+The app speaks plain HTTP and expects something in front of it to terminate HTTPS. It reads
+`X-Forwarded-Proto`, `X-Forwarded-For` and `X-Forwarded-Host`, trusting any hop by default,
+which is right for a container only the proxy can reach. To narrow that, list the proxy:
 
 ```
-Authentication__Oidc__Authority=https://your-provider.example
-Authentication__Oidc__ClientId=...
-Authentication__Oidc__ClientSecret=...
+ForwardedHeaders__KnownProxies__0=10.0.1.5
+ForwardedHeaders__KnownNetworks__0=10.0.0.0/8
 ```
 
-The redirect URI to register is `https://your-host/signin-oidc`.
-
-Everyone shares the same tasks. The first identity to sign in claims the installation; after
-that, an email address has to hold an open invite, which an existing user issues under
-Settings. Anyone else is turned away at `/access-denied`.
+The keys that encrypt the sign-in cookie are written to `DataProtection__KeyPath`, which the
+image sets to `/data/keys`. Keep that on the volume: without it a new container cannot read the
+cookies the old one wrote, and everybody is signed out on every image pull.
 
 ## The Claude connector
 
@@ -70,7 +86,8 @@ The app serves MCP over streamable HTTP at `/mcp`, with five tools: `search_task
 Mint a token under Settings, then point a custom connector at `https://your-host/mcp` and
 send the token as `Authorization: Bearer <token>`. Only a SHA-256 hash of each token is
 stored, so the secret is shown once and cannot be recovered. The same token works against
-the REST API under `/api`.
+the REST API under `/api`. A token is how the connector signs in; it does not use the sign-in
+cookie and is not affected by an authenticator.
 
 ## Export, import and backups
 
@@ -95,12 +112,9 @@ Backups__Keep=14
 
 ```
 docker build -t capybarahome .
-docker run -p 8080:8080 -v capybarahome-data:/data \
-  -e Authentication__Oidc__Authority=... \
-  -e Authentication__Oidc__ClientId=... \
-  -e Authentication__Oidc__ClientSecret=... \
-  capybarahome
+docker run -p 8080:8080 -v capybarahome-data:/data capybarahome
 ```
 
-The database and the backups live in `/data`, so that is the volume to keep. GitHub Actions
-builds the image on every pull request and pushes it to `ghcr.io` on a push to `main`.
+The database, the backups and the cookie keys live in `/data`, so that is the volume to keep.
+Open the app and it takes you to `/setup` for the first account. GitHub Actions builds the image
+on every pull request and pushes it to `ghcr.io` on a push to `main`.

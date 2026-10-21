@@ -39,8 +39,9 @@ public class ApiTokenAuthenticationHandler(
             [
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.DisplayName),
-                new Claim(ClaimTypes.Email, user.Email),
+                new Claim(CapybaraClaims.Username, user.Username),
                 new Claim(CapybaraClaims.UserId, user.Id.ToString()),
+                .. user.IsFirstUser ? new[] { new Claim(CapybaraClaims.FirstUser, "true") } : [],
             ],
             SchemeName);
 

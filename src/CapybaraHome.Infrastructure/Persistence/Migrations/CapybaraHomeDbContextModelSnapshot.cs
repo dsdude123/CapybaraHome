@@ -185,73 +185,43 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("InvitedByUserId")
-                        .HasColumnType("INTEGER");
-
                     b.Property<bool>("IsFirstUser")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("Issuer")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset?>("LastSignInAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Subject")
+                    b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("TotpConfirmedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TotpSecret")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Email");
-
-                    b.HasIndex("Issuer", "Subject")
+                    b.HasIndex("Username")
                         .IsUnique();
 
                     b.ToTable("Users", (string)null);
-                });
-
-            modelBuilder.Entity("CapybaraHome.Domain.Users.UserInvite", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("AcceptedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("CreatedByUserId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Email");
-
-                    b.ToTable("UserInvites", (string)null);
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Dashboards.DashboardCard", b =>

@@ -5,13 +5,15 @@ namespace CapybaraHome.Tests;
 /// <summary>Covers the connector's bearer tokens: minted once, hashed at rest, revocable.</summary>
 public class ApiTokenServiceTests
 {
+    private const string Password = "a-long-enough-password";
+
     [Fact]
     public async Task A_minted_secret_authenticates_and_is_not_stored_in_the_clear()
     {
         await using var db = await TestDatabase.CreateAsync();
         var users = new UserService(db.Context, db.Clock);
         var tokens = new ApiTokenService(db.Context, db.Clock);
-        var user = (await users.SignInAsync("https://issuer.example", "sub-1", "first@example.com", "First")).User!;
+        var user = await users.CreateFirstUserAsync("first", "First", Password);
 
         var minted = await tokens.CreateAsync("Phone", user.Id);
 
@@ -20,6 +22,7 @@ public class ApiTokenServiceTests
 
         var authenticated = await tokens.AuthenticateAsync(minted.Secret);
         Assert.Equal(user.Id, authenticated!.Id);
+        Assert.Equal("first", authenticated.Username);
     }
 
     [Fact]
@@ -28,7 +31,7 @@ public class ApiTokenServiceTests
         await using var db = await TestDatabase.CreateAsync();
         var users = new UserService(db.Context, db.Clock);
         var tokens = new ApiTokenService(db.Context, db.Clock);
-        var user = (await users.SignInAsync("https://issuer.example", "sub-1", "first@example.com", "First")).User!;
+        var user = await users.CreateFirstUserAsync("first", "First", Password);
         var minted = await tokens.CreateAsync("Phone", user.Id);
 
         Assert.True(await tokens.RevokeAsync(minted.Token.Id));

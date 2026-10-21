@@ -22,7 +22,8 @@ WORKDIR /app
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     ConnectionStrings__CapybaraHome="Data Source=/data/capybarahome.db" \
-    Backups__Destination=/data/backups
+    Backups__Destination=/data/backups \
+    DataProtection__KeyPath=/data/keys
 
 RUN mkdir -p /data && chown app:app /data
 VOLUME /data

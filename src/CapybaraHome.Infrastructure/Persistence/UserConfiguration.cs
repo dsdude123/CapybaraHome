@@ -11,12 +11,12 @@ public class UserConfiguration : IEntityTypeConfiguration<AppUser>
     public void Configure(EntityTypeBuilder<AppUser> builder)
     {
         builder.ToTable("Users");
-        builder.Property(u => u.Issuer).IsRequired().HasMaxLength(300);
-        builder.Property(u => u.Subject).IsRequired().HasMaxLength(200);
-        builder.Property(u => u.Email).IsRequired().HasMaxLength(320);
+        builder.Property(u => u.Username).IsRequired().HasMaxLength(64);
         builder.Property(u => u.DisplayName).IsRequired().HasMaxLength(200);
+        builder.Property(u => u.PasswordHash).IsRequired().HasMaxLength(200);
+        builder.Property(u => u.TotpSecret).HasMaxLength(64);
+        builder.Ignore(u => u.TotpEnabled);
 
-        builder.HasIndex(u => new { u.Issuer, u.Subject }).IsUnique();
-        builder.HasIndex(u => u.Email);
+        builder.HasIndex(u => u.Username).IsUnique();
     }
 }

@@ -20,9 +20,6 @@ public interface ICapybaraHomeDbContext
     /// <summary>Users allowed to sign in.</summary>
     DbSet<AppUser> Users { get; }
 
-    /// <summary>Outstanding and spent invites.</summary>
-    DbSet<UserInvite> UserInvites { get; }
-
     /// <summary>Bearer tokens issued to the connector.</summary>
     DbSet<ApiToken> ApiTokens { get; }
 

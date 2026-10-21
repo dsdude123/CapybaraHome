@@ -36,34 +36,18 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "UserInvites",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    Email = table.Column<string>(type: "TEXT", maxLength: 320, nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "INTEGER", nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    AcceptedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
-                    RevokedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_UserInvites", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "Users",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "INTEGER", nullable: false)
                         .Annotation("Sqlite:Autoincrement", true),
-                    Issuer = table.Column<string>(type: "TEXT", maxLength: 300, nullable: false),
-                    Subject = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
-                    Email = table.Column<string>(type: "TEXT", maxLength: 320, nullable: false),
+                    Username = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                     DisplayName = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
+                    PasswordHash = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
+                    TotpSecret = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
+                    TotpConfirmedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
                     IsFirstUser = table.Column<bool>(type: "INTEGER", nullable: false),
-                    InvitedByUserId = table.Column<int>(type: "INTEGER", nullable: true),
+                    CreatedByUserId = table.Column<int>(type: "INTEGER", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     LastSignInAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true)
                 },
@@ -119,19 +103,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                 column: "SortOrder");
 
             migrationBuilder.CreateIndex(
-                name: "IX_UserInvites_Email",
-                table: "UserInvites",
-                column: "Email");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Users_Email",
+                name: "IX_Users_Username",
                 table: "Users",
-                column: "Email");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Users_Issuer_Subject",
-                table: "Users",
-                columns: new[] { "Issuer", "Subject" },
+                column: "Username",
                 unique: true);
         }
 
@@ -143,9 +117,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "DashboardCards");
-
-            migrationBuilder.DropTable(
-                name: "UserInvites");
 
             migrationBuilder.DropTable(
                 name: "Users");

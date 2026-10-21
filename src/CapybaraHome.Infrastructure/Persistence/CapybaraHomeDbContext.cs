@@ -22,9 +22,6 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Users allowed to sign in.</summary>
     public DbSet<AppUser> Users => Set<AppUser>();
 
-    /// <summary>Outstanding and spent invites.</summary>
-    public DbSet<UserInvite> UserInvites => Set<UserInvite>();
-
     /// <summary>Bearer tokens issued to the connector.</summary>
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 

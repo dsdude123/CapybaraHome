@@ -5,159 +5,270 @@ using Microsoft.EntityFrameworkCore;
 namespace CapybaraHome.Application.Users;
 
 /// <summary>
-/// Decides who may sign in. The first identity to arrive claims the installation; every
-/// identity after that needs an open invite from a user who is already in.
+/// The accounts the app signs people in with. Passwords are checked here and stored only as
+/// PBKDF2 hashes. The first account claims an empty installation and is the one that may add
+/// and remove other accounts; everyone shares the same task data.
 /// </summary>
 public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
 {
-    /// <summary>Matches an external identity to a user, creating one if it is entitled to exist.</summary>
-    /// <param name="issuer">Issuer of the external identity.</param>
-    /// <param name="subject">Subject claim from the provider.</param>
-    /// <param name="email">Email claim from the provider, if it sent one.</param>
-    /// <param name="displayName">Name claim from the provider, if it sent one.</param>
-    /// <param name="cancellationToken">Cancels the work.</param>
-    public async Task<SignInResult> SignInAsync(
-        string issuer,
-        string subject,
-        string? email,
-        string? displayName,
+    /// <summary>True when the installation has at least one account, so setup is done.</summary>
+    public Task<bool> AnyUsersAsync(CancellationToken cancellationToken = default) =>
+        context.Users.AnyAsync(cancellationToken);
+
+    /// <summary>Creates the account that claims an empty installation.</summary>
+    /// <exception cref="InvalidOperationException">The installation already has an account.</exception>
+    /// <exception cref="ArgumentException">The username or the password is not acceptable.</exception>
+    public async Task<UserView> CreateFirstUserAsync(
+        string username,
+        string displayName,
+        string password,
         CancellationToken cancellationToken = default)
     {
-        var now = clock.GetUtcNow();
-
-        var existing = await context.Users.SingleOrDefaultAsync(
-            u => u.Issuer == issuer && u.Subject == subject,
-            cancellationToken);
-
-        if (existing is not null)
+        if (await AnyUsersAsync(cancellationToken))
         {
-            existing.LastSignInAt = now;
-            if (!string.IsNullOrWhiteSpace(displayName))
-            {
-                existing.DisplayName = displayName;
-            }
-
-            await context.SaveChangesAsync(cancellationToken);
-            return new SignInResult(SignInOutcome.ExistingUser, View(existing));
+            throw new InvalidOperationException("This installation already has an account. Sign in instead.");
         }
 
-        var normalizedEmail = email?.Trim().ToLowerInvariant();
-        var isFirstUser = !await context.Users.AnyAsync(cancellationToken);
-
-        if (!isFirstUser)
-        {
-            if (string.IsNullOrEmpty(normalizedEmail))
-            {
-                return new SignInResult(SignInOutcome.NoEmail, null);
-            }
-
-            var invite = await context.UserInvites
-                .Where(i => i.Email == normalizedEmail && i.AcceptedAt == null && i.RevokedAt == null)
-                .OrderBy(i => i.Id)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (invite is null)
-            {
-                return new SignInResult(SignInOutcome.NotInvited, null);
-            }
-
-            invite.AcceptedAt = now;
-            var invited = Add(issuer, subject, normalizedEmail, displayName, isFirstUser: false, invite.CreatedByUserId, now);
-            await context.SaveChangesAsync(cancellationToken);
-            return new SignInResult(SignInOutcome.Invited, View(invited));
-        }
-
-        var first = Add(issuer, subject, normalizedEmail ?? string.Empty, displayName, isFirstUser: true, null, now);
-        await context.SaveChangesAsync(cancellationToken);
-        return new SignInResult(SignInOutcome.FirstUser, View(first));
+        return await AddAsync(username, displayName, password, isFirstUser: true, createdByUserId: null, cancellationToken);
     }
 
-    /// <summary>Returns every user, oldest first.</summary>
+    /// <summary>Creates another account, on the authority of the first user.</summary>
+    /// <exception cref="InvalidOperationException">The acting user may not add accounts.</exception>
+    /// <exception cref="ArgumentException">The username is taken, or the password is too short.</exception>
+    public async Task<UserView> CreateUserAsync(
+        string username,
+        string displayName,
+        string password,
+        int actingUserId,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireFirstUserAsync(actingUserId, cancellationToken);
+        return await AddAsync(username, displayName, password, isFirstUser: false, actingUserId, cancellationToken);
+    }
+
+    /// <summary>Checks a username, a password and, where the account uses one, an authenticator code.</summary>
+    /// <param name="username">Name typed at sign-in.</param>
+    /// <param name="password">Password typed at sign-in.</param>
+    /// <param name="code">Authenticator code, if one was given.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    public async Task<SignInResult> SignInAsync(
+        string? username,
+        string? password,
+        string? code,
+        CancellationToken cancellationToken = default)
+    {
+        var name = Normalize(username);
+        var user = name.Length == 0
+            ? null
+            : await context.Users.SingleOrDefaultAsync(u => u.Username == name, cancellationToken);
+
+        // The password is verified even when no such user exists, so that a wrong username does
+        // not answer faster than a wrong password and reveal which accounts are real.
+        var hash = user?.PasswordHash ?? Decoy;
+        var passwordMatches = PasswordHasher.Verify(password, hash);
+
+        if (user is null || !passwordMatches)
+        {
+            return new SignInResult(SignInOutcome.WrongCredentials, null);
+        }
+
+        if (user.TotpEnabled)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                return new SignInResult(SignInOutcome.CodeRequired, null);
+            }
+
+            if (!TotpService.IsValid(user.TotpSecret, code, clock.GetUtcNow()))
+            {
+                return new SignInResult(SignInOutcome.WrongCode, null);
+            }
+        }
+
+        user.LastSignInAt = clock.GetUtcNow();
+        await context.SaveChangesAsync(cancellationToken);
+
+        return new SignInResult(SignInOutcome.Succeeded, View(user));
+    }
+
+    /// <summary>Returns every account, oldest first.</summary>
     public async Task<IReadOnlyList<UserView>> ListAsync(CancellationToken cancellationToken = default)
     {
         var users = await context.Users.AsNoTracking().OrderBy(u => u.Id).ToListAsync(cancellationToken);
         return [.. users.Select(View)];
     }
 
-    /// <summary>Returns every invite, newest first.</summary>
-    public async Task<IReadOnlyList<InviteView>> ListInvitesAsync(CancellationToken cancellationToken = default)
+    /// <summary>Returns one account, or null when no account has that id.</summary>
+    public async Task<UserView?> GetAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await context.UserInvites.AsNoTracking()
-            .OrderByDescending(i => i.Id)
-            .Select(i => new InviteView(i.Id, i.Email, i.CreatedAt, i.AcceptedAt, i.RevokedAt))
-            .ToListAsync(cancellationToken);
+        var user = await context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == id, cancellationToken);
+        return user is null ? null : View(user);
     }
 
-    /// <summary>Lets <paramref name="email"/> sign in, on the authority of <paramref name="invitedByUserId"/>.</summary>
-    /// <exception cref="ArgumentException">The address is blank or already has an open invite or an account.</exception>
-    public async Task<InviteView> InviteAsync(string email, int invitedByUserId, CancellationToken cancellationToken = default)
+    /// <summary>Changes a user's own password, after checking the current one.</summary>
+    /// <exception cref="ArgumentException">The current password is wrong, or the new one is too short.</exception>
+    public async Task ChangePasswordAsync(
+        int userId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default)
     {
-        var normalized = (email ?? string.Empty).Trim().ToLowerInvariant();
-        if (normalized.Length == 0 || !normalized.Contains('@'))
+        var user = await Require(userId, cancellationToken);
+
+        if (!PasswordHasher.Verify(currentPassword, user.PasswordHash))
         {
-            throw new ArgumentException("An invite needs an email address.", nameof(email));
+            throw new ArgumentException("That is not the current password.", nameof(currentPassword));
         }
 
-        if (await context.Users.AnyAsync(u => u.Email == normalized, cancellationToken))
-        {
-            throw new ArgumentException("That address already has an account.", nameof(email));
-        }
+        user.PasswordHash = PasswordHasher.Hash(newPassword);
+        await context.SaveChangesAsync(cancellationToken);
+    }
 
-        if (await context.UserInvites.AnyAsync(i => i.Email == normalized && i.AcceptedAt == null && i.RevokedAt == null, cancellationToken))
-        {
-            throw new ArgumentException("That address already has an open invite.", nameof(email));
-        }
+    /// <summary>Sets another user's password, on the authority of the first user.</summary>
+    /// <exception cref="InvalidOperationException">The acting user may not reset passwords.</exception>
+    public async Task ResetPasswordAsync(
+        int userId,
+        string newPassword,
+        int actingUserId,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireFirstUserAsync(actingUserId, cancellationToken);
 
-        var invite = new UserInvite
-        {
-            Email = normalized,
-            CreatedByUserId = invitedByUserId,
-            CreatedAt = clock.GetUtcNow(),
-        };
+        var user = await Require(userId, cancellationToken);
+        user.PasswordHash = PasswordHasher.Hash(newPassword);
+        await context.SaveChangesAsync(cancellationToken);
+    }
 
-        context.UserInvites.Add(invite);
+    /// <summary>
+    /// Starts authenticator setup and returns the secret to type in. It is stored but not in
+    /// force, so a half-finished setup cannot lock anyone out; <see cref="ConfirmTotpAsync"/>
+    /// turns it on.
+    /// </summary>
+    public async Task<TotpEnrolment> BeginTotpEnrolmentAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        var user = await Require(userId, cancellationToken);
+
+        var secret = TotpService.GenerateSecret();
+        user.TotpSecret = secret;
+        user.TotpConfirmedAt = null;
         await context.SaveChangesAsync(cancellationToken);
 
-        return new InviteView(invite.Id, invite.Email, invite.CreatedAt, invite.AcceptedAt, invite.RevokedAt);
+        return new TotpEnrolment(secret, TotpService.BuildUri(secret, user.Username));
     }
 
-    /// <summary>Withdraws an invite that has not been used. Returns false when there is nothing to withdraw.</summary>
-    public async Task<bool> RevokeInviteAsync(int id, CancellationToken cancellationToken = default)
+    /// <summary>Turns on authenticator codes once the user proves the app is set up. Returns false when the code is wrong.</summary>
+    public async Task<bool> ConfirmTotpAsync(int userId, string code, CancellationToken cancellationToken = default)
     {
-        var invite = await context.UserInvites.SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
-        if (invite is null || !invite.IsOpen)
+        var user = await Require(userId, cancellationToken);
+
+        if (user.TotpSecret is null || !TotpService.IsValid(user.TotpSecret, code, clock.GetUtcNow()))
         {
             return false;
         }
 
-        invite.RevokedAt = clock.GetUtcNow();
+        user.TotpConfirmedAt = clock.GetUtcNow();
         await context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    private AppUser Add(string issuer, string subject, string email, string? displayName, bool isFirstUser, int? invitedByUserId, DateTimeOffset now)
+    /// <summary>Turns authenticator codes off again, after checking the user's password.</summary>
+    /// <exception cref="ArgumentException">The password is wrong.</exception>
+    public async Task DisableTotpAsync(int userId, string password, CancellationToken cancellationToken = default)
     {
+        var user = await Require(userId, cancellationToken);
+
+        if (!PasswordHasher.Verify(password, user.PasswordHash))
+        {
+            throw new ArgumentException("That is not the current password.", nameof(password));
+        }
+
+        user.TotpSecret = null;
+        user.TotpConfirmedAt = null;
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Removes an account, on the authority of the first user. Returns false when no account has that id.</summary>
+    /// <exception cref="InvalidOperationException">The acting user may not remove accounts, or the account is the first one.</exception>
+    public async Task<bool> DeleteUserAsync(int userId, int actingUserId, CancellationToken cancellationToken = default)
+    {
+        await RequireFirstUserAsync(actingUserId, cancellationToken);
+
+        var user = await context.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            return false;
+        }
+
+        if (user.IsFirstUser)
+        {
+            throw new InvalidOperationException("The first account cannot be removed.");
+        }
+
+        context.Users.Remove(user);
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    private async Task<UserView> AddAsync(
+        string username,
+        string displayName,
+        string password,
+        bool isFirstUser,
+        int? createdByUserId,
+        CancellationToken cancellationToken)
+    {
+        var name = Normalize(username);
+        if (name.Length < 2)
+        {
+            throw new ArgumentException("A username needs at least two characters.", nameof(username));
+        }
+
+        if (name.Any(c => !char.IsLetterOrDigit(c) && c is not ('.' or '-' or '_')))
+        {
+            throw new ArgumentException("A username can hold letters, digits, dots, dashes and underscores.", nameof(username));
+        }
+
+        if (await context.Users.AnyAsync(u => u.Username == name, cancellationToken))
+        {
+            throw new ArgumentException("That username is taken.", nameof(username));
+        }
+
+        var now = clock.GetUtcNow();
         var user = new AppUser
         {
-            Issuer = issuer,
-            Subject = subject,
-            Email = email,
-            DisplayName = string.IsNullOrWhiteSpace(displayName) ? FallbackName(email) : displayName,
+            Username = name,
+            DisplayName = string.IsNullOrWhiteSpace(displayName) ? name : displayName.Trim(),
+            PasswordHash = PasswordHasher.Hash(password),
             IsFirstUser = isFirstUser,
-            InvitedByUserId = invitedByUserId,
+            CreatedByUserId = createdByUserId,
             CreatedAt = now,
-            LastSignInAt = now,
         };
 
         context.Users.Add(user);
-        return user;
+        await context.SaveChangesAsync(cancellationToken);
+
+        return View(user);
     }
 
-    private static string FallbackName(string email)
+    private async Task<AppUser> Require(int userId, CancellationToken cancellationToken) =>
+        await context.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
+        ?? throw new InvalidOperationException($"No account has id {userId}.");
+
+    private async Task RequireFirstUserAsync(int actingUserId, CancellationToken cancellationToken)
     {
-        var at = email.IndexOf('@');
-        return at > 0 ? email[..at] : (email.Length == 0 ? "Someone" : email);
+        var acting = await Require(actingUserId, cancellationToken);
+        if (!acting.IsFirstUser)
+        {
+            throw new InvalidOperationException("Only the first account can add or remove accounts.");
+        }
     }
 
-    private static UserView View(AppUser u) => new(u.Id, u.Email, u.DisplayName, u.IsFirstUser, u.CreatedAt, u.LastSignInAt);
+    private static string Normalize(string? username) => (username ?? string.Empty).Trim().ToLowerInvariant();
+
+    private static UserView View(AppUser u) =>
+        new(u.Id, u.Username, u.DisplayName, u.IsFirstUser, u.TotpEnabled, u.CreatedAt, u.LastSignInAt);
+
+    // A valid hash of a value nobody knows, so a sign-in for a username that does not exist still
+    // spends the time a real PBKDF2 check costs.
+    private static readonly string Decoy = PasswordHasher.Hash("a-password-that-is-nobody-s");
 }

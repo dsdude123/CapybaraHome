@@ -1,0 +1,212 @@
+@page "/account"
+@rendermode InteractiveServer
+@inject UserService Users
+
+<PageTitle>Your account</PageTitle>
+
+<h1>Your account</h1>
+
+@if (user is null)
+{
+    <p class="muted">Loading.</p>
+}
+else
+{
+    <p class="muted">Signed in as @user.DisplayName (@user.Username).</p>
+
+    <section class="card stack" style="margin-bottom:1rem">
+        <h2 class="card-title">Password</h2>
+
+        <div class="field">
+            <label for="current">Current password</label>
+            <input id="current" type="password" @bind="currentPassword" autocomplete="current-password" />
+        </div>
+        <div class="field">
+            <label for="new">New password</label>
+            <input id="new" type="password" @bind="newPassword" autocomplete="new-password" />
+            <p class="muted">At least @PasswordHasher.MinimumLength characters.</p>
+        </div>
+        <div class="field">
+            <label for="again">New password again</label>
+            <input id="again" type="password" @bind="confirmPassword" autocomplete="new-password" />
+        </div>
+
+        @if (passwordError is not null)
+        {
+            <p class="error">@passwordError</p>
+        }
+        @if (passwordMessage is not null)
+        {
+            <p class="notice">@passwordMessage</p>
+        }
+
+        <button class="btn" @onclick="ChangePasswordAsync">Change the password</button>
+    </section>
+
+    <section class="card stack">
+        <h2 class="card-title">Authenticator</h2>
+
+        @if (user.TotpEnabled && enrolment is null)
+        {
+            <p>Sign-in asks for a code from your authenticator app.</p>
+            <div class="field">
+                <label for="disable-password">Your password, to turn it off</label>
+                <input id="disable-password" type="password" @bind="disablePassword" autocomplete="current-password" />
+            </div>
+            <button class="btn btn-danger" @onclick="DisableTotpAsync">Turn codes off</button>
+        }
+        else if (enrolment is null)
+        {
+            <p>Codes are off. Turning them on adds a second step to sign-in.</p>
+            <button class="btn" @onclick="BeginTotpAsync">Set up an authenticator</button>
+        }
+        else
+        {
+            <p>Add this secret to your authenticator app, then type the code it shows to confirm.</p>
+            <code class="secret">@enrolment.Secret</code>
+            <p class="muted">Or open this link on the device with the app: <a href="@enrolment.Uri">@enrolment.Uri</a></p>
+
+            <div class="field">
+                <label for="confirm-code">Code from the app</label>
+                <input id="confirm-code" @bind="confirmCode" inputmode="numeric" autocomplete="one-time-code" />
+            </div>
+            <div class="row">
+                <button class="btn btn-primary" @onclick="ConfirmTotpAsync">Confirm</button>
+                <button class="btn" @onclick="() => enrolment = null">Cancel</button>
+            </div>
+        }
+
+        @if (totpError is not null)
+        {
+            <p class="error">@totpError</p>
+        }
+        @if (totpMessage is not null)
+        {
+            <p class="notice">@totpMessage</p>
+        }
+    </section>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private UserView? user;
+    private string currentPassword = string.Empty;
+    private string newPassword = string.Empty;
+    private string confirmPassword = string.Empty;
+    private string disablePassword = string.Empty;
+    private string confirmCode = string.Empty;
+    private TotpEnrolment? enrolment;
+    private string? passwordError;
+    private string? passwordMessage;
+    private string? totpError;
+    private string? totpMessage;
+
+    /// <summary>Loads the signed-in account.</summary>
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        var id = await CurrentUserIdAsync();
+        user = id is null ? null : await Users.GetAsync(id.Value);
+    }
+
+    private async Task<int?> CurrentUserIdAsync()
+    {
+        if (AuthenticationState is null)
+        {
+            return null;
+        }
+
+        var state = await AuthenticationState;
+        return state.User.GetUserId();
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        passwordError = null;
+        passwordMessage = null;
+
+        if (newPassword != confirmPassword)
+        {
+            passwordError = "The two new passwords are not the same.";
+            return;
+        }
+
+        var id = await CurrentUserIdAsync();
+        if (id is null)
+        {
+            passwordError = "Sign in again.";
+            return;
+        }
+
+        try
+        {
+            await Users.ChangePasswordAsync(id.Value, currentPassword, newPassword);
+            passwordMessage = "The password is changed.";
+            currentPassword = newPassword = confirmPassword = string.Empty;
+        }
+        catch (ArgumentException ex)
+        {
+            passwordError = ex.Message;
+        }
+    }
+
+    private async Task BeginTotpAsync()
+    {
+        totpError = null;
+        totpMessage = null;
+
+        var id = await CurrentUserIdAsync();
+        if (id is not null)
+        {
+            enrolment = await Users.BeginTotpEnrolmentAsync(id.Value);
+        }
+    }
+
+    private async Task ConfirmTotpAsync()
+    {
+        totpError = null;
+        var id = await CurrentUserIdAsync();
+        if (id is null)
+        {
+            return;
+        }
+
+        if (await Users.ConfirmTotpAsync(id.Value, confirmCode))
+        {
+            enrolment = null;
+            confirmCode = string.Empty;
+            totpMessage = "Codes are on. Sign-in will ask for one from now on.";
+            await ReloadAsync();
+            return;
+        }
+
+        totpError = "That code is not right. Try the current one.";
+    }
+
+    private async Task DisableTotpAsync()
+    {
+        totpError = null;
+        totpMessage = null;
+
+        var id = await CurrentUserIdAsync();
+        if (id is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Users.DisableTotpAsync(id.Value, disablePassword);
+            disablePassword = string.Empty;
+            totpMessage = "Codes are off.";
+            await ReloadAsync();
+        }
+        catch (ArgumentException ex)
+        {
+            totpError = ex.Message;
+        }
+    }
+}

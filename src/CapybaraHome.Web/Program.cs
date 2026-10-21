@@ -2,15 +2,14 @@ using System.Text.Json.Serialization;
 using CapybaraHome.Application;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.DataTransfer;
+using CapybaraHome.Application.Users;
 using CapybaraHome.Infrastructure;
 using CapybaraHome.Infrastructure.Persistence;
 using CapybaraHome.Web.Auth;
 using CapybaraHome.Web.Components;
 using CapybaraHome.Web.Endpoints;
 using CapybaraHome.Web.Mcp;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,8 +30,18 @@ builder.Services.AddInfrastructure(
 builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(BackupOptions.SectionName));
 builder.Services.AddHostedService<ScheduledBackupService>();
 
-builder.Services.AddCapybaraAuthentication(builder.Configuration, out var oidc);
-builder.Services.AddSingleton(oidc);
+builder.Services.AddCapybaraAuthentication();
+builder.Services.AddCapybaraForwardedHeaders(builder.Configuration);
+
+// The keys that encrypt the sign-in cookie live with the data, so a new container reads the
+// cookies the old one wrote instead of signing everybody out on every image pull.
+var keyPath = builder.Configuration["DataProtection:KeyPath"];
+if (!string.IsNullOrWhiteSpace(keyPath))
+{
+    builder.Services.AddDataProtection()
+        .SetApplicationName("CapybaraHome")
+        .PersistKeysToFileSystem(Directory.CreateDirectory(keyPath));
+}
 
 builder.Services.AddMcpServer()
     .WithHttpTransport()
@@ -41,6 +50,8 @@ builder.Services.AddMcpServer()
 var app = builder.Build();
 
 await PrepareDatabaseAsync(app);
+
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -54,7 +65,11 @@ app.UseWhen(
     context => !context.Request.Path.StartsWithSegments("/api")
         && !context.Request.Path.StartsWithSegments("/mcp"),
     branch => branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
-app.UseHttpsRedirection();
+
+// Before authorization, so an installation with no accounts sends a browser to setup rather
+// than to a sign-in page that no account can get through yet.
+app.UseFirstRunSetup();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
@@ -68,23 +83,10 @@ app.MapMcp("/mcp").RequireAuthorization(AuthenticationSetup.ApiPolicyName);
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
-app.MapGet("/sign-in", (HttpContext http, string? returnUrl) =>
-{
-    if (!oidc.IsConfigured)
-    {
-        return Results.Redirect("/access-denied?reason=not-configured");
-    }
-
-    var target = string.IsNullOrWhiteSpace(returnUrl) || !returnUrl.StartsWith('/') ? "/" : returnUrl;
-    return Results.Challenge(
-        new AuthenticationProperties { RedirectUri = target },
-        [OpenIdConnectDefaults.AuthenticationScheme]);
-}).AllowAnonymous();
-
 app.MapPost("/sign-out", async (HttpContext http) =>
 {
-    await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/");
+    await SignInManager.SignOutAsync(http);
+    return Results.Redirect("/sign-in");
 });
 
 app.Run();
