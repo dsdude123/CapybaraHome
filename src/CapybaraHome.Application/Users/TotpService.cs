@@ -30,18 +30,35 @@ public static class TotpService
         return $"otpauth://totp/{label}?secret={secret}&issuer={Uri.EscapeDataString(issuer)}&algorithm=SHA1&digits={Digits}&period=30";
     }
 
+    /// <summary>Returns the code for <paramref name="secret"/> at the step <paramref name="at"/> falls in.</summary>
+    /// <param name="secret">Base32 secret from <see cref="GenerateSecret"/>.</param>
+    /// <param name="at">The moment whose step the code is for.</param>
+    public static string ComputeCode(string secret, DateTimeOffset at) =>
+        Compute(Base32.Decode(secret), StepCounter(at));
+
     /// <summary>True when <paramref name="code"/> is the code for <paramref name="secret"/> at or near <paramref name="now"/>.</summary>
-    public static bool IsValid(string? secret, string? code, DateTimeOffset now)
+    public static bool IsValid(string? secret, string? code, DateTimeOffset now) =>
+        MatchingStep(secret, code, now) is not null;
+
+    /// <summary>
+    /// Returns the step counter <paramref name="code"/> is the code for, or null when it is not a
+    /// code for <paramref name="secret"/> at or near <paramref name="now"/>. Callers that must
+    /// refuse a code twice over record the returned step and reject anything no later than it.
+    /// </summary>
+    /// <param name="secret">Base32 secret from <see cref="GenerateSecret"/>.</param>
+    /// <param name="code">Code as the user typed it.</param>
+    /// <param name="now">The moment to check against.</param>
+    public static long? MatchingStep(string? secret, string? code, DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(secret) || string.IsNullOrWhiteSpace(code))
         {
-            return false;
+            return null;
         }
 
         var typed = new string(code.Where(char.IsDigit).ToArray());
         if (typed.Length != Digits)
         {
-            return false;
+            return null;
         }
 
         byte[] key;
@@ -51,10 +68,10 @@ public static class TotpService
         }
         catch (FormatException)
         {
-            return false;
+            return null;
         }
 
-        var counter = now.ToUnixTimeSeconds() / (long)Step.TotalSeconds;
+        var counter = StepCounter(now);
 
         for (var offset = -Window; offset <= Window; offset++)
         {
@@ -63,12 +80,14 @@ public static class TotpService
                 Encoding.ASCII.GetBytes(expected),
                 Encoding.ASCII.GetBytes(typed)))
             {
-                return true;
+                return counter + offset;
             }
         }
 
-        return false;
+        return null;
     }
+
+    private static long StepCounter(DateTimeOffset at) => at.ToUnixTimeSeconds() / (long)Step.TotalSeconds;
 
     // RFC 4226 dynamic truncation: the low nibble of the last byte picks where in the MAC to read
     // the four bytes that become the code.
