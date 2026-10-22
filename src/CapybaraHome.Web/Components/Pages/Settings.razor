@@ -4,7 +4,6 @@
 @inject UserService Users
 @inject ApiTokenService Tokens
 @inject DataTransferService Transfer
-@inject JiraImportService JiraImport
 @inject BackupWriter Backups
 
 <PageTitle>Settings</PageTitle>
@@ -181,24 +180,28 @@
         <a class="btn" href="api/export">Download an export</a>
         <button class="btn" @onclick="BackupNowAsync">Back up now</button>
     </div>
+    <p class="muted">The export is one JSON file holding every category, task and dashboard card.</p>
 
     <div class="field">
-        <label for="import-json">Paste an export to import</label>
-        <textarea id="import-json" @bind="importJson"></textarea>
+        <label for="import-file">Restore from an export file</label>
+        <InputFile id="import-file" OnChange="ChooseImportFileAsync" accept=".json,application/json" />
+        @if (importFileName is not null)
+        {
+            <p class="muted">@importFileName, @(importJson.Length / 1024) KB. Nothing changes until you import it.</p>
+        }
     </div>
     <div class="row">
         <select @bind="importMode" style="flex:0 1 12rem">
             <option value="@ImportMode.Merge">Merge into what is here</option>
             <option value="@ImportMode.Replace">Replace everything</option>
         </select>
-        <button class="btn" @onclick="ImportAsync">Import</button>
+        <button class="btn" @onclick="ImportAsync" disabled="@(importJson.Length == 0)">Import the file</button>
     </div>
 
-    <div class="field">
-        <label for="jira-json">Paste a JIRA snapshot to import</label>
-        <textarea id="jira-json" @bind="jiraJson"></textarea>
+    <div class="row" style="margin-top:1rem">
+        <a class="btn btn-primary" href="settings/jira">Import from JIRA</a>
     </div>
-    <button class="btn" @onclick="ImportJiraAsync">Import from JIRA</button>
+    <p class="muted">Connects to your JIRA Cloud site and pulls a project's issues in.</p>
 
     @if (dataMessage is not null)
     {
@@ -233,12 +236,15 @@
     private string? tokenError;
     private string? mintedSecret;
     private string importJson = string.Empty;
-    private string jiraJson = string.Empty;
+    private string? importFileName;
     private ImportMode importMode = ImportMode.Merge;
     private string? dataMessage;
     private string? dataError;
 
     private static string McpUrl => "/mcp";
+
+    /// <summary>Largest export file the page will read, far above anything this app writes.</summary>
+    private const long MaxImportBytes = 32L * 1024 * 1024;
 
     /// <summary>Loads every list the page shows.</summary>
     protected override async Task OnInitializedAsync() => await ReloadAsync();
@@ -418,6 +424,31 @@
         }
     }
 
+    private async Task ChooseImportFileAsync(InputFileChangeEventArgs args)
+    {
+        dataMessage = null;
+        dataError = null;
+        importJson = string.Empty;
+        importFileName = null;
+
+        var file = args.FileCount == 0 ? null : args.File;
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var reader = new StreamReader(file.OpenReadStream(MaxImportBytes));
+            importJson = await reader.ReadToEndAsync();
+            importFileName = file.Name;
+        }
+        catch (IOException)
+        {
+            dataError = $"{file.Name} is larger than {MaxImportBytes / (1024 * 1024)} MB, so it is not an export from here.";
+        }
+    }
+
     private async Task ImportAsync()
     {
         dataMessage = null;
@@ -428,27 +459,7 @@
             var summary = await Transfer.ImportFromJsonAsync(importJson, importMode);
             dataMessage = $"Added {summary.CategoriesAdded} categories, {summary.TasksAdded} tasks and {summary.CardsAdded} cards; updated {summary.TasksUpdated} tasks.";
             importJson = string.Empty;
-        }
-        catch (Exception ex)
-        {
-            dataError = ex.Message;
-            return;
-        }
-
-        await ReloadAsync();
-    }
-
-    private async Task ImportJiraAsync()
-    {
-        dataMessage = null;
-        dataError = null;
-
-        try
-        {
-            var report = await JiraImport.ImportAsync(jiraJson);
-            var warnings = report.Warnings.Count == 0 ? string.Empty : " " + string.Join(" ", report.Warnings);
-            dataMessage = $"Added {report.CategoriesAdded} categories and {report.TasksAdded} tasks, updated {report.TasksUpdated}.{warnings}";
-            jiraJson = string.Empty;
+            importFileName = null;
         }
         catch (Exception ex)
         {

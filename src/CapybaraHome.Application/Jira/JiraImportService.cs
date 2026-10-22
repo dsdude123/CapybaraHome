@@ -20,20 +20,26 @@ public record JiraImportReport(
     IReadOnlyList<string> Warnings);
 
 /// <summary>
-/// Loads a read-only snapshot of the JIRA CAPY project into tasks and categories. The import is
+/// Loads issues read from a JIRA project into tasks and categories. The import is
 /// a straight copy: one issue becomes one task, titles verbatim, nothing deduplicated or grouped.
 /// Re-running it upserts on the JIRA key, so a fixed snapshot can be loaded again.
 /// </summary>
 public class JiraImportService(ICapybaraHomeDbContext context)
 {
-    /// <summary>Reads a snapshot file and loads it.</summary>
+    /// <summary>Reads a snapshot and loads it.</summary>
     /// <param name="json">The snapshot: a JIRA search response, an array of responses, or an array of issues.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     public async Task<JiraImportReport> ImportAsync(string json, CancellationToken cancellationToken = default)
     {
         using var document = JsonDocument.Parse(json);
-        var issues = Issues(document.RootElement).ToList();
+        return await ImportAsync(Issues(document.RootElement).ToList(), cancellationToken);
+    }
 
+    /// <summary>Loads issues already read from JIRA, in the shape the REST search returns them.</summary>
+    /// <param name="issues">The issues, epics among them.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    public async Task<JiraImportReport> ImportAsync(IReadOnlyList<JsonElement> issues, CancellationToken cancellationToken = default)
+    {
         var warnings = new List<string>();
         var epics = issues.Where(i => TypeName(i) == "Epic").ToList();
         var categoryIdByEpicKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
