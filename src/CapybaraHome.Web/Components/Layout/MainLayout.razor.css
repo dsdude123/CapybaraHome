@@ -17,15 +17,9 @@ main {
 }
 
 .content {
-    padding: 1.25rem 1rem 3rem;
+    padding: 1.25rem var(--content-gutter) 3rem;
     margin: 0 auto;
-    max-width: 48rem;
-}
-
-@media (min-width: 48rem) {
-    .content {
-        padding-inline: 2rem;
-    }
+    max-width: var(--content-width);
 }
 
 #blazor-error-ui {
