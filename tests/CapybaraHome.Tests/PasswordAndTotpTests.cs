@@ -56,14 +56,18 @@ public class PasswordAndTotpTests
     }
 
     [Fact]
-    public void A_code_from_two_steps_ago_is_refused()
+    public void A_code_is_accepted_one_step_either_side_and_no_further()
     {
         var secret = TotpService.GenerateSecret();
         var now = new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.Zero);
-        var code = CodeFor(secret, now);
+        var code = TotpService.ComputeCode(secret, now);
 
+        Assert.True(TotpService.IsValid(secret, code, now.AddSeconds(-30)));
         Assert.True(TotpService.IsValid(secret, code, now));
         Assert.True(TotpService.IsValid(secret, code, now.AddSeconds(30)));
+
+        Assert.False(TotpService.IsValid(secret, code, now.AddSeconds(-60)));
+        Assert.False(TotpService.IsValid(secret, code, now.AddSeconds(60)));
         Assert.False(TotpService.IsValid(secret, code, now.AddSeconds(120)));
     }
 
@@ -87,19 +91,5 @@ public class PasswordAndTotpTests
         Assert.StartsWith("otpauth://totp/", uri);
         Assert.Contains($"secret={secret}", uri);
         Assert.Contains("CapybaraHome%3Aconner", uri);
-    }
-
-    private static string CodeFor(string secret, DateTimeOffset at)
-    {
-        for (var candidate = 0; candidate < 1_000_000; candidate++)
-        {
-            var code = candidate.ToString("000000");
-            if (TotpService.IsValid(secret, code, at))
-            {
-                return code;
-            }
-        }
-
-        throw new InvalidOperationException("No code matched, which cannot happen.");
     }
 }

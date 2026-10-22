@@ -30,6 +30,12 @@ public static class TotpService
         return $"otpauth://totp/{label}?secret={secret}&issuer={Uri.EscapeDataString(issuer)}&algorithm=SHA1&digits={Digits}&period=30";
     }
 
+    /// <summary>Returns the code for <paramref name="secret"/> at the step <paramref name="at"/> falls in.</summary>
+    /// <param name="secret">Base32 secret from <see cref="GenerateSecret"/>.</param>
+    /// <param name="at">The moment whose step the code is for.</param>
+    public static string ComputeCode(string secret, DateTimeOffset at) =>
+        Compute(Base32.Decode(secret), StepCounter(at));
+
     /// <summary>True when <paramref name="code"/> is the code for <paramref name="secret"/> at or near <paramref name="now"/>.</summary>
     public static bool IsValid(string? secret, string? code, DateTimeOffset now)
     {
@@ -54,7 +60,7 @@ public static class TotpService
             return false;
         }
 
-        var counter = now.ToUnixTimeSeconds() / (long)Step.TotalSeconds;
+        var counter = StepCounter(now);
 
         for (var offset = -Window; offset <= Window; offset++)
         {
@@ -69,6 +75,8 @@ public static class TotpService
 
         return false;
     }
+
+    private static long StepCounter(DateTimeOffset at) => at.ToUnixTimeSeconds() / (long)Step.TotalSeconds;
 
     // RFC 4226 dynamic truncation: the low nibble of the last byte picks where in the MAC to read
     // the four bytes that become the code.
