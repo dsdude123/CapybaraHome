@@ -22,9 +22,12 @@ public sealed class FakeHttp
     }
 
     /// <summary>Builds a client that answers from the queue.</summary>
-    public HttpClient Client() => new(new Handler(this));
+    public HttpClient Client() => new(Handler());
 
-    private sealed class Handler(FakeHttp owner) : HttpMessageHandler
+    /// <summary>The handler itself, for a host that builds its own clients.</summary>
+    public HttpMessageHandler Handler() => new FakeHandler(this);
+
+    private sealed class FakeHandler(FakeHttp owner) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

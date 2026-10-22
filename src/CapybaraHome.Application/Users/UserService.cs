@@ -163,6 +163,34 @@ public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
         return new TotpEnrolment(secret, TotpService.BuildUri(secret, user.Username));
     }
 
+    /// <summary>
+    /// Returns the enrolment a user has started but not confirmed, so a statically rendered page
+    /// can show the same secret again after a post, or null when there is none.
+    /// </summary>
+    public async Task<TotpEnrolment?> GetPendingTotpEnrolmentAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        var user = await Require(userId, cancellationToken);
+
+        return user is { TotpSecret: { Length: > 0 } secret, TotpConfirmedAt: null }
+            ? new TotpEnrolment(secret, TotpService.BuildUri(secret, user.Username))
+            : null;
+    }
+
+    /// <summary>Abandons an enrolment that was never confirmed. A confirmed one is left alone.</summary>
+    public async Task CancelTotpEnrolmentAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        var user = await Require(userId, cancellationToken);
+
+        if (user.TotpConfirmedAt is not null)
+        {
+            return;
+        }
+
+        user.TotpSecret = null;
+        user.TotpLastUsedStep = null;
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     /// <summary>Turns on authenticator codes once the user proves the app is set up. Returns false when the code is wrong.</summary>
     public async Task<bool> ConfirmTotpAsync(int userId, string code, CancellationToken cancellationToken = default)
     {
