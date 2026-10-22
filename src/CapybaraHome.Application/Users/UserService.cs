@@ -79,10 +79,16 @@ public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
                 return new SignInResult(SignInOutcome.CodeRequired, null);
             }
 
-            if (!TotpService.IsValid(user.TotpSecret, code, clock.GetUtcNow()))
+            var step = TotpService.MatchingStep(user.TotpSecret, code, clock.GetUtcNow());
+
+            // A code stays computable for the whole drift window, so without this an onlooker who
+            // also had the password could sign in again with the code they saw.
+            if (step is null || step <= user.TotpLastUsedStep)
             {
                 return new SignInResult(SignInOutcome.WrongCode, null);
             }
+
+            user.TotpLastUsedStep = step;
         }
 
         user.LastSignInAt = clock.GetUtcNow();
@@ -151,6 +157,7 @@ public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
         var secret = TotpService.GenerateSecret();
         user.TotpSecret = secret;
         user.TotpConfirmedAt = null;
+        user.TotpLastUsedStep = null;
         await context.SaveChangesAsync(cancellationToken);
 
         return new TotpEnrolment(secret, TotpService.BuildUri(secret, user.Username));
@@ -161,11 +168,13 @@ public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
     {
         var user = await Require(userId, cancellationToken);
 
-        if (user.TotpSecret is null || !TotpService.IsValid(user.TotpSecret, code, clock.GetUtcNow()))
+        var step = TotpService.MatchingStep(user.TotpSecret, code, clock.GetUtcNow());
+        if (step is null || step <= user.TotpLastUsedStep)
         {
             return false;
         }
 
+        user.TotpLastUsedStep = step;
         user.TotpConfirmedAt = clock.GetUtcNow();
         await context.SaveChangesAsync(cancellationToken);
         return true;
@@ -184,6 +193,7 @@ public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
 
         user.TotpSecret = null;
         user.TotpConfirmedAt = null;
+        user.TotpLastUsedStep = null;
         await context.SaveChangesAsync(cancellationToken);
     }
 

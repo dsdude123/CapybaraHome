@@ -143,9 +143,52 @@ public class UserServiceTests
         Assert.Equal(SignInOutcome.CodeRequired, (await users.SignInAsync("first", Password, null)).Outcome);
         Assert.Equal(SignInOutcome.WrongCode, (await users.SignInAsync("first", Password, "000000")).Outcome);
 
+        // Confirming spent that step's code, so signing in needs the next one.
+        db.Clock.Advance(TimeSpan.FromSeconds(30));
+
         var withCode = await users.SignInAsync("first", Password, CodeFor(enrolment.Secret, db.Clock.GetUtcNow()));
         Assert.Equal(SignInOutcome.Succeeded, withCode.Outcome);
         Assert.True(withCode.User!.TotpEnabled);
+    }
+
+    [Fact]
+    public async Task A_code_that_signed_in_once_cannot_sign_in_again()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var users = new UserService(db.Context, db.Clock);
+        var first = await users.CreateFirstUserAsync("first", "First", Password);
+        var enrolment = await users.BeginTotpEnrolmentAsync(first.Id);
+        Assert.True(await users.ConfirmTotpAsync(first.Id, CodeFor(enrolment.Secret, db.Clock.GetUtcNow())));
+
+        db.Clock.Advance(TimeSpan.FromSeconds(30));
+        var code = CodeFor(enrolment.Secret, db.Clock.GetUtcNow());
+
+        Assert.Equal(SignInOutcome.Succeeded, (await users.SignInAsync("first", Password, code)).Outcome);
+
+        // Someone who held the password and saw that code gets nothing from it, for the rest of
+        // the step and for the drift window after it.
+        Assert.Equal(SignInOutcome.WrongCode, (await users.SignInAsync("first", Password, code)).Outcome);
+
+        db.Clock.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(SignInOutcome.WrongCode, (await users.SignInAsync("first", Password, code)).Outcome);
+
+        // The next code the app shows still works.
+        var next = CodeFor(enrolment.Secret, db.Clock.GetUtcNow());
+        Assert.Equal(SignInOutcome.Succeeded, (await users.SignInAsync("first", Password, next)).Outcome);
+    }
+
+    [Fact]
+    public async Task Re_enrolling_forgets_the_codes_the_old_secret_spent()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var users = new UserService(db.Context, db.Clock);
+        var first = await users.CreateFirstUserAsync("first", "First", Password);
+        var old = await users.BeginTotpEnrolmentAsync(first.Id);
+        Assert.True(await users.ConfirmTotpAsync(first.Id, CodeFor(old.Secret, db.Clock.GetUtcNow())));
+
+        // A fresh secret starts over, so the same step is usable again under it.
+        var replacement = await users.BeginTotpEnrolmentAsync(first.Id);
+        Assert.True(await users.ConfirmTotpAsync(first.Id, CodeFor(replacement.Secret, db.Clock.GetUtcNow())));
     }
 
     [Fact]
@@ -179,17 +222,5 @@ public class UserServiceTests
     }
 
     // The same computation an authenticator app does, so the tests exercise the real check.
-    private static string CodeFor(string secret, DateTimeOffset at)
-    {
-        for (var candidate = 0; candidate < 1_000_000; candidate++)
-        {
-            var code = candidate.ToString("000000");
-            if (TotpService.IsValid(secret, code, at))
-            {
-                return code;
-            }
-        }
-
-        throw new InvalidOperationException("No code matched, which cannot happen.");
-    }
+    private static string CodeFor(string secret, DateTimeOffset at) => TotpService.ComputeCode(secret, at);
 }

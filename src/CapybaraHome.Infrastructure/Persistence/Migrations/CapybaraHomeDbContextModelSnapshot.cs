@@ -207,6 +207,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("TotpConfirmedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("TotpLastUsedStep")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("TotpSecret")
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");

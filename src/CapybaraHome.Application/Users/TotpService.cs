@@ -37,17 +37,28 @@ public static class TotpService
         Compute(Base32.Decode(secret), StepCounter(at));
 
     /// <summary>True when <paramref name="code"/> is the code for <paramref name="secret"/> at or near <paramref name="now"/>.</summary>
-    public static bool IsValid(string? secret, string? code, DateTimeOffset now)
+    public static bool IsValid(string? secret, string? code, DateTimeOffset now) =>
+        MatchingStep(secret, code, now) is not null;
+
+    /// <summary>
+    /// Returns the step counter <paramref name="code"/> is the code for, or null when it is not a
+    /// code for <paramref name="secret"/> at or near <paramref name="now"/>. Callers that must
+    /// refuse a code twice over record the returned step and reject anything no later than it.
+    /// </summary>
+    /// <param name="secret">Base32 secret from <see cref="GenerateSecret"/>.</param>
+    /// <param name="code">Code as the user typed it.</param>
+    /// <param name="now">The moment to check against.</param>
+    public static long? MatchingStep(string? secret, string? code, DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(secret) || string.IsNullOrWhiteSpace(code))
         {
-            return false;
+            return null;
         }
 
         var typed = new string(code.Where(char.IsDigit).ToArray());
         if (typed.Length != Digits)
         {
-            return false;
+            return null;
         }
 
         byte[] key;
@@ -57,7 +68,7 @@ public static class TotpService
         }
         catch (FormatException)
         {
-            return false;
+            return null;
         }
 
         var counter = StepCounter(now);
@@ -69,11 +80,11 @@ public static class TotpService
                 Encoding.ASCII.GetBytes(expected),
                 Encoding.ASCII.GetBytes(typed)))
             {
-                return true;
+                return counter + offset;
             }
         }
 
-        return false;
+        return null;
     }
 
     private static long StepCounter(DateTimeOffset at) => at.ToUnixTimeSeconds() / (long)Step.TotalSeconds;

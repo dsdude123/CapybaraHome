@@ -21,6 +21,12 @@ public class AppUser
     /// <summary>When the user proved the authenticator works, after which codes are required.</summary>
     public DateTimeOffset? TotpConfirmedAt { get; set; }
 
+    /// <summary>
+    /// Step counter of the last authenticator code accepted for this user, so that a code cannot
+    /// be used a second time while it is still inside the drift window. Null until one is used.
+    /// </summary>
+    public long? TotpLastUsedStep { get; set; }
+
     /// <summary>True for the account that claimed the empty installation. It may add and remove users.</summary>
     public bool IsFirstUser { get; set; }
 
