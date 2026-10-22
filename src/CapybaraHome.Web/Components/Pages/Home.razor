@@ -1,94 +1,108 @@
 @page "/"
-@rendermode InteractiveServer
 @inject DashboardService Dashboard
 @inject CategoryService Categories
+@inject NavigationManager Navigation
 
 <PageTitle>Dashboard</PageTitle>
 
 <div class="page-head">
     <h1>Dashboard</h1>
-    <button class="btn btn-small" @onclick="() => showAdd = !showAdd">@(showAdd ? "Cancel" : "Add a card")</button>
 </div>
 
-@if (showAdd)
-{
-    <div class="card" style="margin-bottom:1rem">
-        <div class="field">
-            <label for="card-title">Title</label>
-            <input id="card-title" type="text" @bind="newTitle" />
+<details class="disclosure" open="@(addError is not null)">
+    <summary class="btn btn-small">Add a card</summary>
+    <EditForm Model="addForm" FormName="add-card" OnValidSubmit="AddCardAsync">
+        <div class="card disclosure-body">
+            <div class="field">
+                <label for="card-title">Title</label>
+                <InputText id="card-title" type="text" @bind-Value="addForm.Title" />
+            </div>
+            <div class="filters">
+                <div>
+                    <label for="card-kind">Shows</label>
+                    <InputSelect id="card-kind" @bind-Value="addForm.Kind">
+                        <option value="@DashboardCardKind.TaskCount">A count</option>
+                        <option value="@DashboardCardKind.TaskList">A list of tasks</option>
+                        <option value="@DashboardCardKind.CategoryProgress">Progress of a project</option>
+                    </InputSelect>
+                </div>
+                <div>
+                    <label for="card-category">Category</label>
+                    <InputSelect id="card-category" @bind-Value="addForm.CategoryId">
+                        <option value="">Any</option>
+                        @foreach (var category in categories)
+                        {
+                            <option value="@category.Id">@category.Name</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div>
+                    <label for="card-status">Status</label>
+                    <InputSelect id="card-status" @bind-Value="addForm.Status">
+                        <option value="">Any</option>
+                        @foreach (var status in StatusNames.All)
+                        {
+                            <option value="@status">@StatusNames.Label(status)</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div>
+                    <label for="card-due">Due within (days)</label>
+                    <InputNumber id="card-due" min="0" @bind-Value="addForm.DueWithinDays" />
+                </div>
+            </div>
+            @if (addError is not null)
+            {
+                <p class="error">@addError</p>
+            }
+            <button class="btn btn-primary" type="submit">Add card</button>
         </div>
-        <div class="filters">
-            <div>
-                <label for="card-kind">Shows</label>
-                <select id="card-kind" @bind="newKind">
-                    <option value="@DashboardCardKind.TaskCount">A count</option>
-                    <option value="@DashboardCardKind.TaskList">A list of tasks</option>
-                    <option value="@DashboardCardKind.CategoryProgress">Progress of a project</option>
-                </select>
-            </div>
-            <div>
-                <label for="card-category">Category</label>
-                <select id="card-category" @bind="newCategoryId">
-                    <option value="">Any</option>
-                    @foreach (var category in categories)
-                    {
-                        <option value="@category.Id">@category.Name</option>
-                    }
-                </select>
-            </div>
-            <div>
-                <label for="card-status">Status</label>
-                <select id="card-status" @bind="newStatus">
-                    <option value="">Any</option>
-                    @foreach (var status in StatusNames.All)
-                    {
-                        <option value="@status">@StatusNames.Label(status)</option>
-                    }
-                </select>
-            </div>
-            <div>
-                <label for="card-due">Due within (days)</label>
-                <input id="card-due" type="number" min="0" @bind="newDueWithinDays" />
-            </div>
-        </div>
-        @if (addError is not null)
-        {
-            <p class="error">@addError</p>
-        }
-        <button class="btn btn-primary" @onclick="AddCardAsync">Add card</button>
-    </div>
-}
+    </EditForm>
+</details>
 
 @if (cards.Count == 0)
 {
     <p class="muted">No cards yet. Add one to watch a project or a filter.</p>
 }
+else
+{
+    <p class="muted">Each card's ⋯ menu renames it, removes it, or moves it along the dashboard.</p>
+}
 
 <div class="card-grid">
-    @foreach (var card in cards)
+    @for (var position = 0; position < cards.Count; position++)
     {
+        var card = cards[position];
+        var index = position;
+
         <section class="card">
             <div class="card-head">
-                @if (renamingId == card.Id)
-                {
-                    <input type="text" @bind="renameTitle" @bind:event="oninput" />
-                }
-                else
-                {
-                    <h2 class="card-title">@card.Title</h2>
-                }
-                <div class="row">
-                    @if (renamingId == card.Id)
-                    {
-                        <button class="btn btn-small" @onclick="() => SaveRenameAsync(card.Id)">Save</button>
-                        <button class="btn btn-small" @onclick="() => renamingId = null">Cancel</button>
-                    }
-                    else
-                    {
-                        <button class="btn btn-small" @onclick="() => StartRename(card)">Rename</button>
-                        <button class="btn btn-small btn-danger" @onclick="() => RemoveCardAsync(card.Id)">Remove</button>
-                    }
-                </div>
+                <h2 class="card-title">@card.Title</h2>
+                <details class="card-menu">
+                    <summary class="btn btn-small menu-button" title="Card actions" aria-label="@($"Actions for {card.Title}")">⋯</summary>
+                    <div class="menu-panel">
+                        <EditForm Model="renameForm" FormName="@($"rename-{card.Id}")" OnValidSubmit="() => RenameAsync(card.Id)" class="menu-rename">
+                            <label for="@($"rename-title-{card.Id}")">Rename</label>
+                            <InputText id="@($"rename-title-{card.Id}")" type="text" @bind-Value="renameForm.Title" placeholder="@card.Title" />
+                            <button class="btn btn-small" type="submit">Save</button>
+                        </EditForm>
+
+                        <form method="post" class="menu-item" @formname="@($"move-up-{card.Id}")" @onsubmit="() => MoveAsync(card.Id, -1)">
+                            <AntiforgeryToken />
+                            <button class="btn btn-small menu-action" type="submit" disabled="@(index == 0)">Move up</button>
+                        </form>
+
+                        <form method="post" class="menu-item" @formname="@($"move-down-{card.Id}")" @onsubmit="() => MoveAsync(card.Id, 1)">
+                            <AntiforgeryToken />
+                            <button class="btn btn-small menu-action" type="submit" disabled="@(index == cards.Count - 1)">Move down</button>
+                        </form>
+
+                        <form method="post" class="menu-item" @formname="@($"remove-{card.Id}")" @onsubmit="() => RemoveAsync(card.Id)">
+                            <AntiforgeryToken />
+                            <button class="btn btn-small menu-action btn-danger" type="submit">Remove</button>
+                        </form>
+                    </div>
+                </details>
             </div>
 
             @switch (card.Kind)
@@ -116,20 +130,22 @@
 @code {
     private IReadOnlyList<DashboardCardView> cards = [];
     private IReadOnlyList<CategoryView> categories = [];
-    private bool showAdd;
-    private string newTitle = string.Empty;
-    private DashboardCardKind newKind = DashboardCardKind.TaskCount;
-    private string newCategoryId = string.Empty;
-    private string newStatus = string.Empty;
-    private int? newDueWithinDays;
     private string? addError;
-    private int? renamingId;
-    private string renameTitle = string.Empty;
+
+    [SupplyParameterFromForm(Name = "addForm")]
+    private AddCardForm? postedAddForm { get; set; }
+
+    [SupplyParameterFromForm(Name = "renameForm")]
+    private RenameForm? postedRenameForm { get; set; }
+
+    // A post binds only the form it came from, leaving the others null, so each one falls back
+    // to empty values rather than handing EditForm a null model.
+    private AddCardForm addForm => postedAddForm ??= new();
+
+    private RenameForm renameForm => postedRenameForm ??= new();
 
     /// <summary>Loads the cards and the categories the add form offers.</summary>
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
-
-    private async Task ReloadAsync()
+    protected override async Task OnInitializedAsync()
     {
         cards = await Dashboard.GetDashboardAsync();
         categories = await Categories.ListAsync();
@@ -140,11 +156,11 @@
         addError = null;
 
         var request = new DashboardCardRequest(
-            newTitle,
-            newKind,
-            int.TryParse(newCategoryId, out var categoryId) ? categoryId : null,
-            Enum.TryParse<TaskItemStatus>(newStatus, out var status) ? status : null,
-            newDueWithinDays);
+            addForm.Title ?? string.Empty,
+            addForm.Kind,
+            int.TryParse(addForm.CategoryId, out var categoryId) ? categoryId : null,
+            Enum.TryParse<TaskItemStatus>(addForm.Status, out var status) ? status : null,
+            addForm.DueWithinDays);
 
         try
         {
@@ -156,36 +172,33 @@
             return;
         }
 
-        newTitle = string.Empty;
-        newCategoryId = string.Empty;
-        newStatus = string.Empty;
-        newDueWithinDays = null;
-        showAdd = false;
-        await ReloadAsync();
+        Reload();
     }
 
-    private void StartRename(DashboardCardView card)
+    private async Task RenameAsync(int id)
     {
-        renamingId = card.Id;
-        renameTitle = card.Title;
-    }
-
-    private async Task SaveRenameAsync(int id)
-    {
-        if (!string.IsNullOrWhiteSpace(renameTitle))
+        if (!string.IsNullOrWhiteSpace(renameForm.Title))
         {
-            await Dashboard.RenameAsync(id, renameTitle);
+            await Dashboard.RenameAsync(id, renameForm.Title);
         }
 
-        renamingId = null;
-        await ReloadAsync();
+        Reload();
     }
 
-    private async Task RemoveCardAsync(int id)
+    private async Task MoveAsync(int id, int offset)
+    {
+        await Dashboard.MoveAsync(id, offset);
+        Reload();
+    }
+
+    private async Task RemoveAsync(int id)
     {
         await Dashboard.DeleteAsync(id);
-        await ReloadAsync();
+        Reload();
     }
+
+    /// <summary>Sends the browser back to a freshly rendered dashboard, so a refresh does not post again.</summary>
+    private void Reload() => Navigation.NavigateTo("/");
 
     private string Describe(DashboardCardView card)
     {
@@ -211,5 +224,31 @@
         }
 
         return parts.Count == 0 ? "tasks" : $"tasks {string.Join(", ", parts)}";
+    }
+
+    /// <summary>What the add-a-card form posts back.</summary>
+    private class AddCardForm
+    {
+        /// <summary>Heading for the new card.</summary>
+        public string? Title { get; set; }
+
+        /// <summary>What the new card should show.</summary>
+        public DashboardCardKind Kind { get; set; } = DashboardCardKind.TaskCount;
+
+        /// <summary>Id of the category to report on, or empty for any.</summary>
+        public string? CategoryId { get; set; }
+
+        /// <summary>Name of the status to filter on, or empty for any.</summary>
+        public string? Status { get; set; }
+
+        /// <summary>Days-away bound to filter on, or null for any.</summary>
+        public int? DueWithinDays { get; set; }
+    }
+
+    /// <summary>What a card's rename form posts back.</summary>
+    private class RenameForm
+    {
+        /// <summary>The card's new heading.</summary>
+        public string? Title { get; set; }
     }
 }

@@ -37,11 +37,11 @@ public record DashboardCardView(
 /// <param name="CategoryId">Category to report on. Required for a progress card.</param>
 /// <param name="Status">Status to filter on, or null for any.</param>
 /// <param name="DueWithinDays">Days-away bound to filter on, or null for any.</param>
-/// <param name="SortOrder">Position on the dashboard.</param>
+/// <param name="SortOrder">Position on the dashboard, or null to leave it alone and put a new card last.</param>
 public record DashboardCardRequest(
     string Title,
     DashboardCardKind Kind,
     int? CategoryId = null,
     TaskItemStatus? Status = null,
     int? DueWithinDays = null,
-    int SortOrder = 0);
+    int? SortOrder = null);
