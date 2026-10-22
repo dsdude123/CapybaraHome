@@ -112,6 +112,70 @@ textarea {
     margin: 0;
 }
 
+.disclosure > summary {
+    display: inline-flex;
+    list-style: none;
+    width: fit-content;
+}
+
+.disclosure > summary::-webkit-details-marker {
+    display: none;
+}
+
+.disclosure-body {
+    margin-block: 1rem;
+}
+
+.card-menu {
+    position: relative;
+}
+
+.card-menu > summary {
+    display: inline-flex;
+    justify-content: center;
+    list-style: none;
+    min-width: 2.25rem;
+}
+
+.card-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.menu-panel {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.6rem;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.25rem);
+    width: 12rem;
+    z-index: 2;
+}
+
+.menu-rename > label {
+    font-size: 0.85rem;
+}
+
+.menu-rename > button {
+    margin-top: 0.4rem;
+    width: 100%;
+}
+
+.menu-action {
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.menu-action:disabled {
+    color: var(--text-muted);
+    cursor: default;
+}
+
 .card-grid {
     display: grid;
     gap: 1rem;

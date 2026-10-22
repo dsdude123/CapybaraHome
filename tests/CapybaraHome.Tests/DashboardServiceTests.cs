@@ -89,6 +89,48 @@ public class DashboardServiceTests
     }
 
     [Fact]
+    public async Task A_new_card_goes_to_the_end_of_the_dashboard()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var (_, _, dashboard) = Services(db);
+        await dashboard.SeedDefaultsAsync();
+
+        var added = await dashboard.CreateAsync(new DashboardCardRequest("Last", DashboardCardKind.TaskCount));
+
+        var cards = await dashboard.GetDashboardAsync();
+        Assert.Equal(added.Id, cards[^1].Id);
+    }
+
+    [Fact]
+    public async Task Moving_a_card_swaps_it_with_its_neighbour()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var (_, _, dashboard) = Services(db);
+        var first = await dashboard.CreateAsync(new DashboardCardRequest("First", DashboardCardKind.TaskCount));
+        await dashboard.CreateAsync(new DashboardCardRequest("Second", DashboardCardKind.TaskCount));
+        await dashboard.CreateAsync(new DashboardCardRequest("Third", DashboardCardKind.TaskCount));
+
+        Assert.True(await dashboard.MoveAsync(first.Id, 1));
+
+        var cards = await dashboard.GetDashboardAsync();
+        Assert.Equal(["Second", "First", "Third"], cards.Select(c => c.Title));
+    }
+
+    [Fact]
+    public async Task Moving_a_card_off_the_end_of_the_dashboard_does_nothing()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var (_, _, dashboard) = Services(db);
+        var first = await dashboard.CreateAsync(new DashboardCardRequest("First", DashboardCardKind.TaskCount));
+        await dashboard.CreateAsync(new DashboardCardRequest("Second", DashboardCardKind.TaskCount));
+
+        Assert.False(await dashboard.MoveAsync(first.Id, -1));
+
+        var cards = await dashboard.GetDashboardAsync();
+        Assert.Equal(["First", "Second"], cards.Select(c => c.Title));
+    }
+
+    [Fact]
     public async Task Seeding_a_fresh_installation_adds_cards_once()
     {
         await using var db = await TestDatabase.CreateAsync();

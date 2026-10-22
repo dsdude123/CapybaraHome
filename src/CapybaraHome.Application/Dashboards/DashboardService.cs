@@ -35,6 +35,12 @@ public class DashboardService(ICapybaraHomeDbContext context, TaskService tasks)
         var card = new DashboardCard { Title = Validate(request) };
         Apply(card, request);
 
+        if (request.SortOrder is null)
+        {
+            var last = await context.DashboardCards.MaxAsync(c => (int?)c.SortOrder, cancellationToken);
+            card.SortOrder = (last ?? -1) + 1;
+        }
+
         context.DashboardCards.Add(card);
         await context.SaveChangesAsync(cancellationToken);
 
@@ -88,6 +94,28 @@ public class DashboardService(ICapybaraHomeDbContext context, TaskService tasks)
 
         context.DashboardCards.Remove(card);
         await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>Moves a card <paramref name="offset"/> places along the dashboard, and reports whether it moved.</summary>
+    public async Task<bool> MoveAsync(int id, int offset, CancellationToken cancellationToken = default)
+    {
+        var ids = await context.DashboardCards.AsNoTracking()
+            .OrderBy(c => c.SortOrder)
+            .ThenBy(c => c.Id)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+
+        var from = ids.IndexOf(id);
+        var to = from + offset;
+
+        if (from < 0 || to < 0 || to >= ids.Count)
+        {
+            return false;
+        }
+
+        (ids[from], ids[to]) = (ids[to], ids[from]);
+        await ReorderAsync(ids, cancellationToken);
         return true;
     }
 
@@ -184,6 +212,10 @@ public class DashboardService(ICapybaraHomeDbContext context, TaskService tasks)
         card.CategoryId = request.CategoryId;
         card.Status = request.Status;
         card.DueWithinDays = request.DueWithinDays;
-        card.SortOrder = request.SortOrder;
+
+        if (request.SortOrder is { } order)
+        {
+            card.SortOrder = order;
+        }
     }
 }
