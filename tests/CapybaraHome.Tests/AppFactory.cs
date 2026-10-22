@@ -29,16 +29,27 @@ public class AppFactory : WebApplicationFactory<Program>
 
     private readonly string databasePath = Path.Combine(Path.GetTempPath(), $"capybarahome-tests-{Guid.NewGuid():N}.db");
     private readonly bool stubSignIn;
+    private readonly Action<IServiceCollection>? configureServices;
 
-    private AppFactory(bool stubSignIn) => this.stubSignIn = stubSignIn;
+    private AppFactory(bool stubSignIn, Action<IServiceCollection>? configureServices)
+    {
+        this.stubSignIn = stubSignIn;
+        this.configureServices = configureServices;
+    }
 
     /// <summary>
     /// Starts the app. With <paramref name="stubSignIn"/> every request arrives signed in; with
     /// <paramref name="seedFirstUser"/> the installation already has its first account.
     /// </summary>
-    public static async Task<AppFactory> CreateAsync(bool stubSignIn = true, bool seedFirstUser = true)
+    /// <param name="stubSignIn">Whether every request arrives signed in as the first account.</param>
+    /// <param name="seedFirstUser">Whether the installation already has its first account.</param>
+    /// <param name="configureServices">Replaces services for the test, such as the JIRA client's handler.</param>
+    public static async Task<AppFactory> CreateAsync(
+        bool stubSignIn = true,
+        bool seedFirstUser = true,
+        Action<IServiceCollection>? configureServices = null)
     {
-        var factory = new AppFactory(stubSignIn);
+        var factory = new AppFactory(stubSignIn, configureServices);
 
         if (seedFirstUser)
         {
@@ -60,6 +71,11 @@ public class AppFactory : WebApplicationFactory<Program>
         builder.UseEnvironment(Environments.Production);
         builder.UseSetting("ConnectionStrings:CapybaraHome", $"Data Source={databasePath}");
         builder.UseSetting("Backups:Enabled", "false");
+
+        if (configureServices is not null)
+        {
+            builder.ConfigureServices(configureServices);
+        }
 
         if (!stubSignIn)
         {

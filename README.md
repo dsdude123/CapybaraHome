@@ -33,6 +33,11 @@ dotnet test
 
 ## Screens
 
+Every screen is plain server-rendered HTML with ordinary form posts: no page needs an
+interactive Blazor circuit, and the whole app works with JavaScript turned off. That is
+deliberate — a dead circuit would otherwise leave buttons that do nothing and say nothing.
+
+
 - **Dashboard** (`/`) — cards you add, rename and remove. A card shows a project's progress
   as a bar, a count of whatever its filter matches, or a short list of those tasks.
 - **Board** (`/board`) — four columns, To do / In progress / On hold / Done, with arrows to

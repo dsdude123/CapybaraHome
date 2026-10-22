@@ -1,5 +1,4 @@
 @page "/tasks"
-@rendermode InteractiveServer
 @inject TaskService Tasks
 @inject CategoryService Categories
 
@@ -10,43 +9,47 @@
     <a class="btn btn-primary btn-small" href="tasks/new">Create</a>
 </div>
 
-<div class="card" style="margin-bottom:1rem">
+<form method="get" action="tasks" class="card" style="margin-bottom:1rem">
     <div class="filters">
         <div>
             <label for="filter-text">Search</label>
-            <input id="filter-text" type="text" @bind="text" @bind:after="ReloadAsync" />
+            <input id="filter-text" type="text" name="text" value="@Text" />
         </div>
         <div>
             <label for="filter-category">Category</label>
-            <select id="filter-category" @bind="categoryId" @bind:after="ReloadAsync">
-                <option value="">All</option>
-                <option value="none">Uncategorized</option>
+            <select id="filter-category" name="category">
+                <option value="" selected="@(Category is null or "")">All</option>
+                <option value="none" selected="@(Category == "none")">Uncategorized</option>
                 @foreach (var category in categories)
                 {
-                    <option value="@category.Id">@category.Name</option>
+                    <option value="@category.Id" selected="@(Category == category.Id.ToString())">@category.Name</option>
                 }
             </select>
         </div>
         <div>
             <label for="filter-status">Status</label>
-            <select id="filter-status" @bind="status" @bind:after="ReloadAsync">
-                <option value="">All</option>
+            <select id="filter-status" name="status">
+                <option value="" selected="@(Status is null or "")">All</option>
                 @foreach (var value in StatusNames.All)
                 {
-                    <option value="@value">@StatusNames.Label(value)</option>
+                    <option value="@value" selected="@(Status == value.ToString())">@StatusNames.Label(value)</option>
                 }
             </select>
         </div>
         <div>
             <label for="filter-due">Due within (days)</label>
-            <input id="filter-due" type="number" min="0" @bind="dueWithinDays" @bind:after="ReloadAsync" />
+            <input id="filter-due" type="number" min="0" name="due" value="@Due" />
         </div>
     </div>
     <label style="margin-top:0.5rem">
-        <input type="checkbox" @bind="overdue" @bind:after="ReloadAsync" style="width:auto;min-height:auto" />
+        <input type="checkbox" name="overdue" value="true" checked="@Overdue" style="width:auto;min-height:auto" />
         Overdue only
     </label>
-</div>
+    <div class="row" style="margin-top:0.5rem">
+        <button class="btn" type="submit">Filter</button>
+        <a class="btn" href="tasks">Clear</a>
+    </div>
+</form>
 
 <p class="muted">@tasks.Count task@(tasks.Count == 1 ? string.Empty : "s")</p>
 
@@ -55,30 +58,41 @@
 </div>
 
 @code {
+    /// <summary>Text to match in the title or the notes.</summary>
+    [SupplyParameterFromQuery(Name = "text")]
+    private string? Text { get; set; }
+
+    /// <summary>Category id to filter on, <c>none</c> for the uncategorized, or empty for all.</summary>
+    [SupplyParameterFromQuery(Name = "category")]
+    private string? Category { get; set; }
+
+    /// <summary>Status name to filter on, or empty for all.</summary>
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    /// <summary>Days-away bound to filter on, or null for any.</summary>
+    [SupplyParameterFromQuery(Name = "due")]
+    private int? Due { get; set; }
+
+    /// <summary>Whether to show only tasks past their due date.</summary>
+    [SupplyParameterFromQuery(Name = "overdue")]
+    private bool Overdue { get; set; }
+
     private IReadOnlyList<TaskView> tasks = [];
     private IReadOnlyList<CategoryView> categories = [];
-    private string text = string.Empty;
-    private string categoryId = string.Empty;
-    private string status = string.Empty;
-    private int? dueWithinDays;
-    private bool overdue;
 
-    /// <summary>Loads the categories and the unfiltered list.</summary>
-    protected override async Task OnInitializedAsync()
+    /// <summary>Loads the categories and the list the query string asks for.</summary>
+    protected override async Task OnParametersSetAsync()
     {
         categories = await Categories.ListAsync();
-        await ReloadAsync();
-    }
 
-    private async Task ReloadAsync()
-    {
         var filter = new TaskFilter(
-            Text: string.IsNullOrWhiteSpace(text) ? null : text,
-            Status: Enum.TryParse<TaskItemStatus>(status, out var parsedStatus) ? parsedStatus : null,
-            CategoryId: int.TryParse(categoryId, out var parsedCategory) ? parsedCategory : null,
-            Uncategorized: categoryId == "none",
-            DueWithinDays: dueWithinDays,
-            Overdue: overdue);
+            Text: string.IsNullOrWhiteSpace(Text) ? null : Text,
+            Status: Enum.TryParse<TaskItemStatus>(Status, out var parsedStatus) ? parsedStatus : null,
+            CategoryId: int.TryParse(Category, out var parsedCategory) ? parsedCategory : null,
+            Uncategorized: Category == "none",
+            DueWithinDays: Due,
+            Overdue: Overdue);
 
         tasks = await Tasks.ListAsync(filter);
     }

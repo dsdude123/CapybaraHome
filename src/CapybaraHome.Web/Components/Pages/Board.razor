@@ -1,7 +1,7 @@
 @page "/board"
-@rendermode InteractiveServer
 @inject TaskService Tasks
 @inject CategoryService Categories
+@inject NavigationManager Navigation
 
 <PageTitle>Board</PageTitle>
 
@@ -10,24 +10,28 @@
     <a class="btn btn-primary btn-small" href="tasks/new">Create</a>
 </div>
 
-<div class="card" style="margin-bottom:1rem">
+<form method="get" action="board" class="card" style="margin-bottom:1rem">
     <div class="filters">
         <div>
             <label for="board-category">Category</label>
-            <select id="board-category" @bind="categoryId" @bind:after="ReloadAsync">
-                <option value="">All</option>
+            <select id="board-category" name="category">
+                <option value="" selected="@(Category is null or "")">All</option>
                 @foreach (var category in categories)
                 {
-                    <option value="@category.Id">@category.Name</option>
+                    <option value="@category.Id" selected="@(Category == category.Id.ToString())">@category.Name</option>
                 }
             </select>
         </div>
         <div>
             <label for="board-due">Due within (days)</label>
-            <input id="board-due" type="number" min="0" @bind="dueWithinDays" @bind:after="ReloadAsync" />
+            <input id="board-due" type="number" min="0" name="due" value="@Due" />
         </div>
     </div>
-</div>
+    <div class="row" style="margin-top:0.5rem">
+        <button class="btn" type="submit">Filter</button>
+        <a class="btn" href="board">Clear</a>
+    </div>
+</form>
 
 <div class="board">
     @foreach (var status in StatusNames.All)
@@ -52,13 +56,17 @@
                     <div class="row" style="margin-top:0.4rem">
                         @if (Previous(status) is { } previous)
                         {
-                            <button class="btn btn-small" title="@($"Move to {StatusNames.Label(previous)}")"
-                                    @onclick="() => MoveAsync(task.Id, previous)">←</button>
+                            <form method="post" @formname="@($"back-{task.Id}")" @onsubmit="() => MoveAsync(task.Id, previous)">
+                                <AntiforgeryToken />
+                                <button class="btn btn-small" type="submit" title="@($"Move to {StatusNames.Label(previous)}")">←</button>
+                            </form>
                         }
                         @if (Next(status) is { } next)
                         {
-                            <button class="btn btn-small" title="@($"Move to {StatusNames.Label(next)}")"
-                                    @onclick="() => MoveAsync(task.Id, next)">→</button>
+                            <form method="post" @formname="@($"on-{task.Id}")" @onsubmit="() => MoveAsync(task.Id, next)">
+                                <AntiforgeryToken />
+                                <button class="btn btn-small" type="submit" title="@($"Move to {StatusNames.Label(next)}")">→</button>
+                            </form>
                         }
                     </div>
                 </article>
@@ -68,13 +76,19 @@
 </div>
 
 @code {
+    /// <summary>Category id to filter on, or empty for all.</summary>
+    [SupplyParameterFromQuery(Name = "category")]
+    private string? Category { get; set; }
+
+    /// <summary>Days-away bound to filter on, or null for any.</summary>
+    [SupplyParameterFromQuery(Name = "due")]
+    private int? Due { get; set; }
+
     private readonly Dictionary<TaskItemStatus, IReadOnlyList<TaskView>> columns = [];
     private IReadOnlyList<CategoryView> categories = [];
-    private string categoryId = string.Empty;
-    private int? dueWithinDays;
 
     /// <summary>Loads the four columns and the category filter.</summary>
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
         categories = await Categories.ListAsync();
         await ReloadAsync();
@@ -82,14 +96,14 @@
 
     private async Task ReloadAsync()
     {
-        var category = int.TryParse(categoryId, out var parsed) ? parsed : (int?)null;
+        var category = int.TryParse(Category, out var parsed) ? parsed : (int?)null;
 
         foreach (var status in StatusNames.All)
         {
             columns[status] = await Tasks.ListAsync(new TaskFilter(
                 Status: status,
                 CategoryId: category,
-                DueWithinDays: dueWithinDays));
+                DueWithinDays: Due));
         }
     }
 
@@ -99,7 +113,20 @@
     private async Task MoveAsync(int id, TaskItemStatus status)
     {
         await Tasks.UpdateAsync(id, new UpdateTaskRequest(Status: status));
-        await ReloadAsync();
+
+        // Back to a freshly rendered board, with the filter kept, so a refresh does not post again.
+        var query = new List<string>();
+        if (!string.IsNullOrEmpty(Category))
+        {
+            query.Add($"category={Uri.EscapeDataString(Category)}");
+        }
+
+        if (Due is { } due)
+        {
+            query.Add($"due={due}");
+        }
+
+        Navigation.NavigateTo("/board" + (query.Count == 0 ? string.Empty : "?" + string.Join("&", query)));
     }
 
     private static TaskItemStatus? Previous(TaskItemStatus status)

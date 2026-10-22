@@ -1,10 +1,9 @@
 @page "/settings"
-@rendermode InteractiveServer
 @inject CategoryService Categories
 @inject UserService Users
 @inject ApiTokenService Tokens
-@inject DataTransferService Transfer
 @inject BackupWriter Backups
+@inject NavigationManager Navigation
 
 <PageTitle>Settings</PageTitle>
 
@@ -24,16 +23,23 @@
                     <td>@category.Name</td>
                     <td>@category.TaskCount</td>
                     <td>@category.DoneCount</td>
-                    <td><button class="btn btn-small btn-danger" @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button></td>
+                    <td>
+                        <form method="post" @formname="@($"delete-category-{category.Id}")" @onsubmit="() => DeleteCategoryAsync(category.Id)">
+                            <AntiforgeryToken />
+                            <button class="btn btn-small btn-danger" type="submit">Delete</button>
+                        </form>
+                    </td>
                 </tr>
             }
         </tbody>
     </table>
 
-    <div class="row">
-        <input type="text" placeholder="New category" @bind="newCategoryName" style="flex:1 1 12rem" />
-        <button class="btn" @onclick="AddCategoryAsync">Add</button>
-    </div>
+    <EditForm Model="categoryForm" FormName="add-category" OnValidSubmit="AddCategoryAsync">
+        <div class="row">
+            <InputText type="text" placeholder="New category" @bind-Value="categoryForm.Name" style="flex:1 1 12rem" />
+            <button class="btn" type="submit">Add</button>
+        </div>
+    </EditForm>
     @if (categoryError is not null)
     {
         <p class="error">@categoryError</p>
@@ -59,7 +65,10 @@
                     <td>
                         @if (isFirstUser && !user.IsFirstUser)
                         {
-                            <button class="btn btn-small btn-danger" @onclick="() => RemoveUserAsync(user.Id)">Remove</button>
+                            <form method="post" @formname="@($"remove-user-{user.Id}")" @onsubmit="() => RemoveUserAsync(user.Id)">
+                                <AntiforgeryToken />
+                                <button class="btn btn-small btn-danger" type="submit">Remove</button>
+                            </form>
                         }
                     </td>
                 </tr>
@@ -69,47 +78,44 @@
 
     @if (isFirstUser)
     {
-        <div class="filters">
-            <div>
-                <label for="new-username">Username</label>
-                <input id="new-username" type="text" @bind="newUsername" autocomplete="off" />
+        <EditForm Model="userForm" FormName="add-user" OnValidSubmit="AddUserAsync">
+            <div class="filters">
+                <div>
+                    <label for="new-username">Username</label>
+                    <InputText id="new-username" type="text" @bind-Value="userForm.Username" autocomplete="off" />
+                </div>
+                <div>
+                    <label for="new-display-name">Name to show</label>
+                    <InputText id="new-display-name" type="text" @bind-Value="userForm.DisplayName" autocomplete="off" />
+                </div>
+                <div>
+                    <label for="new-password">Password</label>
+                    <InputText id="new-password" type="password" @bind-Value="userForm.Password" autocomplete="new-password" />
+                </div>
             </div>
-            <div>
-                <label for="new-display-name">Name to show</label>
-                <input id="new-display-name" type="text" @bind="newDisplayName" autocomplete="off" />
-            </div>
-            <div>
-                <label for="new-password">Password</label>
-                <input id="new-password" type="password" @bind="newPassword" autocomplete="new-password" />
-            </div>
-        </div>
-        <p class="muted">At least @PasswordHasher.MinimumLength characters. Tell them the password yourself; they can change it under Your account.</p>
-        <button class="btn" @onclick="AddUserAsync">Add the account</button>
+            <p class="muted">At least @PasswordHasher.MinimumLength characters. Tell them the password yourself; they can change it under Your account.</p>
+            <button class="btn" type="submit">Add the account</button>
+        </EditForm>
 
-        @if (resetUserId is not null)
-        {
-            <div class="field" style="margin-top:1rem">
-                <label for="reset-password">New password for @(users.FirstOrDefault(u => u.Id == resetUserId)?.Username)</label>
-                <input id="reset-password" type="password" @bind="resetPassword" autocomplete="new-password" />
+        <EditForm Model="resetForm" FormName="reset-password" OnValidSubmit="ResetPasswordAsync" style="margin-top:1rem">
+            <div class="filters">
+                <div>
+                    <label for="reset-user">Reset someone's password</label>
+                    <InputSelect id="reset-user" @bind-Value="resetForm.UserId">
+                        <option value="">Nobody</option>
+                        @foreach (var user in users)
+                        {
+                            <option value="@user.Id">@user.Username</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div>
+                    <label for="reset-password">New password</label>
+                    <InputText id="reset-password" type="password" @bind-Value="resetForm.Password" autocomplete="new-password" />
+                </div>
             </div>
-            <div class="row">
-                <button class="btn" @onclick="ResetPasswordAsync">Set the password</button>
-                <button class="btn" @onclick="() => resetUserId = null">Cancel</button>
-            </div>
-        }
-        else
-        {
-            <div class="row" style="margin-top:0.5rem">
-                <select @bind="resetTargetId" style="flex:0 1 14rem">
-                    <option value="">Reset someone's password</option>
-                    @foreach (var user in users)
-                    {
-                        <option value="@user.Id">@user.Username</option>
-                    }
-                </select>
-                <button class="btn" @onclick="StartReset">Choose</button>
-            </div>
-        }
+            <button class="btn" type="submit">Set the password</button>
+        </EditForm>
     }
 
     @if (peopleError is not null)
@@ -151,7 +157,10 @@
                     <td>
                         @if (token.RevokedAt is null)
                         {
-                            <button class="btn btn-small btn-danger" @onclick="() => RevokeTokenAsync(token.Id)">Revoke</button>
+                            <form method="post" @formname="@($"revoke-token-{token.Id}")" @onsubmit="() => RevokeTokenAsync(token.Id)">
+                                <AntiforgeryToken />
+                                <button class="btn btn-small btn-danger" type="submit">Revoke</button>
+                            </form>
                         }
                         else
                         {
@@ -163,10 +172,12 @@
         </tbody>
     </table>
 
-    <div class="row">
-        <input type="text" placeholder="Token name" @bind="newTokenName" style="flex:1 1 12rem" />
-        <button class="btn" @onclick="MintTokenAsync">Mint a token</button>
-    </div>
+    <EditForm Model="tokenForm" FormName="mint-token" OnValidSubmit="MintTokenAsync">
+        <div class="row">
+            <InputText type="text" placeholder="Token name" @bind-Value="tokenForm.Name" style="flex:1 1 12rem" />
+            <button class="btn" type="submit">Mint a token</button>
+        </div>
+    </EditForm>
     @if (tokenError is not null)
     {
         <p class="error">@tokenError</p>
@@ -178,25 +189,27 @@
 
     <div class="row">
         <a class="btn" href="api/export">Download an export</a>
-        <button class="btn" @onclick="BackupNowAsync">Back up now</button>
+        <form method="post" @formname="backup-now" @onsubmit="BackupNowAsync">
+            <AntiforgeryToken />
+            <button class="btn" type="submit">Back up now</button>
+        </form>
     </div>
     <p class="muted">The export is one JSON file holding every category, task and dashboard card.</p>
 
-    <div class="field">
-        <label for="import-file">Restore from an export file</label>
-        <InputFile id="import-file" OnChange="ChooseImportFileAsync" accept=".json,application/json" />
-        @if (importFileName is not null)
-        {
-            <p class="muted">@importFileName, @(importJson.Length / 1024) KB. Nothing changes until you import it.</p>
-        }
-    </div>
-    <div class="row">
-        <select @bind="importMode" style="flex:0 1 12rem">
-            <option value="@ImportMode.Merge">Merge into what is here</option>
-            <option value="@ImportMode.Replace">Replace everything</option>
-        </select>
-        <button class="btn" @onclick="ImportAsync" disabled="@(importJson.Length == 0)">Import the file</button>
-    </div>
+    <form method="post" action="settings/import" enctype="multipart/form-data" class="stack">
+        <AntiforgeryToken />
+        <div class="field">
+            <label for="import-file">Restore from an export file</label>
+            <input id="import-file" type="file" name="file" accept=".json,application/json" required />
+        </div>
+        <div class="row">
+            <select name="mode" style="flex:0 1 12rem">
+                <option value="@ImportMode.Merge">Merge into what is here</option>
+                <option value="@ImportMode.Replace">Replace everything</option>
+            </select>
+            <button class="btn" type="submit">Import the file</button>
+        </div>
+    </form>
 
     <div class="row" style="margin-top:1rem">
         <a class="btn btn-primary" href="settings/jira">Import from JIRA</a>
@@ -217,37 +230,56 @@
     [CascadingParameter]
     private Task<AuthenticationState>? AuthenticationState { get; set; }
 
+    [SupplyParameterFromQuery(Name = "imported")]
+    private string? ImportedSummary { get; set; }
+
+    [SupplyParameterFromQuery(Name = "importError")]
+    private string? ImportError { get; set; }
+
     private IReadOnlyList<CategoryView> categories = [];
     private IReadOnlyList<UserView> users = [];
     private IReadOnlyList<ApiTokenView> tokens = [];
     private bool isFirstUser;
 
-    private string newCategoryName = string.Empty;
     private string? categoryError;
-    private string newUsername = string.Empty;
-    private string newDisplayName = string.Empty;
-    private string newPassword = string.Empty;
-    private string resetTargetId = string.Empty;
-    private int? resetUserId;
-    private string resetPassword = string.Empty;
     private string? peopleError;
     private string? peopleMessage;
-    private string newTokenName = string.Empty;
     private string? tokenError;
     private string? mintedSecret;
-    private string importJson = string.Empty;
-    private string? importFileName;
-    private ImportMode importMode = ImportMode.Merge;
     private string? dataMessage;
     private string? dataError;
 
+    [SupplyParameterFromForm(Name = "categoryForm")]
+    private NameForm? postedCategoryForm { get; set; }
+
+    [SupplyParameterFromForm(Name = "tokenForm")]
+    private NameForm? postedTokenForm { get; set; }
+
+    [SupplyParameterFromForm(Name = "userForm")]
+    private NewUserForm? postedUserForm { get; set; }
+
+    [SupplyParameterFromForm(Name = "resetForm")]
+    private ResetForm? postedResetForm { get; set; }
+
+    // A post binds only the form it came from, leaving the others null, so each one falls back
+    // to empty values rather than handing EditForm a null model.
+    private NameForm categoryForm => postedCategoryForm ??= new();
+
+    private NameForm tokenForm => postedTokenForm ??= new();
+
+    private NewUserForm userForm => postedUserForm ??= new();
+
+    private ResetForm resetForm => postedResetForm ??= new();
+
     private static string McpUrl => "/mcp";
 
-    /// <summary>Largest export file the page will read, far above anything this app writes.</summary>
-    private const long MaxImportBytes = 32L * 1024 * 1024;
-
-    /// <summary>Loads every list the page shows.</summary>
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    /// <summary>Loads every list the page shows, and the result of a file import if one just ran.</summary>
+    protected override async Task OnInitializedAsync()
+    {
+        dataMessage = ImportedSummary;
+        dataError = ImportError;
+        await ReloadAsync();
+    }
 
     private async Task ReloadAsync()
     {
@@ -275,8 +307,7 @@
         categoryError = null;
         try
         {
-            await Categories.CreateAsync(new CategoryRequest(newCategoryName));
-            newCategoryName = string.Empty;
+            await Categories.CreateAsync(new CategoryRequest(categoryForm.Name ?? string.Empty));
         }
         catch (ArgumentException ex)
         {
@@ -284,13 +315,13 @@
             return;
         }
 
-        await ReloadAsync();
+        Reload();
     }
 
     private async Task DeleteCategoryAsync(int id)
     {
         await Categories.DeleteAsync(id);
-        await ReloadAsync();
+        Reload();
     }
 
     private async Task AddUserAsync()
@@ -307,9 +338,11 @@
 
         try
         {
-            var created = await Users.CreateUserAsync(newUsername, newDisplayName, newPassword, actingId.Value);
-            peopleMessage = $"Added {created.Username}.";
-            newUsername = newDisplayName = newPassword = string.Empty;
+            await Users.CreateUserAsync(
+                userForm.Username ?? string.Empty,
+                userForm.DisplayName ?? string.Empty,
+                userForm.Password ?? string.Empty,
+                actingId.Value);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -317,15 +350,7 @@
             return;
         }
 
-        await ReloadAsync();
-    }
-
-    private void StartReset()
-    {
-        peopleError = null;
-        peopleMessage = null;
-        resetUserId = int.TryParse(resetTargetId, out var id) ? id : null;
-        resetPassword = string.Empty;
+        Reload();
     }
 
     private async Task ResetPasswordAsync()
@@ -334,19 +359,16 @@
         peopleMessage = null;
 
         var actingId = await CurrentUserIdAsync();
-        if (actingId is null || resetUserId is null)
+        if (actingId is null || !int.TryParse(resetForm.UserId, out var userId))
         {
-            peopleError = "Sign in again before resetting a password.";
+            peopleError = "Choose whose password to reset.";
             return;
         }
 
         try
         {
-            await Users.ResetPasswordAsync(resetUserId.Value, resetPassword, actingId.Value);
+            await Users.ResetPasswordAsync(userId, resetForm.Password ?? string.Empty, actingId.Value);
             peopleMessage = "The password is set. Tell them what it is.";
-            resetUserId = null;
-            resetTargetId = string.Empty;
-            resetPassword = string.Empty;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -376,7 +398,7 @@
             return;
         }
 
-        await ReloadAsync();
+        Reload();
     }
 
     private async Task MintTokenAsync()
@@ -391,9 +413,11 @@
 
         try
         {
-            var minted = await Tokens.CreateAsync(newTokenName, userId.Value);
+            // The secret is shown in this response and never again, so the page cannot redirect
+            // here the way the other actions do.
+            var minted = await Tokens.CreateAsync(tokenForm.Name ?? string.Empty, userId.Value);
             mintedSecret = minted.Secret;
-            newTokenName = string.Empty;
+            tokenForm.Name = null;
         }
         catch (ArgumentException ex)
         {
@@ -407,7 +431,7 @@
     private async Task RevokeTokenAsync(int id)
     {
         await Tokens.RevokeAsync(id);
-        await ReloadAsync();
+        Reload();
     }
 
     private async Task BackupNowAsync()
@@ -424,50 +448,36 @@
         }
     }
 
-    private async Task ChooseImportFileAsync(InputFileChangeEventArgs args)
+    /// <summary>Sends the browser back to a freshly rendered page, so a refresh does not post again.</summary>
+    private void Reload() => Navigation.NavigateTo("/settings");
+
+    /// <summary>What the add-a-category and mint-a-token forms post back.</summary>
+    private class NameForm
     {
-        dataMessage = null;
-        dataError = null;
-        importJson = string.Empty;
-        importFileName = null;
-
-        var file = args.FileCount == 0 ? null : args.File;
-        if (file is null)
-        {
-            return;
-        }
-
-        try
-        {
-            using var reader = new StreamReader(file.OpenReadStream(MaxImportBytes));
-            importJson = await reader.ReadToEndAsync();
-            importFileName = file.Name;
-        }
-        catch (IOException)
-        {
-            dataError = $"{file.Name} is larger than {MaxImportBytes / (1024 * 1024)} MB, so it is not an export from here.";
-        }
+        /// <summary>The name that was typed.</summary>
+        public string? Name { get; set; }
     }
 
-    private async Task ImportAsync()
+    /// <summary>What the add-an-account form posts back.</summary>
+    private class NewUserForm
     {
-        dataMessage = null;
-        dataError = null;
+        /// <summary>Username to sign in with.</summary>
+        public string? Username { get; set; }
 
-        try
-        {
-            var summary = await Transfer.ImportFromJsonAsync(importJson, importMode);
-            dataMessage = $"Added {summary.CategoriesAdded} categories, {summary.TasksAdded} tasks and {summary.CardsAdded} cards; updated {summary.TasksUpdated} tasks.";
-            importJson = string.Empty;
-            importFileName = null;
-        }
-        catch (Exception ex)
-        {
-            dataError = ex.Message;
-            return;
-        }
+        /// <summary>Name to show around the app.</summary>
+        public string? DisplayName { get; set; }
 
-        await ReloadAsync();
+        /// <summary>First password for the account.</summary>
+        public string? Password { get; set; }
     }
 
+    /// <summary>What the reset-a-password form posts back.</summary>
+    private class ResetForm
+    {
+        /// <summary>Id of the account to reset, as the select posts it.</summary>
+        public string? UserId { get; set; }
+
+        /// <summary>The new password.</summary>
+        public string? Password { get; set; }
+    }
 }

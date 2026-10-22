@@ -1,8 +1,8 @@
 @page "/settings/jira"
-@rendermode InteractiveServer
+@using CapybaraHome.Web.Jira
 @inject JiraCloudClient Jira
 @inject JiraImportService Import
-@inject NavigationManager Navigation
+@inject JiraWizardStore Wizard
 
 <PageTitle>Import from JIRA</PageTitle>
 
@@ -18,60 +18,61 @@
     {
         <h2 class="card-title">1. Connect</h2>
 
-        <div class="field">
-            <label for="site-url">Site address</label>
-            <input id="site-url" type="text" @bind="siteUrl" placeholder="your-site.atlassian.net" autocomplete="off" />
-        </div>
-        <div class="field">
-            <label for="account-email">Atlassian account email</label>
-            <input id="account-email" type="email" @bind="email" autocomplete="off" />
-        </div>
-        <div class="field">
-            <label for="api-token">API token</label>
-            <input id="api-token" type="password" @bind="apiToken" autocomplete="off" />
-            <p class="muted">
-                Make one at
-                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer">
-                    id.atlassian.com
-                </a>
-                under Security, then paste it here. It is held in memory for this import and nowhere else.
-            </p>
-        </div>
+        <EditForm Model="connectForm" FormName="jira-connect" OnValidSubmit="ConnectAsync">
+            <div class="field">
+                <label for="site-url">Site address</label>
+                <InputText id="site-url" type="text" @bind-Value="connectForm.SiteUrl"
+                           placeholder="your-site.atlassian.net" autocomplete="off" />
+            </div>
+            <div class="field">
+                <label for="account-email">Atlassian account email</label>
+                <InputText id="account-email" type="email" @bind-Value="connectForm.Email" autocomplete="off" />
+            </div>
+            <div class="field">
+                <label for="api-token">API token</label>
+                <InputText id="api-token" type="password" @bind-Value="connectForm.ApiToken" autocomplete="off" />
+                <p class="muted">
+                    Make one at
+                    <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer">
+                        id.atlassian.com
+                    </a>
+                    under Security, then paste it here. It is held in memory for this import and nowhere else.
+                </p>
+            </div>
 
-        <button class="btn btn-primary" @onclick="ConnectAsync" disabled="@busy">
-            @(busy ? "Connecting…" : "Connect")
-        </button>
+            <button class="btn btn-primary" type="submit">Connect</button>
+        </EditForm>
     }
     else if (step == Step.ChooseProject)
     {
         <h2 class="card-title">2. Pick a project</h2>
-        <p class="muted">Signed in as @account?.DisplayName. @projects.Count project(s) visible to this account.</p>
+        @if (account is not null)
+        {
+            <p class="muted">Signed in as @account.DisplayName. @projects.Count project(s) visible to this account.</p>
+        }
 
-        @if (projects.Count == 0)
+        @if (projects.Count == 0 && error is null)
         {
             <p class="error">This account cannot see any projects.</p>
         }
-        else
-        {
-            <div class="stack">
-                @foreach (var project in projects)
-                {
-                    <label class="row" style="align-items:center;gap:0.5rem">
-                        <input type="radio" name="project" value="@project.Key"
-                               checked="@(projectKey == project.Key)"
-                               @onchange="() => projectKey = project.Key" style="width:auto;min-height:0" />
-                        <span><code>@project.Key</code> — @project.Name</span>
-                    </label>
-                }
-            </div>
-        }
 
-        <div class="row">
-            <button class="btn btn-primary" @onclick="ChooseProjectAsync" disabled="@(busy || projectKey is null)">
-                @(busy ? "Counting…" : "Continue")
-            </button>
-            <button class="btn" @onclick="StartOver" disabled="@busy">Back</button>
-        </div>
+        <EditForm Model="projectForm" FormName="jira-project" OnValidSubmit="ChooseProjectAsync">
+            <InputText type="hidden" @bind-Value="projectForm.Ticket" />
+
+            <InputRadioGroup @bind-Value="projectForm.ProjectKey">
+                <div class="stack">
+                    @foreach (var project in projects)
+                    {
+                        <label class="row" style="align-items:center;gap:0.5rem">
+                            <InputRadio Value="project.Key" style="width:auto;min-height:0" />
+                            <span><code>@project.Key</code> — @project.Name</span>
+                        </label>
+                    }
+                </div>
+            </InputRadioGroup>
+
+            <button class="btn btn-primary" type="submit" style="margin-top:0.75rem">Continue</button>
+        </EditForm>
     }
     else if (step == Step.Confirm)
     {
@@ -84,14 +85,19 @@
         <p class="muted">
             Epics become categories and every other issue becomes a task, titles as they are in JIRA.
             A task already carrying one of these JIRA keys is overwritten; nothing else here is touched,
-            and nothing in JIRA is changed.
+            and nothing in JIRA is changed. A large project takes a minute, so the page waits while it runs.
         </p>
 
         <div class="row">
-            <button class="btn btn-primary" @onclick="RunAsync" disabled="@busy">
-                @(busy ? $"Pulled {fetched} issue(s)…" : "Import")
-            </button>
-            <button class="btn" @onclick="() => step = Step.ChooseProject" disabled="@busy">Back</button>
+            <EditForm Model="importForm" FormName="jira-import" OnValidSubmit="RunAsync">
+                <InputText type="hidden" @bind-Value="importForm.Ticket" />
+                <button class="btn btn-primary" type="submit">Import</button>
+            </EditForm>
+
+            <EditForm Model="backForm" FormName="jira-back" OnValidSubmit="GoBack">
+                <InputText type="hidden" @bind-Value="backForm.Ticket" />
+                <button class="btn" type="submit">Back</button>
+            </EditForm>
         </div>
     }
     else
@@ -108,7 +114,7 @@
 
         <div class="row">
             <a class="btn btn-primary" href="tasks">See the tasks</a>
-            <button class="btn" @onclick="() => step = Step.ChooseProject">Import another project</button>
+            <a class="btn" href="settings/jira">Import another project</a>
             <a class="btn" href="settings">Back to settings</a>
         </div>
     }
@@ -129,31 +135,78 @@
     }
 
     private Step step = Step.Connect;
-    private string siteUrl = string.Empty;
-    private string email = string.Empty;
-    private string apiToken = string.Empty;
-    private JiraConnection? connection;
     private JiraAccount? account;
     private IReadOnlyList<JiraProjectSummary> projects = [];
     private string? projectKey;
     private int? approximateCount;
-    private int fetched;
     private JiraImportReport? report;
-    private bool busy;
     private string? error;
+
+    [SupplyParameterFromForm(Name = "connectForm")]
+    private ConnectForm? postedConnectForm { get; set; }
+
+    [SupplyParameterFromForm(Name = "projectForm")]
+    private TicketForm? postedProjectForm { get; set; }
+
+    [SupplyParameterFromForm(Name = "importForm")]
+    private TicketForm? postedImportForm { get; set; }
+
+    [SupplyParameterFromForm(Name = "backForm")]
+    private TicketForm? postedBackForm { get; set; }
+
+    // A post binds only the form it came from, leaving the others null, so each one falls back
+    // to empty values rather than handing EditForm a null model.
+    private ConnectForm connectForm => postedConnectForm ??= new();
+
+    private TicketForm projectForm => postedProjectForm ??= new();
+
+    private TicketForm importForm => postedImportForm ??= new();
+
+    private TicketForm backForm => postedBackForm ??= new();
+
+    /// <summary>
+    /// Picks the step to render from the form that was posted, before any handler runs. A static
+    /// render only dispatches a form it actually rendered, so the step has to be settled first;
+    /// the handlers then move it on.
+    /// </summary>
+    protected override void OnInitialized()
+    {
+        if (postedImportForm is not null)
+        {
+            step = Step.Confirm;
+            Describe(postedImportForm.Ticket);
+        }
+        else if (postedProjectForm is not null || postedBackForm is not null)
+        {
+            step = Step.ChooseProject;
+            Describe(postedProjectForm?.Ticket ?? postedBackForm?.Ticket);
+        }
+    }
+
+    /// <summary>Fills in what the page shows about a ticket's connection, quietly if it has expired.</summary>
+    private void Describe(string? ticket)
+    {
+        if (Wizard.Find(ticket) is { } entry)
+        {
+            account = entry.Account;
+            projects = entry.Projects;
+            projectKey = entry.ProjectKey;
+        }
+    }
 
     private async Task ConnectAsync()
     {
         error = null;
-        busy = true;
 
         try
         {
-            var candidate = JiraConnection.Create(siteUrl, email, apiToken);
-            account = await Jira.VerifyAsync(candidate);
-            projects = await Jira.ListProjectsAsync(candidate);
-            connection = candidate;
-            projectKey = projects.Count == 1 ? projects[0].Key : null;
+            var connection = JiraConnection.Create(connectForm.SiteUrl, connectForm.Email, connectForm.ApiToken);
+            account = await Jira.VerifyAsync(connection);
+            projects = await Jira.ListProjectsAsync(connection);
+
+            var ticket = Wizard.Add(connection, account, projects);
+            projectForm.Ticket = ticket;
+            projectForm.ProjectKey = projects.Count == 1 ? projects[0].Key : null;
             step = Step.ChooseProject;
         }
         catch (Exception ex) when (ex is ArgumentException or JiraRequestException)
@@ -162,70 +215,117 @@
         }
         finally
         {
-            busy = false;
+            // The form re-renders with what was posted, so the token is dropped rather than
+            // written back into the page as the value of the password field.
+            connectForm.ApiToken = null;
         }
     }
 
     private async Task ChooseProjectAsync()
     {
         error = null;
-        busy = true;
+
+        var entry = Resume(projectForm.Ticket);
+        if (entry is null)
+        {
+            return;
+        }
 
         try
         {
-            approximateCount = await Jira.CountIssuesAsync(connection!, JiraCloudClient.ProjectQuery(projectKey));
+            entry.ProjectKey = projectForm.ProjectKey;
+            projectKey = projectForm.ProjectKey;
+            approximateCount = await Jira.CountIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
+            importForm.Ticket = projectForm.Ticket;
+            backForm.Ticket = projectForm.Ticket;
             step = Step.Confirm;
         }
         catch (Exception ex) when (ex is ArgumentException or JiraRequestException)
         {
             error = ex.Message;
-        }
-        finally
-        {
-            busy = false;
+            step = Step.ChooseProject;
         }
     }
 
     private async Task RunAsync()
     {
         error = null;
-        busy = true;
-        fetched = 0;
+
+        var entry = Resume(importForm.Ticket);
+        if (entry is null)
+        {
+            return;
+        }
+
+        projectKey = entry.ProjectKey;
 
         try
         {
-            var progress = new Progress<int>(count =>
-            {
-                fetched = count;
-                _ = InvokeAsync(StateHasChanged);
-            });
-
-            using var snapshot = await Jira.FetchIssuesAsync(
-                connection!,
-                JiraCloudClient.ProjectQuery(projectKey),
-                progress);
-
+            using var snapshot = await Jira.FetchIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
             report = await Import.ImportAsync(snapshot.Issues);
+
+            // The credentials are of no further use, so they go now rather than at expiry.
+            Wizard.Remove(importForm.Ticket);
             step = Step.Done;
         }
         catch (Exception ex) when (ex is ArgumentException or JiraRequestException or InvalidOperationException)
         {
             error = ex.Message;
-        }
-        finally
-        {
-            busy = false;
+            step = Step.Confirm;
         }
     }
 
-    private void StartOver()
+    private void GoBack()
     {
-        connection = null;
-        account = null;
-        projects = [];
-        projectKey = null;
-        approximateCount = null;
-        apiToken = string.Empty;
-        step = Step.Connect;
+        error = null;
+
+        if (Resume(backForm.Ticket) is not null)
+        {
+            step = Step.ChooseProject;
+            projectForm.Ticket = backForm.Ticket;
+        }
+    }
+
+    /// <summary>
+    /// Picks the wizard back up where a ticket left it. A ticket the store no longer holds sends
+    /// the browser back to step one, since the credentials were never written down anywhere else.
+    /// </summary>
+    private JiraWizardStore.Entry? Resume(string? ticket)
+    {
+        var entry = Wizard.Find(ticket);
+        if (entry is null)
+        {
+            error = $"This import sat unfinished for more than {JiraWizardStore.Lifetime.TotalMinutes:0} minutes, so the connection was dropped. Connect again.";
+            step = Step.Connect;
+            return null;
+        }
+
+        account = entry.Account;
+        projects = entry.Projects;
+        projectKey = entry.ProjectKey;
+        return entry;
+    }
+
+    /// <summary>What step one posts back.</summary>
+    private class ConnectForm
+    {
+        /// <summary>Address of the JIRA Cloud site.</summary>
+        public string? SiteUrl { get; set; }
+
+        /// <summary>Email address of the Atlassian account.</summary>
+        public string? Email { get; set; }
+
+        /// <summary>API token for that account.</summary>
+        public string? ApiToken { get; set; }
+    }
+
+    /// <summary>What the later steps post back: the ticket, and the project where one is being chosen.</summary>
+    private class TicketForm
+    {
+        /// <summary>Ticket that finds the connection again.</summary>
+        public string? Ticket { get; set; }
+
+        /// <summary>Key of the chosen project.</summary>
+        public string? ProjectKey { get; set; }
     }
 }

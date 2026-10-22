@@ -8,6 +8,7 @@ using CapybaraHome.Infrastructure.Persistence;
 using CapybaraHome.Web.Auth;
 using CapybaraHome.Web.Components;
 using CapybaraHome.Web.Endpoints;
+using CapybaraHome.Web.Jira;
 using CapybaraHome.Web.Mcp;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +30,9 @@ builder.Services.AddInfrastructure(
 
 builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(BackupOptions.SectionName));
 builder.Services.AddHostedService<ScheduledBackupService>();
+
+// The wizard's pages render statically, so what step one learned is held here between posts.
+builder.Services.AddSingleton<JiraWizardStore>();
 
 builder.Services.AddCapybaraAuthentication();
 builder.Services.AddCapybaraForwardedHeaders(builder.Configuration);
@@ -79,6 +83,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapApi();
+app.MapSettings();
 app.MapMcp("/mcp").RequireAuthorization(AuthenticationSetup.ApiPolicyName);
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
