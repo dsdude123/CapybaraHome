@@ -1,0 +1,231 @@
+@page "/settings/jira"
+@rendermode InteractiveServer
+@inject JiraCloudClient Jira
+@inject JiraImportService Import
+@inject NavigationManager Navigation
+
+<PageTitle>Import from JIRA</PageTitle>
+
+<h1>Import from JIRA</h1>
+
+<p class="muted">
+    Four steps: sign in to your JIRA Cloud site, pick a project, confirm, and CapybaraHome pulls
+    the issues itself. Your API token is used for this import only and is never saved.
+</p>
+
+<section class="card stack">
+    @if (step == Step.Connect)
+    {
+        <h2 class="card-title">1. Connect</h2>
+
+        <div class="field">
+            <label for="site-url">Site address</label>
+            <input id="site-url" type="text" @bind="siteUrl" placeholder="your-site.atlassian.net" autocomplete="off" />
+        </div>
+        <div class="field">
+            <label for="account-email">Atlassian account email</label>
+            <input id="account-email" type="email" @bind="email" autocomplete="off" />
+        </div>
+        <div class="field">
+            <label for="api-token">API token</label>
+            <input id="api-token" type="password" @bind="apiToken" autocomplete="off" />
+            <p class="muted">
+                Make one at
+                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer">
+                    id.atlassian.com
+                </a>
+                under Security, then paste it here. It is held in memory for this import and nowhere else.
+            </p>
+        </div>
+
+        <button class="btn btn-primary" @onclick="ConnectAsync" disabled="@busy">
+            @(busy ? "Connecting…" : "Connect")
+        </button>
+    }
+    else if (step == Step.ChooseProject)
+    {
+        <h2 class="card-title">2. Pick a project</h2>
+        <p class="muted">Signed in as @account?.DisplayName. @projects.Count project(s) visible to this account.</p>
+
+        @if (projects.Count == 0)
+        {
+            <p class="error">This account cannot see any projects.</p>
+        }
+        else
+        {
+            <div class="stack">
+                @foreach (var project in projects)
+                {
+                    <label class="row" style="align-items:center;gap:0.5rem">
+                        <input type="radio" name="project" value="@project.Key"
+                               checked="@(projectKey == project.Key)"
+                               @onchange="() => projectKey = project.Key" style="width:auto;min-height:0" />
+                        <span><code>@project.Key</code> — @project.Name</span>
+                    </label>
+                }
+            </div>
+        }
+
+        <div class="row">
+            <button class="btn btn-primary" @onclick="ChooseProjectAsync" disabled="@(busy || projectKey is null)">
+                @(busy ? "Counting…" : "Continue")
+            </button>
+            <button class="btn" @onclick="StartOver" disabled="@busy">Back</button>
+        </div>
+    }
+    else if (step == Step.Confirm)
+    {
+        <h2 class="card-title">3. Confirm</h2>
+        <p>
+            About to copy
+            @(approximateCount is { } count ? $"roughly {count} issue(s)" : "every issue")
+            from <code>@projectKey</code>.
+        </p>
+        <p class="muted">
+            Epics become categories and every other issue becomes a task, titles as they are in JIRA.
+            A task already carrying one of these JIRA keys is overwritten; nothing else here is touched,
+            and nothing in JIRA is changed.
+        </p>
+
+        <div class="row">
+            <button class="btn btn-primary" @onclick="RunAsync" disabled="@busy">
+                @(busy ? $"Pulled {fetched} issue(s)…" : "Import")
+            </button>
+            <button class="btn" @onclick="() => step = Step.ChooseProject" disabled="@busy">Back</button>
+        </div>
+    }
+    else
+    {
+        <h2 class="card-title">4. Done</h2>
+        <p class="notice">
+            Added @report!.CategoriesAdded category(ies) and @report.TasksAdded task(s),
+            updated @report.TasksUpdated.
+        </p>
+        @foreach (var warning in report.Warnings)
+        {
+            <p class="muted">@warning</p>
+        }
+
+        <div class="row">
+            <a class="btn btn-primary" href="tasks">See the tasks</a>
+            <button class="btn" @onclick="() => step = Step.ChooseProject">Import another project</button>
+            <a class="btn" href="settings">Back to settings</a>
+        </div>
+    }
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+</section>
+
+@code {
+    private enum Step
+    {
+        Connect,
+        ChooseProject,
+        Confirm,
+        Done,
+    }
+
+    private Step step = Step.Connect;
+    private string siteUrl = string.Empty;
+    private string email = string.Empty;
+    private string apiToken = string.Empty;
+    private JiraConnection? connection;
+    private JiraAccount? account;
+    private IReadOnlyList<JiraProjectSummary> projects = [];
+    private string? projectKey;
+    private int? approximateCount;
+    private int fetched;
+    private JiraImportReport? report;
+    private bool busy;
+    private string? error;
+
+    private async Task ConnectAsync()
+    {
+        error = null;
+        busy = true;
+
+        try
+        {
+            var candidate = JiraConnection.Create(siteUrl, email, apiToken);
+            account = await Jira.VerifyAsync(candidate);
+            projects = await Jira.ListProjectsAsync(candidate);
+            connection = candidate;
+            projectKey = projects.Count == 1 ? projects[0].Key : null;
+            step = Step.ChooseProject;
+        }
+        catch (Exception ex) when (ex is ArgumentException or JiraRequestException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task ChooseProjectAsync()
+    {
+        error = null;
+        busy = true;
+
+        try
+        {
+            approximateCount = await Jira.CountIssuesAsync(connection!, JiraCloudClient.ProjectQuery(projectKey));
+            step = Step.Confirm;
+        }
+        catch (Exception ex) when (ex is ArgumentException or JiraRequestException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task RunAsync()
+    {
+        error = null;
+        busy = true;
+        fetched = 0;
+
+        try
+        {
+            var progress = new Progress<int>(count =>
+            {
+                fetched = count;
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            using var snapshot = await Jira.FetchIssuesAsync(
+                connection!,
+                JiraCloudClient.ProjectQuery(projectKey),
+                progress);
+
+            report = await Import.ImportAsync(snapshot.Issues);
+            step = Step.Done;
+        }
+        catch (Exception ex) when (ex is ArgumentException or JiraRequestException or InvalidOperationException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void StartOver()
+    {
+        connection = null;
+        account = null;
+        projects = [];
+        projectKey = null;
+        approximateCount = null;
+        apiToken = string.Empty;
+        step = Step.Connect;
+    }
+}

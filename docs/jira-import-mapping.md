@@ -145,15 +145,16 @@ nothing further into them.
    spellings included; tidy them in the app afterwards if they annoy.
 5. **Attachments and comments** have no automated path worth building; handle the few of
    them by hand after the import.
-6. **Export.** Read-only, from JIRA REST v3 (`/rest/api/3/search/jql`) or the Rovo MCP
-   tools, paging 100 at a time. JQL per project: `project = CAPY ORDER BY created ASC`,
-   `project = FOOD ORDER BY created ASC`. Request `fields=*all` for FOOD (the custom
-   fields matter) and the explicit field list from §2 for CAPY. Page by `nextPageToken`,
-   or by `created` windows if a page token is awkward — windows must be checked for
-   overflow past 100 results.
-7. **Snapshot to disk as JSON**, one file per project, and import from the files. The
-   import is then reproducible and JIRA is touched exactly once. The snapshot holds the
-   real data, so it stays out of the repository.
+6. **Export.** ~~Done by hand~~ **Built.** The wizard at `/settings/jira` reads the site
+   itself, read-only, over JIRA REST v3 (`/rest/api/3/search/jql`), paging 100 at a time by
+   `nextPageToken`, with the explicit field list from §2 and the JQL
+   `project = <KEY> ORDER BY created ASC`. The site address, the account email and an API
+   token are typed into the wizard and held only for the length of the run. Phase 2 will
+   want `fields=*all` for the meal project, whose custom fields matter.
+7. ~~Snapshot to disk as JSON~~ **Settled.** The wizard holds the pages in memory and loads
+   them in one go, so no file of real data is ever written. A re-run is reproducible because
+   the import upserts on the JIRA key (§10). `POST /api/import/jira` still takes a snapshot
+   as JSON for anything scripted.
 8. **Convert ADF to markdown** in one place. The MCP tools can return markdown directly
    (`responseContentFormat: "markdown"`), which is the cheaper path than writing an ADF
    walker.

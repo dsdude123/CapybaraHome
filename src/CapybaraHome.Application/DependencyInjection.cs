@@ -25,6 +25,10 @@ public static class DependencyInjection
         services.AddScoped<BackupWriter>();
         services.AddScoped<JiraImportService>();
 
+        // The import pulls hundreds of issues a page at a time, so the client is given longer
+        // than the default minute before it gives up on a single page.
+        services.AddHttpClient<JiraCloudClient>(client => client.Timeout = TimeSpan.FromMinutes(2));
+
         return services;
     }
 
