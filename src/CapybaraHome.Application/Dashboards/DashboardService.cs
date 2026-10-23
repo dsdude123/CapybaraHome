@@ -169,7 +169,7 @@ public class DashboardService(ICapybaraHomeDbContext context, TaskService tasks)
 
         if (card.Kind == DashboardCardKind.TaskList)
         {
-            var list = await tasks.ListAsync(filter with { Limit = TaskListCardSize }, cancellationToken);
+            var list = await tasks.ListAsync(filter with { Limit = TaskListCardSize }, cancellationToken: cancellationToken);
             var total = await tasks.CountAsync(filter, cancellationToken);
             return View(card, total, 0, list);
         }

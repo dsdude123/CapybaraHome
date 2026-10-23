@@ -102,6 +102,37 @@ public class WebAppTests
     }
 
     [Fact]
+    public async Task A_due_date_is_shown_with_its_month_name_and_year()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Service the boiler", DueDate: new DateOnly(2026, 10, 23)));
+
+        var tasks = await client.GetStringAsync("/tasks");
+        var board = await client.GetStringAsync("/board");
+
+        Assert.Contains("Due October 23, 2026", tasks);
+        Assert.Contains("Due October 23, 2026", board);
+    }
+
+    [Theory]
+    [InlineData("/tasks")]
+    [InlineData("/board")]
+    public async Task A_sorted_page_follows_the_order_the_query_string_asks_for(string path)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Alpha", DueDate: new DateOnly(2026, 12, 1)));
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Omega", DueDate: new DateOnly(2026, 11, 1)));
+
+        var byDueDate = await client.GetStringAsync(path);
+        var byTitle = await client.GetStringAsync(path + "?sort=title");
+
+        Assert.True(byDueDate.IndexOf("Omega", StringComparison.Ordinal) < byDueDate.IndexOf("Alpha", StringComparison.Ordinal));
+        Assert.True(byTitle.IndexOf("Alpha", StringComparison.Ordinal) < byTitle.IndexOf("Omega", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task A_fresh_installation_comes_up_with_a_dashboard()
     {
         await using var app = await AppFactory.CreateAsync();

@@ -1,3 +1,4 @@
+using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Tasks;
 
@@ -40,6 +41,72 @@ public class TaskServiceTests
 
         var reopened = await service.UpdateAsync(created.Id, new UpdateTaskRequest(Status: TaskItemStatus.ToDo));
         Assert.Null(reopened!.CompletedAt);
+    }
+
+    [Fact]
+    public async Task A_listing_defaults_to_the_earliest_due_date_with_the_undated_last()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+        var today = DateOnly.FromDateTime(db.Clock.GetUtcNow().UtcDateTime);
+
+        await service.CreateAsync(new CreateTaskRequest("No date"));
+        await service.CreateAsync(new CreateTaskRequest("Later", DueDate: today.AddDays(5)));
+        await service.CreateAsync(new CreateTaskRequest("Sooner", DueDate: today.AddDays(1)));
+
+        var listed = await service.ListAsync(new TaskFilter());
+
+        Assert.Equal(["Sooner", "Later", "No date"], listed.Select(t => t.Title));
+    }
+
+    [Fact]
+    public async Task The_latest_due_date_first_still_puts_the_undated_last()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+        var today = DateOnly.FromDateTime(db.Clock.GetUtcNow().UtcDateTime);
+
+        await service.CreateAsync(new CreateTaskRequest("No date"));
+        await service.CreateAsync(new CreateTaskRequest("Sooner", DueDate: today.AddDays(1)));
+        await service.CreateAsync(new CreateTaskRequest("Later", DueDate: today.AddDays(5)));
+
+        var listed = await service.ListAsync(new TaskFilter(), TaskSort.DueDateDescending);
+
+        Assert.Equal(["Later", "Sooner", "No date"], listed.Select(t => t.Title));
+    }
+
+    [Fact]
+    public async Task Sorting_by_title_runs_both_ways()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+
+        await service.CreateAsync(new CreateTaskRequest("Beta"));
+        await service.CreateAsync(new CreateTaskRequest("Alpha"));
+
+        var up = await service.ListAsync(new TaskFilter(), TaskSort.Title);
+        var down = await service.ListAsync(new TaskFilter(), TaskSort.TitleDescending);
+
+        Assert.Equal(["Alpha", "Beta"], up.Select(t => t.Title));
+        Assert.Equal(["Beta", "Alpha"], down.Select(t => t.Title));
+    }
+
+    [Fact]
+    public async Task Sorting_by_category_leaves_the_uncategorized_last()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+        var categories = new CategoryService(db.Context);
+        var second = await categories.CreateAsync(new CategoryRequest("Bravo"));
+        var first = await categories.CreateAsync(new CategoryRequest("Alpha"));
+
+        await service.CreateAsync(new CreateTaskRequest("Loose"));
+        await service.CreateAsync(new CreateTaskRequest("In bravo", CategoryId: second.Id));
+        await service.CreateAsync(new CreateTaskRequest("In alpha", CategoryId: first.Id));
+
+        var listed = await service.ListAsync(new TaskFilter(), TaskSort.Category);
+
+        Assert.Equal(["In alpha", "In bravo", "Loose"], listed.Select(t => t.Title));
     }
 
     [Fact]

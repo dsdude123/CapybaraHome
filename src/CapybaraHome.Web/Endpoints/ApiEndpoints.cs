@@ -39,7 +39,7 @@ public static class ApiEndpoints
             CancellationToken cancellationToken) =>
         {
             var filter = new TaskFilter(text, status, categoryId, uncategorized ?? false, dueWithinDays, overdue ?? false, limit);
-            return Results.Ok(await service.ListAsync(filter, cancellationToken));
+            return Results.Ok(await service.ListAsync(filter, cancellationToken: cancellationToken));
         });
 
         tasks.MapGet("/{id:int}", async (int id, TaskService service, CancellationToken cancellationToken) =>
