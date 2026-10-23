@@ -11,7 +11,23 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <summary>Returns the tasks matching <paramref name="filter"/> in the order <paramref name="sort"/> asks for.</summary>
     public async Task<IReadOnlyList<TaskView>> ListAsync(TaskFilter filter, TaskSort sort = TaskSort.DueDate, CancellationToken cancellationToken = default)
     {
-        var query = Order(Filter(context.Tasks.AsNoTracking(), filter), sort);
+        var query = Filter(context.Tasks.AsNoTracking(), filter);
+
+        if (sort == TaskSort.RecentlyUpdated)
+        {
+            // SQLite refuses a DateTimeOffset in ORDER BY, so this one order is applied to the rows once they are here.
+            var rows = await query.Select(Projection).ToListAsync(cancellationToken);
+            IEnumerable<TaskView> ordered = rows.OrderByDescending(t => t.UpdatedAt).ThenBy(t => t.Id);
+
+            if (filter.Limit is > 0)
+            {
+                ordered = ordered.Take(filter.Limit.Value);
+            }
+
+            return ordered.ToList();
+        }
+
+        query = Order(query, sort);
 
         if (filter.Limit is > 0)
         {
@@ -150,9 +166,6 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
             .ThenBy(t => t.Category!.Name)
             .ThenBy(t => t.DueDate == null)
             .ThenBy(t => t.DueDate)
-            .ThenBy(t => t.Id),
-        TaskSort.RecentlyUpdated => query
-            .OrderByDescending(t => t.UpdatedAt)
             .ThenBy(t => t.Id),
         _ => query
             .OrderBy(t => t.DueDate == null)
