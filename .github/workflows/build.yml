@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -19,7 +23,71 @@ jobs:
 
       - run: dotnet build --no-restore --configuration Release
 
-      - run: dotnet test --no-build --configuration Release --verbosity normal
+      - name: Test and collect coverage
+        run: >
+          dotnet test --no-build --configuration Release --verbosity normal
+          --settings .github/coverage.runsettings
+          --results-directory ${{ runner.temp }}/coverage
+
+      - name: Keep this branch's coverage as the baseline
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.ref_name }}
+          path: ${{ runner.temp }}/coverage/**/*.cobertura.xml
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Fetch the base branch's coverage
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          name="coverage-${BASE_REF//\//-}"
+          target="${RUNNER_TEMP}/coverage-base"
+          mkdir -p "$target"
+          runs=$(gh run list --workflow build.yml --branch "$BASE_REF" --event push \
+            --status success --limit 10 --json databaseId --jq '.[].databaseId' || true)
+          for id in $runs; do
+            if gh run download "$id" --name "$name" --dir "$target"; then
+              echo "Baseline taken from run $id."
+              break
+            fi
+          done
+
+      - name: Build the coverage report
+        if: github.event_name == 'pull_request'
+        run: >
+          python3 .github/scripts/coverage_report.py
+          --head ${{ runner.temp }}/coverage
+          --base ${{ runner.temp }}/coverage-base
+          --base-label ${{ github.event.pull_request.base.ref }}
+          --out ${{ runner.temp }}/coverage.md
+
+      - name: Comment the coverage report on the pull request
+        if: >
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          BODY_FILE: ${{ runner.temp }}/coverage.md
+        run: |
+          jq -Rs '{body: .}' "$BODY_FILE" > "${RUNNER_TEMP}/comment.json"
+          existing=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${NUMBER}/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- capybarahome-coverage -->")) | .id' | head -1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" \
+              --input "${RUNNER_TEMP}/comment.json" --jq .html_url
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${NUMBER}/comments" \
+              --input "${RUNNER_TEMP}/comment.json" --jq .html_url
+          fi
+
+      - name: Add the coverage report to the run summary
+        if: github.event_name == 'pull_request'
+        run: cat ${{ runner.temp }}/coverage.md >> "$GITHUB_STEP_SUMMARY"
 
   image:
     runs-on: ubuntu-latest
