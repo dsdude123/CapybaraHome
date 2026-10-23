@@ -31,6 +31,20 @@ app. `GET /health` answers once it is up.
 dotnet test
 ```
 
+For a coverage report locally, the same settings CI uses:
+
+```
+dotnet test --settings .github/coverage.runsettings --results-directory ./coverage
+```
+
+Every pull request gets a comment with line and branch coverage on the branch against the
+latest `main` build, broken down by assembly and by file. It comes from the `Build`
+workflow: a push to `main` records its cobertura report on the orphan `coverage-baseline`
+branch, one `<branch>.tar.gz` force-pushed over the last, and a pull request reads the
+archive for its base branch from there. The branch is used rather than a build artifact
+because artifacts on a public repository expire after at most 90 days, which would lose the
+baseline over a long quiet spell.
+
 ## Screens
 
 Every screen is plain server-rendered HTML with ordinary form posts: no page needs an
