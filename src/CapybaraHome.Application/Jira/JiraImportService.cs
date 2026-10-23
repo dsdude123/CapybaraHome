@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Domain.Tasks;
@@ -32,7 +31,7 @@ public class JiraImportService(ICapybaraHomeDbContext context)
     public async Task<JiraImportReport> ImportAsync(string json, CancellationToken cancellationToken = default)
     {
         using var document = JsonDocument.Parse(json);
-        return await ImportAsync(Issues(document.RootElement).ToList(), cancellationToken);
+        return await ImportAsync(JiraFields.Issues(document.RootElement).ToList(), cancellationToken);
     }
 
     /// <summary>Loads issues already read from JIRA, in the shape the REST search returns them.</summary>
@@ -41,7 +40,7 @@ public class JiraImportService(ICapybaraHomeDbContext context)
     public async Task<JiraImportReport> ImportAsync(IReadOnlyList<JsonElement> issues, CancellationToken cancellationToken = default)
     {
         var warnings = new List<string>();
-        var epics = issues.Where(i => TypeName(i) == "Epic").ToList();
+        var epics = issues.Where(i => JiraFields.Named(i, "issuetype") == "Epic").ToList();
         var categoryIdByEpicKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var categoriesAdded = 0;
 
@@ -50,8 +49,8 @@ public class JiraImportService(ICapybaraHomeDbContext context)
 
         foreach (var epic in epics)
         {
-            var key = Key(epic);
-            var name = Text(epic, "summary")?.Trim();
+            var key = JiraFields.Key(epic);
+            var name = JiraFields.Text(epic, "summary")?.Trim();
             if (key is null || string.IsNullOrEmpty(name))
             {
                 continue;
@@ -80,20 +79,20 @@ public class JiraImportService(ICapybaraHomeDbContext context)
 
         foreach (var issue in issues)
         {
-            if (TypeName(issue) == "Epic")
+            if (JiraFields.Named(issue, "issuetype") == "Epic")
             {
                 continue;
             }
 
-            var key = Key(issue);
-            var title = Text(issue, "summary")?.Trim();
+            var key = JiraFields.Key(issue);
+            var title = JiraFields.Text(issue, "summary")?.Trim();
             if (key is null || string.IsNullOrEmpty(title))
             {
                 skipped++;
                 continue;
             }
 
-            var statusName = Status(issue);
+            var statusName = JiraFields.Named(issue, "status");
             var status = MapStatus(statusName);
             if (status is null && statusName is { Length: > 0 })
             {
@@ -119,10 +118,10 @@ public class JiraImportService(ICapybaraHomeDbContext context)
             task.Notes = notes;
             task.CategoryId = categoryId;
             task.Status = status ?? TaskItemStatus.ToDo;
-            task.DueDate = Date(issue, "duedate");
-            task.CompletedAt = Timestamp(issue, "resolutiondate");
-            task.CreatedAt = Timestamp(issue, "created") ?? task.CreatedAt;
-            task.UpdatedAt = Timestamp(issue, "updated") ?? task.UpdatedAt;
+            task.DueDate = JiraFields.Date(issue, "duedate");
+            task.CompletedAt = JiraFields.Timestamp(issue, "resolutiondate");
+            task.CreatedAt = JiraFields.Timestamp(issue, "created") ?? task.CreatedAt;
+            task.UpdatedAt = JiraFields.Timestamp(issue, "updated") ?? task.UpdatedAt;
         }
 
         await context.SaveChangesAsync(cancellationToken);
@@ -140,85 +139,9 @@ public class JiraImportService(ICapybaraHomeDbContext context)
         return new JiraImportReport(categoriesAdded, added, updated, skipped, warnings);
     }
 
-    private static IEnumerable<JsonElement> Issues(JsonElement root)
-    {
-        if (root.ValueKind == JsonValueKind.Object)
-        {
-            if (root.TryGetProperty("issues", out var issues) && issues.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var issue in issues.EnumerateArray())
-                {
-                    yield return issue;
-                }
-            }
-
-            yield break;
-        }
-
-        if (root.ValueKind != JsonValueKind.Array)
-        {
-            yield break;
-        }
-
-        foreach (var element in root.EnumerateArray())
-        {
-            if (element.TryGetProperty("issues", out _))
-            {
-                foreach (var issue in Issues(element))
-                {
-                    yield return issue;
-                }
-            }
-            else
-            {
-                yield return element;
-            }
-        }
-    }
-
-    private static JsonElement Fields(JsonElement issue) =>
-        issue.TryGetProperty("fields", out var fields) ? fields : default;
-
-    private static string? Key(JsonElement issue) =>
-        issue.TryGetProperty("key", out var key) && key.ValueKind == JsonValueKind.String ? key.GetString() : null;
-
-    private static string? Text(JsonElement issue, string field)
-    {
-        var fields = Fields(issue);
-        return fields.ValueKind == JsonValueKind.Object
-            && fields.TryGetProperty(field, out var value)
-            && value.ValueKind == JsonValueKind.String
-                ? value.GetString()
-                : null;
-    }
-
-    private static string? TypeName(JsonElement issue)
-    {
-        var fields = Fields(issue);
-        return fields.ValueKind == JsonValueKind.Object
-            && fields.TryGetProperty("issuetype", out var type)
-            && type.TryGetProperty("name", out var name)
-                ? name.GetString()
-                : null;
-    }
-
-    private static string? Status(JsonElement issue)
-    {
-        var fields = Fields(issue);
-        return fields.ValueKind == JsonValueKind.Object
-            && fields.TryGetProperty("status", out var status)
-            && status.TryGetProperty("name", out var name)
-                ? name.GetString()
-                : null;
-    }
-
     private static string? Notes(JsonElement issue)
     {
-        var fields = Fields(issue);
-        var markdown = fields.ValueKind == JsonValueKind.Object && fields.TryGetProperty("description", out var description)
-            ? AdfToMarkdown.Convert(description)
-            : null;
-
+        var markdown = JiraFields.Description(issue);
         var parent = Parent(issue);
 
         // A JIRA subtask has a parent that is itself a task. The app has no parent link, so the
@@ -245,7 +168,7 @@ public class JiraImportService(ICapybaraHomeDbContext context)
 
     private static ParentRef? Parent(JsonElement issue)
     {
-        var fields = Fields(issue);
+        var fields = JiraFields.Fields(issue);
         if (fields.ValueKind != JsonValueKind.Object || !fields.TryGetProperty("parent", out var parent) || parent.ValueKind != JsonValueKind.Object)
         {
             return null;
@@ -258,20 +181,6 @@ public class JiraImportService(ICapybaraHomeDbContext context)
             && string.Equals(name.GetString(), "Epic", StringComparison.OrdinalIgnoreCase);
 
         return new ParentRef(key, isEpic);
-    }
-
-    private static DateOnly? Date(JsonElement issue, string field)
-    {
-        var text = Text(issue, field);
-        return DateOnly.TryParse(text, CultureInfo.InvariantCulture, out var date) ? date : null;
-    }
-
-    private static DateTimeOffset? Timestamp(JsonElement issue, string field)
-    {
-        var text = Text(issue, field);
-        return DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var value)
-            ? value
-            : null;
     }
 
     private static TaskItemStatus? MapStatus(string? name) =>

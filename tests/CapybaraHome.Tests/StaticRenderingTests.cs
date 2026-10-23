@@ -138,6 +138,73 @@ public class StaticRenderingTests
     }
 
     [Fact]
+    public async Task The_wizard_imports_a_board_as_meals_after_sorting_its_labels()
+    {
+        const string Food = """
+        { "isLast": true, "issues": [
+            { "key": "FOOD-1", "fields": {
+                "summary": "A meal",
+                "status": { "name": "Queued" },
+                "labels": [ "quick" ],
+                "updated": "2026-06-01T00:00:00.000+0000" } } ] }
+        """;
+
+        // The meal path reads the board twice: once to collect the labels, once to import.
+        var jira = new FakeHttp().Reply(Myself).Reply(Projects).Reply(Count).Reply(Food).Reply(Food);
+        await using var app = await AppFactory.CreateAsync(configureServices: services =>
+            services.AddHttpClient<JiraCloudClient>().ConfigurePrimaryHttpMessageHandler(jira.Handler));
+        var client = Client(app);
+
+        var connected = await PostAsync(client, "/settings/jira", "jira-connect", new()
+        {
+            ["connectForm.SiteUrl"] = "example.atlassian.net",
+            ["connectForm.Email"] = "someone@example.com",
+            ["connectForm.ApiToken"] = "a-token",
+        });
+
+        var ticket = Hidden(await connected.Content.ReadAsStringAsync(), "projectForm.Ticket");
+
+        var chosen = await PostAsync(client, "/settings/jira", "jira-project", new()
+        {
+            ["projectForm.Ticket"] = ticket,
+            ["projectForm.ProjectKey"] = "AAA",
+        });
+
+        var confirm = await chosen.Content.ReadAsStringAsync();
+        Assert.Contains("Import these issues as", confirm);
+
+        var asMeals = await PostAsync(client, "/settings/jira", "jira-import", new()
+        {
+            ["importForm.Ticket"] = Hidden(confirm, "importForm.Ticket"),
+            ["importForm.Kind"] = "meals",
+        });
+
+        var facets = await asMeals.Content.ReadAsStringAsync();
+        Assert.Contains("Sort the labels", facets);
+        Assert.Contains("quick", facets);
+
+        var imported = await PostManyAsync(client, "/settings/jira", "jira-facets",
+        [
+            new("ticket", Hidden(facets, "ticket")),
+            new("label", "quick"),
+            new("facet", nameof(MealTagFacet.Effort)),
+        ]);
+
+        var done = await imported.Content.ReadAsStringAsync();
+        Assert.Contains("Added 1 meal(s)", done);
+
+        using var scope = app.Services.CreateScope();
+        var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+        var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+        var meal = Assert.Single(await meals.ListAsync(new MealFilter()));
+
+        Assert.Equal("A meal", meal.Name);
+        Assert.Equal(MealStatus.Queued, meal.Status);
+        Assert.Equal(new DateOnly(2026, 6, 1), meal.LastCookedAt);
+        Assert.Equal(MealTagFacet.Effort, Assert.Single(await tags.ListAsync()).Facet);
+    }
+
+    [Fact]
     public async Task A_refused_token_is_shown_on_the_page_rather_than_swallowed()
     {
         var jira = new FakeHttp().Reply("""{ "message": "no" }""", HttpStatusCode.Unauthorized);

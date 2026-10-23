@@ -30,6 +30,9 @@ public sealed class JiraWizardStore(TimeProvider clock)
     {
         /// <summary>Project chosen in step two, once one has been.</summary>
         public string? ProjectKey { get; set; }
+
+        /// <summary>The labels found on the chosen project's issues, once they have been read.</summary>
+        public IReadOnlyList<string> Labels { get; set; } = [];
     }
 
     /// <summary>Keeps a connection and hands back the ticket that finds it again.</summary>

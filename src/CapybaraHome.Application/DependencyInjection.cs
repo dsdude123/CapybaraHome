@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<DataTransferService>();
         services.AddScoped<BackupWriter>();
         services.AddScoped<JiraImportService>();
+        services.AddScoped<JiraMealImportService>();
 
         // The import pulls hundreds of issues a page at a time, so the client is given longer
         // than the default minute before it gives up on a single page.
