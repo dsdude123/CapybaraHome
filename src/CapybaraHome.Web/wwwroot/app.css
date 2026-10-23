@@ -358,11 +358,8 @@ label {
     margin-bottom: 1rem;
 }
 
-input[type="text"],
-input[type="date"],
-input[type="email"],
-input[type="number"],
-input[type="password"],
+/* Every text-like field, including the ones Blazor renders without a type attribute. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
 select,
 textarea {
     background: var(--surface-raised);
@@ -398,7 +395,7 @@ textarea {
         grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
     }
 
-    .filters input,
+    .filters input:not([type="checkbox"]),
     .filters select {
         max-width: 22rem;
     }
