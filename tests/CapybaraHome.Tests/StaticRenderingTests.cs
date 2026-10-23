@@ -244,11 +244,11 @@ public class StaticRenderingTests
         Assert.Equal("Mow the lawn and edge it", task.Title);
         Assert.Equal(Domain.Tasks.TaskItemStatus.InProgress, task.Status);
 
-        var moved = await PostAsync(client, "/board", $"on-{task.Id}", []);
+        var moved = await PostAsync(client, "/board", $"move-{task.Id}-{Domain.Tasks.TaskItemStatus.Done}", []);
         Assert.Equal(HttpStatusCode.Redirect, moved.StatusCode);
 
         context.ChangeTracker.Clear();
-        Assert.Equal(Domain.Tasks.TaskItemStatus.OnHold, (await context.Tasks.SingleAsync()).Status);
+        Assert.Equal(Domain.Tasks.TaskItemStatus.Done, (await context.Tasks.SingleAsync()).Status);
     }
 
     [Fact]

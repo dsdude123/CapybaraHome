@@ -45,28 +45,29 @@
             @foreach (var task in Column(status))
             {
                 <article class="board-card">
-                    <a class="task-link" href="@($"tasks/{task.Id}")">@task.Title</a>
+                    <div class="card-head">
+                        <a class="task-link" href="@($"tasks/{task.Id}")">@task.Title</a>
+                        <details class="card-menu">
+                            <summary class="btn btn-small menu-button" title="Move this task" aria-label="@($"Move {task.Title}")">⋯</summary>
+                            <div class="menu-panel">
+                                @foreach (var target in StatusNames.All)
+                                {
+                                    if (target != status)
+                                    {
+                                        <form method="post" class="menu-item" @formname="@($"move-{task.Id}-{target}")" @onsubmit="() => MoveAsync(task.Id, target)">
+                                            <AntiforgeryToken />
+                                            <button class="btn btn-small menu-action" type="submit">Move to @StatusNames.Label(target)</button>
+                                        </form>
+                                    }
+                                }
+                            </div>
+                        </details>
+                    </div>
                     <div class="task-meta">
                         <span>@(task.CategoryName ?? "Uncategorized")</span>
                         @if (task.DueDate is { } due)
                         {
                             <span class="@(IsOverdue(task) ? "overdue" : null)">@due.ToString("d MMM")</span>
-                        }
-                    </div>
-                    <div class="row" style="margin-top:0.4rem">
-                        @if (Previous(status) is { } previous)
-                        {
-                            <form method="post" @formname="@($"back-{task.Id}")" @onsubmit="() => MoveAsync(task.Id, previous)">
-                                <AntiforgeryToken />
-                                <button class="btn btn-small" type="submit" title="@($"Move to {StatusNames.Label(previous)}")">←</button>
-                            </form>
-                        }
-                        @if (Next(status) is { } next)
-                        {
-                            <form method="post" @formname="@($"on-{task.Id}")" @onsubmit="() => MoveAsync(task.Id, next)">
-                                <AntiforgeryToken />
-                                <button class="btn btn-small" type="submit" title="@($"Move to {StatusNames.Label(next)}")">→</button>
-                            </form>
                         }
                     </div>
                 </article>
@@ -127,18 +128,6 @@
         }
 
         Navigation.NavigateTo("/board" + (query.Count == 0 ? string.Empty : "?" + string.Join("&", query)));
-    }
-
-    private static TaskItemStatus? Previous(TaskItemStatus status)
-    {
-        var index = Array.IndexOf(StatusNames.All, status);
-        return index > 0 ? StatusNames.All[index - 1] : null;
-    }
-
-    private static TaskItemStatus? Next(TaskItemStatus status)
-    {
-        var index = Array.IndexOf(StatusNames.All, status);
-        return index >= 0 && index < StatusNames.All.Length - 1 ? StatusNames.All[index + 1] : null;
     }
 
     private static bool IsOverdue(TaskView task) =>

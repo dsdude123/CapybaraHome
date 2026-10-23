@@ -437,6 +437,10 @@ textarea {
     padding: 0.6rem;
 }
 
+.board-card .card-head {
+    align-items: start;
+}
+
 .board-card .task-meta {
     margin-top: 0.3rem;
 }
