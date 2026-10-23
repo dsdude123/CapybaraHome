@@ -127,6 +127,7 @@ def overall_table(base, head):
 def assembly_table(base, head):
     """Renders per-assembly line and branch coverage, worst change first."""
     base_assemblies = {} if base is None else base["assemblies"]
+    unknown = "n/a" if base is None else "new"
     names = sorted(set(head["assemblies"]) | set(base_assemblies))
     rows = [
         "| Assembly | Lines (base) | Lines (PR) | Change | Branches (PR) | Change |",
@@ -137,7 +138,7 @@ def assembly_table(base, head):
         base_counts = base_assemblies.get(name)
         rows.append(
             f"| `{name}` "
-            f"| {'new' if base_counts is None else rate_cell(base_counts, 'line')} "
+            f"| {unknown if base_counts is None else rate_cell(base_counts, 'line')} "
             f"| {'gone' if head_counts is None else rate_cell(head_counts, 'line')} "
             f"| {delta_cell(base_counts, head_counts, 'line')} "
             f"| {'gone' if head_counts is None else rate_cell(head_counts, 'branch')} "
