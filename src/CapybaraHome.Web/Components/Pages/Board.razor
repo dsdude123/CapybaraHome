@@ -161,8 +161,15 @@
 
     private int Remaining(TaskItemStatus status) => Count(status) - Column(status).Count;
 
-    /// <summary>Returns how many cards <paramref name="status"/> is asked to show, never fewer than one column's worth.</summary>
-    private int Shown(TaskItemStatus status) => Math.Max(ColumnPageSize, Asked(status) ?? ColumnPageSize);
+    /// <summary>
+    /// Returns how many cards <paramref name="status"/> is asked to show, never fewer than one
+    /// column's worth and never more than the column holds, so a hand-written size cannot ask the
+    /// database for the whole table.
+    /// </summary>
+    private int Shown(TaskItemStatus status) => Math.Clamp(
+        Asked(status) ?? ColumnPageSize,
+        ColumnPageSize,
+        Math.Max(ColumnPageSize, Count(status)));
 
     private int? Asked(TaskItemStatus status) => status switch
     {

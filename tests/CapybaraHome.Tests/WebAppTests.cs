@@ -253,6 +253,36 @@ public class WebAppTests
     }
 
     [Fact]
+    public async Task A_column_size_typed_past_the_end_shows_the_column_whole_and_no_more()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        for (var i = 0; i < 25; i++)
+        {
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"Task {i:D2}", DueDate: new DateOnly(2026, 11, 1).AddDays(i)));
+        }
+
+        var board = await client.GetStringAsync("/board?todo=100000000");
+
+        Assert.Contains("Task 24", board);
+        Assert.DoesNotContain("Load", board);
+    }
+
+    [Fact]
+    public async Task An_empty_task_list_says_so_and_offers_no_pages()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Only one"));
+
+        var page = await client.GetStringAsync("/tasks?text=nothing-matches-this");
+
+        Assert.Contains("No tasks", page);
+        Assert.DoesNotContain("pager", page);
+    }
+
+    [Fact]
     public async Task A_board_column_that_fits_offers_no_load_more()
     {
         await using var app = await AppFactory.CreateAsync();
@@ -278,7 +308,8 @@ public class WebAppTests
 
         var board = await client.GetStringAsync("/board?done=40&sort=title");
 
-        Assert.Contains("todo=40&amp;done=40", board);
+        // A column's size is reported as the column holds, so Done asks for the 25 it has, not the 40 typed.
+        Assert.Contains("todo=40&amp;done=25", board);
         Assert.Contains("sort=title", board);
     }
 }
