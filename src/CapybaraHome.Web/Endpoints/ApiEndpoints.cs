@@ -129,6 +129,37 @@ public static class ApiEndpoints
 
         meals.MapDelete("/{id:int}", async (int id, MealService service, CancellationToken cancellationToken) =>
             await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        meals.MapPost("/{id:int}/variants", async (int id, MealVariantRequest request, MealService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.CreateVariantAsync(id, request, cancellationToken) is { } created
+                    ? Results.Created($"/api/meals/{id}/variants/{created.Id}", created)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        meals.MapPut("/variants/{variantId:int}", async (int variantId, MealVariantRequest request, MealService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateVariantAsync(variantId, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        meals.MapDelete("/variants/{variantId:int}", async (int variantId, MealService service, CancellationToken cancellationToken) =>
+            await service.DeleteVariantAsync(variantId, cancellationToken) ? Results.NoContent() : Results.NotFound());
     }
 
     private static void MapMealTags(IEndpointRouteBuilder api)

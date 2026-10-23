@@ -15,6 +15,34 @@ public record MealIngredientView(int Id, string? Quantity, string Item, int Sort
 /// <param name="Facet">Which side of a meal the tag describes.</param>
 public record MealTagView(int Id, string Name, MealTagFacet Facet);
 
+/// <summary>A variant as the API and the UI show it.</summary>
+/// <param name="Id">Primary key.</param>
+/// <param name="MealId">Meal the variant belongs to.</param>
+/// <param name="Name">What the variant is called.</param>
+/// <param name="DirectionsModifications">What it changes about the directions.</param>
+/// <param name="AddedIngredients">Ingredients it adds, in order.</param>
+/// <param name="RemovedIngredientIds">Ids of the meal's ingredients it leaves out.</param>
+/// <param name="SortOrder">Position in the meal's list of variants.</param>
+public record MealVariantView(
+    int Id,
+    int MealId,
+    string Name,
+    string? DirectionsModifications,
+    IReadOnlyList<MealIngredientView> AddedIngredients,
+    IReadOnlyList<int> RemovedIngredientIds,
+    int SortOrder);
+
+/// <summary>Fields accepted when creating or updating a variant.</summary>
+/// <param name="Name">What the variant is called; required.</param>
+/// <param name="DirectionsModifications">What it changes about the directions.</param>
+/// <param name="AddedIngredients">The whole list of ingredients it adds.</param>
+/// <param name="RemovedIngredientIds">Ids of the meal's ingredients it leaves out.</param>
+public record MealVariantRequest(
+    string Name,
+    string? DirectionsModifications = null,
+    IReadOnlyList<MealIngredientInput>? AddedIngredients = null,
+    IReadOnlyCollection<int>? RemovedIngredientIds = null);
+
 /// <summary>A meal as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
 /// <param name="Name">What the meal is called.</param>
@@ -25,6 +53,7 @@ public record MealTagView(int Id, string Name, MealTagFacet Facet);
 /// <param name="NeedsIngredientSplit">Whether its imported description still has to be split.</param>
 /// <param name="JiraKey">Key of the JIRA issue it came from, or null.</param>
 /// <param name="Ingredients">The ingredient list, in order.</param>
+/// <param name="Variants">The meal's variants, in order.</param>
 /// <param name="Tags">The tags on the meal.</param>
 /// <param name="CreatedAt">When the meal was created.</param>
 /// <param name="UpdatedAt">When the meal last changed.</param>
@@ -38,6 +67,7 @@ public record MealView(
     bool NeedsIngredientSplit,
     string? JiraKey,
     IReadOnlyList<MealIngredientView> Ingredients,
+    IReadOnlyList<MealVariantView> Variants,
     IReadOnlyList<MealTagView> Tags,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

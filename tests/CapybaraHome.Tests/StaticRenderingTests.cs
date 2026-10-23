@@ -417,6 +417,88 @@ public class StaticRenderingTests
     }
 
     [Fact]
+    public async Task A_variant_is_added_and_edited_from_the_meal_page_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        int ingredientId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("A meal", Ingredients:
+                [new MealIngredientInput("first"), new MealIngredientInput("second")]));
+            mealId = meal.Id;
+            ingredientId = meal.Ingredients[1].Id;
+        }
+
+        var blank = await client.GetStringAsync($"/meals/{mealId}/variants/new");
+        Assert.DoesNotContain("<!--Blazor:", blank);
+        foreach (var form in Forms(blank).Where(f => f.Contains("method=\"post\"", StringComparison.OrdinalIgnoreCase)))
+        {
+            Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(form, "__RequestVerificationToken").Count);
+        }
+
+        var added = await PostManyAsync(client, $"/meals/{mealId}/variants/new", "variant-editor",
+        [
+            new("action", "save"),
+            new("name", "A variant"),
+            new("directions", "with a change"),
+            new("quantity", "1 tin"),
+            new("item", "an extra"),
+            new("removed", ingredientId.ToString()),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, added.StatusCode);
+
+        // The meal page lists the variant it now carries.
+        var mealPage = await client.GetStringAsync($"/meals/{mealId}");
+        Assert.Contains("A variant", mealPage);
+        Assert.Contains("1 added", mealPage);
+        Assert.Contains("1 removed", mealPage);
+
+        int variantId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var variant = Assert.Single((await meals.GetAsync(mealId))!.Variants);
+            variantId = variant.Id;
+            Assert.Equal("with a change", variant.DirectionsModifications);
+            Assert.Equal(ingredientId, Assert.Single(variant.RemovedIngredientIds));
+        }
+
+        var edited = await PostManyAsync(client, $"/meals/{mealId}/variants/{variantId}", "variant-editor",
+        [
+            new("action", "save"),
+            new("name", "A renamed variant"),
+            new("directions", string.Empty),
+            new("item", "an extra"),
+            new("quantity", "1 tin"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, edited.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var variant = Assert.Single((await meals.GetAsync(mealId))!.Variants);
+            Assert.Equal("A renamed variant", variant.Name);
+            Assert.Empty(variant.RemovedIngredientIds);
+        }
+
+        var deleted = await PostManyAsync(client, $"/meals/{mealId}/variants/{variantId}", "variant-delete", []);
+
+        Assert.Equal(HttpStatusCode.Redirect, deleted.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            Assert.Empty((await meals.GetAsync(mealId))!.Variants);
+        }
+    }
+
+    [Fact]
     public async Task The_meal_filters_travel_in_the_query_string()
     {
         await using var app = await AppFactory.CreateAsync();

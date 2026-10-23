@@ -71,6 +71,14 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 m.ImportedText, m.NeedsIngredientSplit, m.JiraKey,
                 m.Ingredients.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)
                     .Select(i => new MealIngredientRecord(i.Quantity, i.Item, i.SortOrder)).ToList(),
+                m.Variants.OrderBy(v => v.SortOrder).ThenBy(v => v.Id)
+                    .Select(v => new MealVariantRecord(
+                        v.Name,
+                        v.DirectionsModifications,
+                        v.AddedIngredients.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)
+                            .Select(i => new MealIngredientRecord(i.Quantity, i.Item, i.SortOrder)).ToList(),
+                        v.RemovedIngredients.Select(r => r.Ingredient!.SortOrder).ToList(),
+                        v.SortOrder)).ToList(),
                 m.Tags.OrderBy(t => t.Id).Select(t => t.Id).ToList(),
                 m.CreatedAt, m.UpdatedAt))
             .ToListAsync(cancellationToken);
@@ -259,6 +267,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         var updated = 0;
         var existingByJiraKey = await context.Meals
             .Include(m => m.Ingredients)
+            .Include(m => m.Variants)
             .Include(m => m.Tags)
             .Where(m => m.JiraKey != null)
             .ToDictionaryAsync(m => m.JiraKey!, m => m, cancellationToken);
@@ -274,6 +283,8 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 .Select(i => new MealIngredient { Quantity = i.Quantity, Item = i.Item, SortOrder = i.SortOrder })
                 .ToList();
 
+            var variants = Variants(record, ingredients);
+
             if (record.JiraKey is { Length: > 0 } key && existingByJiraKey.TryGetValue(key, out var existing))
             {
                 existing.Name = record.Name;
@@ -283,8 +294,10 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 existing.LastCookedAt = record.LastCookedAt;
                 existing.ImportedText = record.ImportedText;
                 existing.NeedsIngredientSplit = record.NeedsIngredientSplit;
+                context.MealVariants.RemoveRange(existing.Variants);
                 context.MealIngredients.RemoveRange(existing.Ingredients);
                 existing.Ingredients = ingredients;
+                existing.Variants = variants;
                 existing.Tags = tags;
                 updated++;
                 continue;
@@ -301,6 +314,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 NeedsIngredientSplit = record.NeedsIngredientSplit,
                 JiraKey = record.JiraKey,
                 Ingredients = ingredients,
+                Variants = variants,
                 Tags = tags,
                 CreatedAt = record.CreatedAt,
                 UpdatedAt = record.UpdatedAt,
@@ -317,5 +331,31 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
 
         await context.SaveChangesAsync(cancellationToken);
         return (added, updated);
+    }
+
+    /// <summary>
+    /// Rebuilds a meal's variants. An export names the ingredients a variant leaves out by their
+    /// position in the meal's list rather than by id, because the ids are new on this side; the
+    /// rows are linked by reference so that EF fills the keys in once the meal is saved.
+    /// </summary>
+    private static List<MealVariant> Variants(MealRecord record, List<MealIngredient> ingredients)
+    {
+        var byPosition = ingredients.ToDictionary(i => i.SortOrder, i => i);
+
+        return (record.Variants ?? [])
+            .Select(variant => new MealVariant
+            {
+                Name = variant.Name,
+                DirectionsModifications = variant.DirectionsModifications,
+                SortOrder = variant.SortOrder,
+                AddedIngredients = variant.AddedIngredients
+                    .Select(i => new MealVariantIngredient { Quantity = i.Quantity, Item = i.Item, SortOrder = i.SortOrder })
+                    .ToList(),
+                RemovedIngredients = variant.RemovedIngredients
+                    .Where(byPosition.ContainsKey)
+                    .Select(position => new MealVariantRemoval { Ingredient = byPosition[position] })
+                    .ToList(),
+            })
+            .ToList();
     }
 }

@@ -51,6 +51,7 @@ public record MealIngredientRecord(string? Quantity, string Item, int SortOrder)
 /// <param name="NeedsIngredientSplit">Whether that description still has to be split.</param>
 /// <param name="JiraKey">Key of the JIRA issue it came from, or null.</param>
 /// <param name="Ingredients">The ingredient list, in order.</param>
+/// <param name="Variants">The meal's variants, in order.</param>
 /// <param name="TagIds">Ids of the tags on it.</param>
 /// <param name="CreatedAt">When it was created.</param>
 /// <param name="UpdatedAt">When it last changed.</param>
@@ -65,9 +66,23 @@ public record MealRecord(
     bool NeedsIngredientSplit,
     string? JiraKey,
     IReadOnlyList<MealIngredientRecord> Ingredients,
+    IReadOnlyList<MealVariantRecord> Variants,
     IReadOnlyList<int> TagIds,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
+
+/// <summary>A meal's variant in an export.</summary>
+/// <param name="Name">What the variant is called.</param>
+/// <param name="DirectionsModifications">What it changes about the directions.</param>
+/// <param name="AddedIngredients">Ingredients it adds, in order.</param>
+/// <param name="RemovedIngredients">The meal's ingredients it leaves out, by their position in that list.</param>
+/// <param name="SortOrder">Position in the meal's list of variants.</param>
+public record MealVariantRecord(
+    string Name,
+    string? DirectionsModifications,
+    IReadOnlyList<MealIngredientRecord> AddedIngredients,
+    IReadOnlyList<int> RemovedIngredients,
+    int SortOrder);
 
 /// <summary>A category in an export. Ids are carried so tasks and cards can point at them.</summary>
 /// <param name="Id">Primary key as exported.</param>

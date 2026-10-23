@@ -165,7 +165,7 @@ public class DataTransferServiceTests
             [],
             [],
             [],
-            [new MealRecord(1, "New name", null, MealStatus.Available, false, null, null, false, "FOOD-1", [], [], db.Clock.GetUtcNow(), db.Clock.GetUtcNow())],
+            [new MealRecord(1, "New name", null, MealStatus.Available, false, null, null, false, "FOOD-1", [], [], [], db.Clock.GetUtcNow(), db.Clock.GetUtcNow())],
             []);
 
         var summary = await transfer.ImportAsync(document, ImportMode.Merge);
@@ -213,11 +213,37 @@ public class DataTransferServiceTests
             [],
             [],
             [],
-            [new MealRecord(1, "The only meal", null, MealStatus.Pooled, false, null, null, false, null, [], [], db.Clock.GetUtcNow(), db.Clock.GetUtcNow())],
+            [new MealRecord(1, "The only meal", null, MealStatus.Pooled, false, null, null, false, null, [], [], [], db.Clock.GetUtcNow(), db.Clock.GetUtcNow())],
             []);
 
         await transfer.ImportAsync(document, ImportMode.Replace);
 
         Assert.Equal("The only meal", db.Context.Meals.Single().Name);
+    }
+
+    [Fact]
+    public async Task A_variant_survives_a_round_trip_and_still_leaves_out_the_right_ingredient()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var transfer = new DataTransferService(db.Context, db.Clock);
+        var meals = new MealService(db.Context, db.Clock);
+        var meal = await meals.CreateAsync(new CreateMealRequest("A meal", Ingredients:
+            [new MealIngredientInput("first"), new MealIngredientInput("second")]));
+        await meals.CreateVariantAsync(meal.Id, new MealVariantRequest(
+            "A variant", "with a change", [new MealIngredientInput("an extra", "1 tin")], [meal.Ingredients[1].Id]));
+
+        var json = await transfer.ExportToJsonAsync();
+
+        await using var restored = await TestDatabase.CreateAsync();
+        var into = new DataTransferService(restored.Context, restored.Clock);
+        await into.ImportFromJsonAsync(json, ImportMode.Merge);
+
+        var service = new MealService(restored.Context, restored.Clock);
+        var loaded = Assert.Single(await service.ListAsync(new MealFilter()));
+        var variant = Assert.Single(loaded.Variants);
+
+        Assert.Equal("A variant", variant.Name);
+        Assert.Equal("an extra", Assert.Single(variant.AddedIngredients).Item);
+        Assert.Equal(loaded.Ingredients.Single(i => i.Item == "second").Id, Assert.Single(variant.RemovedIngredientIds));
     }
 }

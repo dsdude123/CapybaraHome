@@ -161,6 +161,83 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("MealTags");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealVariant", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DirectionsModifications")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MealId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MealId", "SortOrder");
+
+                    b.ToTable("MealVariants");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealVariantIngredient", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Item")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MealVariantId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Quantity")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MealVariantId", "SortOrder");
+
+                    b.ToTable("MealVariantIngredients");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealVariantRemoval", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MealIngredientId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MealVariantId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MealIngredientId");
+
+                    b.HasIndex("MealVariantId", "MealIngredientId")
+                        .IsUnique();
+
+                    b.ToTable("MealVariantRemovals");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.Category", b =>
                 {
                     b.Property<int>("Id")
@@ -369,6 +446,47 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Meal");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealVariant", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Meals.Meal", "Meal")
+                        .WithMany("Variants")
+                        .HasForeignKey("MealId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Meal");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealVariantIngredient", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Meals.MealVariant", "Variant")
+                        .WithMany("AddedIngredients")
+                        .HasForeignKey("MealVariantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Variant");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealVariantRemoval", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Meals.MealIngredient", "Ingredient")
+                        .WithMany()
+                        .HasForeignKey("MealIngredientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CapybaraHome.Domain.Meals.MealVariant", "Variant")
+                        .WithMany("RemovedIngredients")
+                        .HasForeignKey("MealVariantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Ingredient");
+
+                    b.Navigation("Variant");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskItem", b =>
                 {
                     b.HasOne("CapybaraHome.Domain.Tasks.Category", "Category")
@@ -406,6 +524,15 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
                 {
                     b.Navigation("Ingredients");
+
+                    b.Navigation("Variants");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealVariant", b =>
+                {
+                    b.Navigation("AddedIngredients");
+
+                    b.Navigation("RemovedIngredients");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.Category", b =>

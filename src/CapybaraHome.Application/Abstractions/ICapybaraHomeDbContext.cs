@@ -24,6 +24,15 @@ public interface ICapybaraHomeDbContext
     /// <summary>Tags meals are filtered by.</summary>
     DbSet<MealTag> MealTags { get; }
 
+    /// <summary>Versions of a meal that change its directions or its ingredients.</summary>
+    DbSet<MealVariant> MealVariants { get; }
+
+    /// <summary>Lines the variants add to their meals' ingredient lists.</summary>
+    DbSet<MealVariantIngredient> MealVariantIngredients { get; }
+
+    /// <summary>The meals' ingredients the variants leave out.</summary>
+    DbSet<MealVariantRemoval> MealVariantRemovals { get; }
+
     /// <summary>Dashboard cards.</summary>
     DbSet<DashboardCard> DashboardCards { get; }
 

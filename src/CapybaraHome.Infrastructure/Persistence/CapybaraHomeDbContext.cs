@@ -26,6 +26,15 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Tags meals are filtered by.</summary>
     public DbSet<MealTag> MealTags => Set<MealTag>();
 
+    /// <summary>Versions of a meal that change its directions or its ingredients.</summary>
+    public DbSet<MealVariant> MealVariants => Set<MealVariant>();
+
+    /// <summary>Lines the variants add to their meals' ingredient lists.</summary>
+    public DbSet<MealVariantIngredient> MealVariantIngredients => Set<MealVariantIngredient>();
+
+    /// <summary>The meals' ingredients the variants leave out.</summary>
+    public DbSet<MealVariantRemoval> MealVariantRemovals => Set<MealVariantRemoval>();
+
     /// <summary>Cards on the shared dashboard.</summary>
     public DbSet<DashboardCard> DashboardCards => Set<DashboardCard>();
 

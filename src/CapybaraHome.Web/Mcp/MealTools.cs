@@ -113,6 +113,29 @@ public class MealTools
         return meals.UpdateAsync(id, request, cancellationToken);
     }
 
+    /// <summary>Adds a variant to a meal.</summary>
+    /// <param name="meals">Meal service.</param>
+    /// <param name="mealId">Id of the meal the variant belongs to.</param>
+    /// <param name="name">What the variant is called.</param>
+    /// <param name="directionsModifications">What it changes about the directions.</param>
+    /// <param name="addedIngredients">Ingredients it adds, each a quantity and an item.</param>
+    /// <param name="removedIngredientIds">Ids of the meal's ingredients it leaves out.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    [McpServerTool(Name = "create_meal_variant")]
+    [Description("Add a variant of a meal. A variant shares its meal's status and last cooked date.")]
+    public static Task<MealVariantView?> CreateMealVariantAsync(
+        MealService meals,
+        int mealId,
+        string name,
+        string? directionsModifications = null,
+        MealIngredientInput[]? addedIngredients = null,
+        int[]? removedIngredientIds = null,
+        CancellationToken cancellationToken = default)
+    {
+        var request = new MealVariantRequest(name, directionsModifications, addedIngredients, removedIngredientIds);
+        return meals.CreateVariantAsync(mealId, request, cancellationToken);
+    }
+
     /// <summary>Lists the meal tags and the facet each one describes.</summary>
     /// <param name="tags">Meal tag service.</param>
     /// <param name="cancellationToken">Cancels the work.</param>

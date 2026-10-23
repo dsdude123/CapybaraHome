@@ -23,6 +23,11 @@ public class MealConfiguration : IEntityTypeConfiguration<Meal>
             .HasForeignKey(i => i.MealId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasMany(m => m.Variants)
+            .WithOne(v => v.Meal)
+            .HasForeignKey(v => v.MealId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasMany(m => m.Tags)
             .WithMany(t => t.Meals)
             .UsingEntity(join => join.ToTable("MealTagLinks"));

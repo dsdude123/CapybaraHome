@@ -163,6 +163,140 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         return true;
     }
 
+    /// <summary>Adds a variant to a meal, or returns null when no meal has that id.</summary>
+    /// <exception cref="ArgumentException">The name is blank, or an ingredient to leave out is not the meal's.</exception>
+    public async Task<MealVariantView?> CreateVariantAsync(int mealId, MealVariantRequest request, CancellationToken cancellationToken = default)
+    {
+        var meal = await context.Meals
+            .Include(m => m.Ingredients)
+            .Include(m => m.Variants)
+            .SingleOrDefaultAsync(m => m.Id == mealId, cancellationToken);
+
+        if (meal is null)
+        {
+            return null;
+        }
+
+        var variant = new MealVariant
+        {
+            MealId = mealId,
+            Name = VariantName(request),
+            DirectionsModifications = Blank(request.DirectionsModifications),
+            SortOrder = meal.Variants.Count,
+            AddedIngredients = AddedLines(request.AddedIngredients),
+            RemovedIngredients = Removals(meal, request.RemovedIngredientIds),
+        };
+
+        context.MealVariants.Add(variant);
+
+        // The meal's own row is touched so that a change to one of its variants shows up as a
+        // change to the meal, which is the only timestamp either of them has.
+        meal.UpdatedAt = clock.GetUtcNow();
+        await context.SaveChangesAsync(cancellationToken);
+
+        return await GetVariantAsync(variant.Id, cancellationToken);
+    }
+
+    /// <summary>Returns one variant, or null when no variant has that id.</summary>
+    public async Task<MealVariantView?> GetVariantAsync(int id, CancellationToken cancellationToken = default)
+    {
+        return await context.MealVariants.AsNoTracking()
+            .Where(v => v.Id == id)
+            .Select(VariantProjection)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    /// <summary>Replaces a variant's fields, or returns null when no variant has that id.</summary>
+    /// <exception cref="ArgumentException">The name is blank, or an ingredient to leave out is not the meal's.</exception>
+    public async Task<MealVariantView?> UpdateVariantAsync(int id, MealVariantRequest request, CancellationToken cancellationToken = default)
+    {
+        var variant = await context.MealVariants
+            .Include(v => v.AddedIngredients)
+            .Include(v => v.RemovedIngredients)
+            .Include(v => v.Meal!.Ingredients)
+            .SingleOrDefaultAsync(v => v.Id == id, cancellationToken);
+
+        if (variant is null)
+        {
+            return null;
+        }
+
+        variant.Name = VariantName(request);
+        variant.DirectionsModifications = Blank(request.DirectionsModifications);
+
+        context.MealVariantIngredients.RemoveRange(variant.AddedIngredients);
+        variant.AddedIngredients = AddedLines(request.AddedIngredients);
+
+        context.MealVariantRemovals.RemoveRange(variant.RemovedIngredients);
+        variant.RemovedIngredients = Removals(variant.Meal!, request.RemovedIngredientIds);
+
+        variant.Meal!.UpdatedAt = clock.GetUtcNow();
+        await context.SaveChangesAsync(cancellationToken);
+
+        return await GetVariantAsync(id, cancellationToken);
+    }
+
+    /// <summary>Deletes a variant. Returns false when no variant has that id.</summary>
+    public async Task<bool> DeleteVariantAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var variant = await context.MealVariants.Include(v => v.Meal).SingleOrDefaultAsync(v => v.Id == id, cancellationToken);
+        if (variant is null)
+        {
+            return false;
+        }
+
+        context.MealVariants.Remove(variant);
+        variant.Meal!.UpdatedAt = clock.GetUtcNow();
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    private static string VariantName(MealVariantRequest request)
+    {
+        var name = (request.Name ?? string.Empty).Trim();
+        return name.Length > 0 ? name : throw new ArgumentException("A variant needs a name.", nameof(request));
+    }
+
+    private static List<MealVariantIngredient> AddedLines(IReadOnlyList<MealIngredientInput>? ingredients)
+    {
+        return Lines(ingredients)
+            .Select(line => new MealVariantIngredient { Quantity = line.Quantity, Item = line.Item, SortOrder = line.SortOrder })
+            .ToList();
+    }
+
+    private static List<MealVariantRemoval> Removals(Meal meal, IReadOnlyCollection<int>? removedIngredientIds)
+    {
+        if (removedIngredientIds is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        var removals = new List<MealVariantRemoval>();
+
+        foreach (var ingredientId in removedIngredientIds.Distinct())
+        {
+            if (meal.Ingredients.All(i => i.Id != ingredientId))
+            {
+                throw new ArgumentException(
+                    $"Ingredient {ingredientId} is not on this meal.", nameof(removedIngredientIds));
+            }
+
+            removals.Add(new MealVariantRemoval { MealIngredientId = ingredientId });
+        }
+
+        return removals;
+    }
+
+    private static readonly Expression<Func<MealVariant, MealVariantView>> VariantProjection = v => new MealVariantView(
+        v.Id,
+        v.MealId,
+        v.Name,
+        v.DirectionsModifications,
+        v.AddedIngredients.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)
+            .Select(i => new MealIngredientView(i.Id, i.Quantity, i.Item, i.SortOrder)).ToList(),
+        v.RemovedIngredients.Select(r => r.MealIngredientId).ToList(),
+        v.SortOrder);
+
     private async Task<List<MealTag>> TagsAsync(IReadOnlyCollection<int>? tagIds, CancellationToken cancellationToken)
     {
         if (tagIds is not { Count: > 0 })
@@ -264,6 +398,16 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         m.JiraKey,
         m.Ingredients.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)
             .Select(i => new MealIngredientView(i.Id, i.Quantity, i.Item, i.SortOrder)).ToList(),
+        m.Variants.OrderBy(v => v.SortOrder).ThenBy(v => v.Id)
+            .Select(v => new MealVariantView(
+                v.Id,
+                v.MealId,
+                v.Name,
+                v.DirectionsModifications,
+                v.AddedIngredients.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)
+                    .Select(i => new MealIngredientView(i.Id, i.Quantity, i.Item, i.SortOrder)).ToList(),
+                v.RemovedIngredients.Select(r => r.MealIngredientId).ToList(),
+                v.SortOrder)).ToList(),
         m.Tags.OrderBy(t => t.Facet).ThenBy(t => t.Name)
             .Select(t => new MealTagView(t.Id, t.Name, t.Facet)).ToList(),
         m.CreatedAt,

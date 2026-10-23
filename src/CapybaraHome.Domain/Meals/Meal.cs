@@ -33,6 +33,9 @@ public class Meal
     /// <summary>The ingredient list.</summary>
     public ICollection<MealIngredient> Ingredients { get; set; } = [];
 
+    /// <summary>The meal's variants.</summary>
+    public ICollection<MealVariant> Variants { get; set; } = [];
+
     /// <summary>The tags on the meal.</summary>
     public ICollection<MealTag> Tags { get; set; } = [];
 

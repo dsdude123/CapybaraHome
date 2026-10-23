@@ -111,6 +111,38 @@
 
 @if (Id is not null)
 {
+    <section class="card stack" style="margin-top:1rem">
+        <h2 class="card-title">Variants</h2>
+        @if (variants.Count == 0)
+        {
+            <p class="muted">No variants yet.</p>
+        }
+        else
+        {
+            <ul class="task-list">
+                @foreach (var variant in variants)
+                {
+                    <li>
+                        <div class="task-line">
+                            <a class="task-link" href="meals/@Id/variants/@variant.Id">@variant.Name</a>
+                        </div>
+                        <div class="task-meta">
+                            @if (variant.AddedIngredients.Count > 0)
+                            {
+                                <span>@variant.AddedIngredients.Count added</span>
+                            }
+                            @if (variant.RemovedIngredientIds.Count > 0)
+                            {
+                                <span>@variant.RemovedIngredientIds.Count removed</span>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+        <a class="btn btn-small" href="meals/@Id/variants/new">Add a variant</a>
+    </section>
+
     <form method="post" @formname="meal-delete" @onsubmit="DeleteAsync" style="margin-top:0.75rem">
         <AntiforgeryToken />
         <button class="btn btn-danger" type="submit">Delete</button>
@@ -129,6 +161,7 @@
     private const int BlankRows = 3;
 
     private IReadOnlyList<MealTagView> tags = [];
+    private IReadOnlyList<MealVariantView> variants = [];
     private List<IngredientRow> rows = [];
     private List<int> selectedTags = [];
     private string? name;
@@ -149,22 +182,24 @@
     {
         tags = await Tags.ListAsync();
 
+        var meal = Id is { } editing ? await Meals.GetAsync(editing) : null;
+        if (Id is not null && meal is null)
+        {
+            Navigation.NavigateTo("meals");
+            return;
+        }
+
+        variants = meal?.Variants ?? [];
+
         if (HttpContext?.Request.Method == HttpMethods.Post)
         {
             ReadForm(HttpContext.Request.Form);
             return;
         }
 
-        if (Id is null)
-        {
-            rows = Blank(BlankRows);
-            return;
-        }
-
-        var meal = await Meals.GetAsync(Id.Value);
         if (meal is null)
         {
-            Navigation.NavigateTo("meals");
+            rows = Blank(BlankRows);
             return;
         }
 
