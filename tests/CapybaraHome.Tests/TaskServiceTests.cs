@@ -76,6 +76,22 @@ public class TaskServiceTests
     }
 
     [Fact]
+    public async Task Sorting_by_what_changed_last_puts_the_newest_change_first()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+        var first = await service.CreateAsync(new CreateTaskRequest("Older"));
+        await service.CreateAsync(new CreateTaskRequest("Newer"));
+
+        db.Clock.Advance(TimeSpan.FromHours(1));
+        await service.UpdateAsync(first.Id, new UpdateTaskRequest(Title: "Older, touched again"));
+
+        var listed = await service.ListAsync(new TaskFilter(), TaskSort.RecentlyUpdated);
+
+        Assert.Equal(["Older, touched again", "Newer"], listed.Select(t => t.Title));
+    }
+
+    [Fact]
     public async Task Sorting_by_title_runs_both_ways()
     {
         await using var db = await TestDatabase.CreateAsync();

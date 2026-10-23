@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Tasks;
+using CapybaraHome.Web;
 using CapybaraHome.Domain.Tasks;
 
 namespace CapybaraHome.Tests;
@@ -23,6 +25,7 @@ public class WebAppTests
     [InlineData("/tasks/new")]
     [InlineData("/settings")]
     [InlineData("/account")]
+    [InlineData("/Error")]
     public async Task Every_page_renders(string path)
     {
         await using var app = await AppFactory.CreateAsync();
@@ -113,6 +116,28 @@ public class WebAppTests
 
         Assert.Contains("Due October 23, 2026", tasks);
         Assert.Contains("Due October 23, 2026", board);
+    }
+
+    [Theory]
+    [InlineData("/tasks")]
+    [InlineData("/board")]
+    public async Task Every_sort_the_picker_offers_renders(string path)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+        var category = await client.PostAsJsonAsync("/api/categories", new CategoryRequest("Indoors"));
+        var filed = await category.Content.ReadFromJsonAsync<CategoryView>(Json);
+
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Dated and filed", CategoryId: filed!.Id, DueDate: new DateOnly(2026, 11, 1)));
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Undated and loose"));
+
+        foreach (var sort in TaskSortNames.All)
+        {
+            var response = await client.GetAsync($"{path}?sort={TaskSortNames.Value(sort)}");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("Undated and loose", await response.Content.ReadAsStringAsync());
+        }
     }
 
     [Theory]
