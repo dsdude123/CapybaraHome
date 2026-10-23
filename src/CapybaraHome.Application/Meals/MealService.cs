@@ -134,6 +134,12 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
             meal.LastCookedAt = lastCooked;
         }
 
+        if (request.Status is { } moved && moved is not (MealStatus.Planned or MealStatus.PlannedShared))
+        {
+            meal.PlannedSlot = null;
+            meal.PlannedVariantId = null;
+        }
+
         if (request.Ingredients is not null)
         {
             context.MealIngredients.RemoveRange(meal.Ingredients);
@@ -161,6 +167,68 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         context.Meals.Remove(meal);
         await context.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// Puts a meal, or one of its variants, on the plan. Returns null when no meal has that id.
+    /// </summary>
+    /// <param name="mealId">The meal to plan.</param>
+    /// <param name="slot">Which meal of the day it fills.</param>
+    /// <param name="variantId">The variant to plan, or null for the meal itself.</param>
+    /// <param name="shared">Whether it is one of the shared meals.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <exception cref="ArgumentException">The variant belongs to another meal.</exception>
+    public async Task<MealView?> PlanAsync(
+        int mealId,
+        MealSlot slot,
+        int? variantId = null,
+        bool shared = false,
+        CancellationToken cancellationToken = default)
+    {
+        var meal = await context.Meals
+            .Include(m => m.Variants)
+            .SingleOrDefaultAsync(m => m.Id == mealId, cancellationToken);
+
+        if (meal is null)
+        {
+            return null;
+        }
+
+        if (variantId is { } wanted && meal.Variants.All(v => v.Id != wanted))
+        {
+            throw new ArgumentException($"Variant {wanted} is not a variant of this meal.", nameof(variantId));
+        }
+
+        meal.Status = shared ? MealStatus.PlannedShared : MealStatus.Planned;
+        meal.PlannedSlot = slot;
+        meal.PlannedVariantId = variantId;
+
+        await context.SaveChangesAsync(cancellationToken);
+        return await GetAsync(mealId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Returns what the planning screens can choose from: every matching meal, and every variant
+    /// of those meals as a row of its own, since a variant is picked the same way a meal is.
+    /// </summary>
+    public async Task<IReadOnlyList<MealPlanOption>> ListOptionsAsync(
+        MealFilter filter,
+        MealSort sort = MealSort.LastCooked,
+        CancellationToken cancellationToken = default)
+    {
+        var meals = await ListAsync(filter, sort, cancellationToken);
+        var options = new List<MealPlanOption>();
+
+        foreach (var meal in meals)
+        {
+            options.Add(new MealPlanOption(
+                meal.Id, null, meal.Name, meal.Status, meal.LastCookedAt, meal.Tags, meal.Variants.Count > 0));
+
+            options.AddRange(meal.Variants.Select(variant => new MealPlanOption(
+                meal.Id, variant.Id, $"{meal.Name} ({variant.Name})", meal.Status, meal.LastCookedAt, meal.Tags, true)));
+        }
+
+        return options;
     }
 
     /// <summary>Adds a variant to a meal, or returns null when no meal has that id.</summary>
@@ -394,6 +462,9 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         m.Status,
         m.IsOneTime,
         m.LastCookedAt,
+        m.PlannedSlot,
+        m.PlannedVariantId,
+        m.PlannedVariant == null ? null : m.PlannedVariant.Name,
         m.NeedsIngredientSplit,
         m.JiraKey,
         m.Ingredients.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)

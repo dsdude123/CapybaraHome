@@ -42,6 +42,7 @@ public class StaticRenderingTests
     [InlineData("/tasks/new")]
     [InlineData("/meals")]
     [InlineData("/meals/new")]
+    [InlineData("/meals/plan")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -63,6 +64,7 @@ public class StaticRenderingTests
     [InlineData("/tasks/new")]
     [InlineData("/meals")]
     [InlineData("/meals/new")]
+    [InlineData("/meals/plan")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -437,7 +439,7 @@ public class StaticRenderingTests
         Assert.DoesNotContain("<!--Blazor:", blank);
         foreach (var form in Forms(blank).Where(f => f.Contains("method=\"post\"", StringComparison.OrdinalIgnoreCase)))
         {
-            Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(form, "__RequestVerificationToken").Count);
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(form, "__RequestVerificationToken"));
         }
 
         var added = await PostManyAsync(client, $"/meals/{mealId}/variants/new", "variant-editor",
@@ -521,6 +523,146 @@ public class StaticRenderingTests
         Assert.DoesNotContain("A plain meal", await client.GetStringAsync($"/meals?tag={tagId}"));
         Assert.DoesNotContain("A tagged meal", await client.GetStringAsync($"/meals?status={nameof(MealStatus.Closed)}"));
         Assert.Contains("A tagged meal", await client.GetStringAsync("/meals?sort=name-desc"));
+    }
+
+    [Fact]
+    public async Task Meals_are_planned_and_sent_back_from_the_planning_page_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("A plain meal", Status: MealStatus.Available));
+            mealId = meal.Id;
+        }
+
+        // The targets travel in the query string, so the page is free of any state of its own.
+        var page = await client.GetStringAsync("/meals/plan?breakfast=1&lunch=0&dinner=2");
+        Assert.Contains("Breakfast 0 of 1", page);
+        Assert.Contains("Dinner 0 of 2", page);
+        Assert.Contains("A plain meal", page);
+
+        var planned = await PostManyAsync(client, "/meals/plan?dinner=2", $"search-{mealId}-base",
+        [
+            new("meal-id", mealId.ToString()),
+            new("variant-id", string.Empty),
+            new("slot", nameof(MealSlot.Dinner)),
+            new("shared", "true"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, planned.StatusCode);
+
+        var afterPlanning = await client.GetStringAsync("/meals/plan?dinner=2");
+        Assert.Contains("Dinner 1 of 2", afterPlanning);
+        Assert.Contains("Planned shared", afterPlanning);
+
+        var moved = await PostManyAsync(client, "/meals/plan", $"move-{mealId}",
+        [
+            new("meal-id", mealId.ToString()),
+            new("variant-id", string.Empty),
+            new("slot", nameof(MealSlot.Lunch)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, moved.StatusCode);
+
+        var back = await PostManyAsync(client, "/meals/plan", $"back-{mealId}",
+        [
+            new("meal-id", mealId.ToString()),
+            new("status", nameof(MealStatus.Available)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, back.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = (await meals.GetAsync(mealId))!;
+
+            Assert.Equal(MealStatus.Available, meal.Status);
+            Assert.Null(meal.PlannedSlot);
+            Assert.NotNull(meal.LastCookedAt);
+        }
+    }
+
+    [Theory]
+    [InlineData(MealSlot.Breakfast)]
+    [InlineData(MealSlot.Lunch)]
+    [InlineData(MealSlot.Dinner)]
+    public async Task Every_slot_button_the_planning_page_offers_plans_into_that_slot(MealSlot slot)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A plain meal", Status: MealStatus.Available))).Id;
+        }
+
+        // Each button posts its own slot, which is the only thing that tells the page them apart.
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains($"value=\"{slot}\"", page);
+
+        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}-base",
+        [
+            new("meal-id", mealId.ToString()),
+            new("variant-id", string.Empty),
+            new("slot", slot.ToString()),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, planned.StatusCode);
+
+        using var scope2 = app.Services.CreateScope();
+        var service = scope2.ServiceProvider.GetRequiredService<MealService>();
+        var meal = (await service.GetAsync(mealId))!;
+
+        Assert.Equal(slot, meal.PlannedSlot);
+        Assert.Equal(MealStatus.Planned, meal.Status);
+
+        // The slot it is already in is not offered again on its own row.
+        Assert.Contains($"value=\"{slot}\" disabled", await client.GetStringAsync("/meals/plan"));
+    }
+
+    [Fact]
+    public async Task A_meal_with_variants_is_planned_through_the_chooser_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        int variantId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("A meal with variants", Status: MealStatus.Queued));
+            mealId = meal.Id;
+            variantId = (await meals.CreateVariantAsync(mealId, new MealVariantRequest("A variant")))!.Id;
+        }
+
+        // The planning page sends a meal with variants to the chooser rather than planning it flat.
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains($"meals/plan/choose/{mealId}", page);
+        Assert.Contains("A meal with variants (A variant)", page);
+
+        var chosen = await PostManyAsync(client, $"/meals/plan/choose/{mealId}", "plan-choice",
+        [
+            new("variant-id", variantId.ToString()),
+            new("slot", nameof(MealSlot.Breakfast)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, chosen.StatusCode);
+
+        using var scope2 = app.Services.CreateScope();
+        var service = scope2.ServiceProvider.GetRequiredService<MealService>();
+        var planned = (await service.GetAsync(mealId))!;
+
+        Assert.Equal(MealStatus.Planned, planned.Status);
+        Assert.Equal(MealSlot.Breakfast, planned.PlannedSlot);
+        Assert.Equal(variantId, planned.PlannedVariantId);
     }
 
     private static IEnumerable<string> Forms(string html)

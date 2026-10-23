@@ -327,6 +327,12 @@ textarea {
     background: var(--surface-sunken);
 }
 
+.btn:disabled {
+    background: var(--surface-sunken);
+    color: var(--text-muted);
+    cursor: default;
+}
+
 .btn-primary {
     background: var(--accent);
     border-color: var(--accent);
@@ -429,6 +435,25 @@ textarea {
     .filters select {
         max-width: 22rem;
     }
+}
+
+.plan-controls {
+    align-items: center;
+    margin-top: 0.25rem;
+}
+
+.plan-controls select {
+    max-width: 10rem;
+}
+
+.sr-label {
+    border: 0;
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
 }
 
 .ingredient-line {

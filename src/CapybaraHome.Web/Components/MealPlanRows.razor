@@ -1,0 +1,75 @@
+@* The rows the planning page offers to choose from, each with the controls that put one on the plan. *@
+
+@if (Options.Count == 0)
+{
+    <p class="muted">Nothing here.</p>
+}
+else
+{
+    <ul class="task-list">
+        @foreach (var option in Options)
+        {
+            <li>
+                <div class="task-line">
+                    <span class="task-link">@option.Name</span>
+                    <span class="pill">@MealStatusNames.Label(option.Status)</span>
+                </div>
+                <div class="task-meta">
+                    <span>@DateNames.LastCooked(option.LastCookedAt)</span>
+                    @foreach (var tag in option.Tags)
+                    {
+                        <span>@tag.Name</span>
+                    }
+                </div>
+                @if (option.VariantId is null && option.HasVariants)
+                {
+                    <a class="btn btn-small" href="@ChooseLink(option)">Choose a variant</a>
+                }
+                else
+                {
+                    <form method="post" @formname="@FormName(option)" @onsubmit="Plan" class="row plan-controls">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="meal-id" value="@option.MealId" />
+                        <input type="hidden" name="variant-id" value="@option.VariantId" />
+                        <label style="align-items:center;gap:0.25rem;display:flex">
+                            <input type="checkbox" name="shared" value="true" style="width:auto;min-height:auto" />
+                            Shared
+                        </label>
+                        @foreach (var slot in MealSlotNames.All)
+                        {
+                            <button class="btn btn-small @(slot == Slot ? "btn-primary" : null)" type="submit"
+                                    name="slot" value="@slot">
+                                @MealSlotNames.Label(slot)
+                            </button>
+                        }
+                    </form>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    /// <summary>What can be chosen.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<MealPlanOption> Options { get; set; } = [];
+
+    /// <summary>The slot to put forward, which is the one with the most still to choose.</summary>
+    [Parameter]
+    public MealSlot Slot { get; set; } = MealSlot.Dinner;
+
+    /// <summary>Prefix that keeps this list's form names apart from the other list's on the same page.</summary>
+    [Parameter, EditorRequired]
+    public string Prefix { get; set; } = "plan";
+
+    /// <summary>Called when a row is planned; the page saves and reloads itself.</summary>
+    [Parameter, EditorRequired]
+    public EventCallback Plan { get; set; }
+
+    /// <summary>Where the chooser for a meal with variants lives.</summary>
+    [Parameter, EditorRequired]
+    public Func<MealPlanOption, string> ChooseLink { get; set; } = _ => "meals/plan";
+
+    private string FormName(MealPlanOption option) =>
+        $"{Prefix}-{option.MealId}-{option.VariantId?.ToString() ?? "base"}";
+}

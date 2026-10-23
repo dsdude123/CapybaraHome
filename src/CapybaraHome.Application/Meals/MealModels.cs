@@ -50,6 +50,9 @@ public record MealVariantRequest(
 /// <param name="Status">Where the meal stands.</param>
 /// <param name="IsOneTime">Whether it was marked as a one-time cook in the data it came from.</param>
 /// <param name="LastCookedAt">Day it was last cooked, or null.</param>
+/// <param name="PlannedSlot">Which meal of the day it is planned for, or null.</param>
+/// <param name="PlannedVariantId">The variant that was planned, or null for the meal itself.</param>
+/// <param name="PlannedVariantName">Name of that variant, or null.</param>
 /// <param name="NeedsIngredientSplit">Whether its imported description still has to be split.</param>
 /// <param name="JiraKey">Key of the JIRA issue it came from, or null.</param>
 /// <param name="Ingredients">The ingredient list, in order.</param>
@@ -64,6 +67,9 @@ public record MealView(
     MealStatus Status,
     bool IsOneTime,
     DateOnly? LastCookedAt,
+    MealSlot? PlannedSlot,
+    int? PlannedVariantId,
+    string? PlannedVariantName,
     bool NeedsIngredientSplit,
     string? JiraKey,
     IReadOnlyList<MealIngredientView> Ingredients,
@@ -147,6 +153,33 @@ public record UpdateMealRequest(
     IReadOnlyCollection<int>? TagIds = null,
     string? ImportedText = null,
     bool? NeedsIngredientSplit = null);
+
+/// <summary>One thing the planning screens can put on the plan: a meal, or one of its variants.</summary>
+/// <param name="MealId">The meal.</param>
+/// <param name="VariantId">The variant, or null for the meal itself.</param>
+/// <param name="Name">What to show: the meal's name, or the meal and the variant.</param>
+/// <param name="Status">The meal's status, which its variants share.</param>
+/// <param name="LastCookedAt">Day the meal was last cooked, which its variants share.</param>
+/// <param name="Tags">The meal's tags.</param>
+/// <param name="HasVariants">Whether the meal has variants to choose between.</param>
+public record MealPlanOption(
+    int MealId,
+    int? VariantId,
+    string Name,
+    MealStatus Status,
+    DateOnly? LastCookedAt,
+    IReadOnlyList<MealTagView> Tags,
+    bool HasVariants);
+
+/// <summary>How many meals of each kind a planning session is aiming for, and how many are planned.</summary>
+/// <param name="Slot">The meal of the day.</param>
+/// <param name="Target">How many are wanted.</param>
+/// <param name="Planned">How many are on the plan.</param>
+public record MealPlanSlotCount(MealSlot Slot, int Target, int Planned)
+{
+    /// <summary>How many are still to be chosen, never below zero.</summary>
+    public int Remaining => Math.Max(0, Target - Planned);
+}
 
 /// <summary>Fields accepted when creating or updating a tag.</summary>
 /// <param name="Name">Display name; required.</param>

@@ -88,6 +88,13 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<bool>("NeedsIngredientSplit")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("PlannedSlot")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PlannedVariantId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -103,6 +110,8 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasFilter("\"JiraKey\" IS NOT NULL");
 
                     b.HasIndex("LastCookedAt");
+
+                    b.HasIndex("PlannedVariantId");
 
                     b.HasIndex("Status");
 
@@ -433,6 +442,16 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Meals.MealVariant", "PlannedVariant")
+                        .WithMany()
+                        .HasForeignKey("PlannedVariantId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("PlannedVariant");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.MealIngredient", b =>

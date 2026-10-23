@@ -1,0 +1,346 @@
+@page "/meals/plan"
+@inject MealService Meals
+@inject MealTagService Tags
+@inject NavigationManager Navigation
+
+<PageTitle>Plan meals</PageTitle>
+
+<div class="page-head">
+    <h1>Plan meals</h1>
+    <a class="btn btn-primary btn-small" href="meals/new">Create a meal</a>
+</div>
+
+<form method="get" action="meals/plan" class="card" style="margin-bottom:1rem">
+    <h2 class="card-title">How many this time</h2>
+    <div class="filters">
+        @foreach (var slot in MealSlotNames.All)
+        {
+            <div>
+                <label for="target-@slot">@MealSlotNames.Label(slot)</label>
+                <input id="target-@slot" type="number" min="0" name="@TargetName(slot)" value="@Target(slot)" />
+            </div>
+        }
+    </div>
+    <div class="row" style="margin-top:0.5rem">
+        <button class="btn" type="submit">Apply</button>
+        <a class="btn" href="meals/plan">Reset</a>
+    </div>
+</form>
+
+<section class="card stack">
+    <h2 class="card-title">Planned</h2>
+    <p class="muted">
+        @string.Join(" · ", counts.Select(c => $"{MealSlotNames.Label(c.Slot)} {c.Planned} of {c.Target}"))
+        @if (unslotted.Count > 0)
+        {
+            @($" · {unslotted.Count} with no slot")
+        }
+    </p>
+
+    @if (planned.Count == 0)
+    {
+        <p class="muted">Nothing is planned.</p>
+    }
+
+    @foreach (var slot in MealSlotNames.All)
+    {
+        var inSlot = planned.Where(m => m.PlannedSlot == slot).ToList();
+        if (inSlot.Count > 0)
+        {
+            <h3 class="card-title">@MealSlotNames.Label(slot)</h3>
+            <ul class="task-list">
+                @foreach (var meal in inSlot)
+                {
+                    @PlannedRow(meal)
+                }
+            </ul>
+        }
+    }
+
+    @if (unslotted.Count > 0)
+    {
+        <h3 class="card-title">No slot</h3>
+        <ul class="task-list">
+            @foreach (var meal in unslotted)
+            {
+                @PlannedRow(meal)
+            }
+        </ul>
+    }
+</section>
+
+<section class="card stack" style="margin-top:1rem">
+    <h2 class="card-title">Search meals</h2>
+
+    <form method="get" action="meals/plan">
+        @foreach (var slot in MealSlotNames.All)
+        {
+            <input type="hidden" name="@TargetName(slot)" value="@Target(slot)" />
+        }
+        <div class="filters">
+            <div>
+                <label for="search-text">Search</label>
+                <input id="search-text" type="text" name="text" value="@Text" />
+            </div>
+            @foreach (var facet in MealTagFacetNames.All)
+            {
+                var choices = tags.Where(t => t.Facet == facet).ToList();
+                if (choices.Count > 0)
+                {
+                    <div>
+                        <label for="search-@facet">@MealTagFacetNames.Label(facet)</label>
+                        <select id="search-@facet" name="tag">
+                            <option value="">Any</option>
+                            @foreach (var tag in choices)
+                            {
+                                <option value="@tag.Id" selected="@selectedTags.Contains(tag.Id)">@tag.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
+            }
+            <div>
+                <label for="search-sort">Sort by</label>
+                <select id="search-sort" name="sort">
+                    @foreach (var value in MealSortNames.All)
+                    {
+                        <option value="@MealSortNames.Value(value)" selected="@(MealSortNames.Parse(Sort) == value)">@MealSortNames.Label(value)</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div class="row" style="margin-top:0.5rem">
+            <button class="btn" type="submit">Search</button>
+            <a class="btn" href="@PlanLink()">Clear</a>
+        </div>
+    </form>
+
+    <MealPlanRows Options="matches" Slot="nextSlot" Prefix="search" Plan="PlanAsync" ChooseLink="ChooseLink" />
+</section>
+
+<section class="card stack" style="margin-top:1rem">
+    <h2 class="card-title">Review queued and available meals</h2>
+    <p class="muted">Available first, then queued, then pooled, longest since cooking first. Nothing has to be chosen from here.</p>
+    <MealPlanRows Options="review" Slot="nextSlot" Prefix="review" Plan="PlanAsync" ChooseLink="ChooseLink" />
+</section>
+
+@code {
+    /// <summary>How many breakfasts to plan, or null for the default.</summary>
+    [SupplyParameterFromQuery(Name = "breakfast")]
+    private int? Breakfast { get; set; }
+
+    /// <summary>How many lunches to plan, or null for the default.</summary>
+    [SupplyParameterFromQuery(Name = "lunch")]
+    private int? Lunch { get; set; }
+
+    /// <summary>How many dinners to plan, or null for the default.</summary>
+    [SupplyParameterFromQuery(Name = "dinner")]
+    private int? Dinner { get; set; }
+
+    /// <summary>Text to match when searching for a meal to plan.</summary>
+    [SupplyParameterFromQuery(Name = "text")]
+    private string? Text { get; set; }
+
+    /// <summary>Ids of the tags to filter the search on, one per facet picker.</summary>
+    [SupplyParameterFromQuery(Name = "tag")]
+    private string[]? TagIds { get; set; }
+
+    /// <summary>Name of the order the search reads in, or empty for the default.</summary>
+    [SupplyParameterFromQuery(Name = "sort")]
+    private string? Sort { get; set; }
+
+    /// <summary>How many rows each of the two lists shows.</summary>
+    private const int ListSize = 25;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private IReadOnlyList<MealTagView> tags = [];
+    private IReadOnlyList<MealView> planned = [];
+    private IReadOnlyList<MealView> unslotted = [];
+    private IReadOnlyList<MealPlanOption> matches = [];
+    private IReadOnlyList<MealPlanOption> review = [];
+    private List<MealPlanSlotCount> counts = [];
+    private List<int> selectedTags = [];
+    private MealSlot nextSlot = MealSlot.Dinner;
+
+    /// <summary>Loads the plan, the search and the meals worth reviewing.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        tags = await Tags.ListAsync();
+        selectedTags = SelectedTags();
+
+        planned = await Meals.ListAsync(
+            new MealFilter(Statuses: [MealStatus.Planned, MealStatus.PlannedShared]), MealSort.LastCooked);
+
+        unslotted = planned.Where(m => m.PlannedSlot is null).ToList();
+
+        counts = MealSlotNames.All
+            .Select(slot => new MealPlanSlotCount(slot, Target(slot), planned.Count(m => m.PlannedSlot == slot)))
+            .ToList();
+
+        // The pickers start on whichever slot still needs the most, so the common case is one click.
+        nextSlot = counts.OrderByDescending(c => c.Remaining).ThenBy(c => c.Slot).First().Slot;
+
+        matches = await Meals.ListOptionsAsync(
+            new MealFilter(
+                Text: string.IsNullOrWhiteSpace(Text) ? null : Text,
+                Statuses: [MealStatus.Pooled, MealStatus.Available, MealStatus.Queued],
+                TagIds: selectedTags,
+                Limit: ListSize),
+            MealSortNames.Parse(Sort));
+
+        review = await ReviewAsync();
+    }
+
+    /// <summary>
+    /// Reads the meals worth a look before searching: available first, then queued, then pooled,
+    /// each in the order they have gone longest without being cooked.
+    /// </summary>
+    private async Task<IReadOnlyList<MealPlanOption>> ReviewAsync()
+    {
+        var rows = new List<MealPlanOption>();
+
+        foreach (var status in new[] { MealStatus.Available, MealStatus.Queued, MealStatus.Pooled })
+        {
+            if (rows.Count >= ListSize)
+            {
+                break;
+            }
+
+            var options = await Meals.ListOptionsAsync(
+                new MealFilter(Statuses: [status], Limit: ListSize - rows.Count), MealSort.LastCooked);
+
+            rows.AddRange(options);
+        }
+
+        return rows.Take(ListSize).ToList();
+    }
+
+    /// <summary>One planned meal, with the controls that move it or send it back.</summary>
+    private RenderFragment PlannedRow(MealView meal) =>
+        @<li>
+            <div class="task-line">
+                <a class="task-link" href="meals/@meal.Id">@(meal.PlannedVariantName is { } variant ? $"{meal.Name} ({variant})" : meal.Name)</a>
+                <span class="pill">@MealStatusNames.Label(meal.Status)</span>
+            </div>
+            <div class="task-meta">
+                <span>@DateNames.LastCooked(meal.LastCookedAt)</span>
+            </div>
+            <form method="post" @formname="@($"move-{meal.Id}")" @onsubmit="MoveAsync" class="row plan-controls">
+                <AntiforgeryToken />
+                <input type="hidden" name="meal-id" value="@meal.Id" />
+                <input type="hidden" name="variant-id" value="@meal.PlannedVariantId" />
+                <label style="align-items:center;gap:0.25rem;display:flex">
+                    <input type="checkbox" name="shared" value="true" checked="@(meal.Status == MealStatus.PlannedShared)"
+                           style="width:auto;min-height:auto" />
+                    Shared
+                </label>
+                @foreach (var slot in MealSlotNames.All)
+                {
+                    <button class="btn btn-small" type="submit" name="slot" value="@slot" disabled="@(meal.PlannedSlot == slot)">
+                        @MealSlotNames.Label(slot)
+                    </button>
+                }
+            </form>
+            <form method="post" @formname="@($"back-{meal.Id}")" @onsubmit="BackAsync" class="row plan-controls">
+                <AntiforgeryToken />
+                <input type="hidden" name="meal-id" value="@meal.Id" />
+                <button class="btn btn-small" type="submit" name="status" value="@MealStatus.Available">Back to available</button>
+                <button class="btn btn-small" type="submit" name="status" value="@MealStatus.Pooled">Back to pooled</button>
+            </form>
+        </li>;
+
+    private async Task PlanAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        if (!int.TryParse(form["meal-id"], out var mealId))
+        {
+            return;
+        }
+
+        var variantId = int.TryParse(form["variant-id"], out var variant) ? variant : (int?)null;
+        var slot = Enum.TryParse<MealSlot>(form["slot"], out var posted) ? posted : MealSlot.Dinner;
+
+        await Meals.PlanAsync(mealId, slot, variantId, form["shared"] == "true");
+        Navigation.NavigateTo(Navigation.Uri);
+    }
+
+    private async Task MoveAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        if (!int.TryParse(form["meal-id"], out var mealId))
+        {
+            return;
+        }
+
+        var slot = Enum.TryParse<MealSlot>(form["slot"], out var posted) ? posted : MealSlot.Dinner;
+        var variantId = int.TryParse(form["variant-id"], out var variant) ? variant : (int?)null;
+
+        await Meals.PlanAsync(mealId, slot, variantId, form["shared"] == "true");
+        Navigation.NavigateTo(Navigation.Uri);
+    }
+
+    private async Task BackAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        if (int.TryParse(form["meal-id"], out var mealId)
+            && Enum.TryParse<MealStatus>(form["status"], out var status))
+        {
+            await Meals.UpdateAsync(mealId, new UpdateMealRequest(Status: status));
+        }
+
+        Navigation.NavigateTo(Navigation.Uri);
+    }
+
+    private int Target(MealSlot slot) => slot switch
+    {
+        MealSlot.Breakfast => Breakfast ?? MealSlotNames.DefaultTarget(slot),
+        MealSlot.Lunch => Lunch ?? MealSlotNames.DefaultTarget(slot),
+        _ => Dinner ?? MealSlotNames.DefaultTarget(slot),
+    };
+
+    private static string TargetName(MealSlot slot) => slot switch
+    {
+        MealSlot.Breakfast => "breakfast",
+        MealSlot.Lunch => "lunch",
+        _ => "dinner",
+    };
+
+    /// <summary>Returns the tag ids the query string asks for, with the empty pickers left out.</summary>
+    private List<int> SelectedTags()
+    {
+        if (TagIds is not { Length: > 0 })
+        {
+            return [];
+        }
+
+        return TagIds
+            .Select(value => int.TryParse(value, out var id) ? id : 0)
+            .Where(id => id > 0 && tags.Any(tag => tag.Id == id))
+            .Distinct()
+            .ToList();
+    }
+
+    /// <summary>Returns a link to this page with the targets kept and the search cleared.</summary>
+    private string PlanLink() =>
+        "meals/plan?" + string.Join("&", MealSlotNames.All.Select(slot => $"{TargetName(slot)}={Target(slot)}"));
+
+    private string ChooseLink(MealPlanOption option) =>
+        $"meals/plan/choose/{option.MealId}?slot={nextSlot}&return={Uri.EscapeDataString(PlanLink())}";
+}

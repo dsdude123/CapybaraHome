@@ -1,0 +1,95 @@
+@page "/meals/plan/choose/{MealId:int}"
+@inject MealService Meals
+@inject NavigationManager Navigation
+
+<PageTitle>Choose what to plan</PageTitle>
+
+<h1>Choose what to plan</h1>
+
+@if (meal is null)
+{
+    <p class="muted">That meal is gone. <a href="meals/plan">Back to planning</a>.</p>
+}
+else
+{
+    <p class="muted">@meal.Name has @meal.Variants.Count variant@(meal.Variants.Count == 1 ? string.Empty : "s"). Pick the meal itself or one of them.</p>
+
+    <form method="post" @formname="plan-choice" @onsubmit="PlanAsync" class="card stack">
+        <AntiforgeryToken />
+
+        <div class="field">
+            <label for="choice">What to cook</label>
+            <select id="choice" name="variant-id">
+                <option value="">@meal.Name</option>
+                @foreach (var variant in meal.Variants)
+                {
+                    <option value="@variant.Id" selected="@(variant.Id == meal.PlannedVariantId)">@variant.Name</option>
+                }
+            </select>
+        </div>
+
+        <label style="align-items:center;gap:0.5rem;display:flex">
+            <input type="checkbox" name="shared" value="true" checked="@(meal.Status == MealStatus.PlannedShared)"
+                   style="width:auto;min-height:auto" />
+            One of the shared meals
+        </label>
+
+        <div class="row plan-controls">
+            @foreach (var value in MealSlotNames.All)
+            {
+                <button class="btn @(value == slot ? "btn-primary" : null)" type="submit" name="slot" value="@value">
+                    Add to @MealSlotNames.Label(value).ToLowerInvariant()
+                </button>
+            }
+            <a class="btn" href="@BackLink">Cancel</a>
+        </div>
+    </form>
+}
+
+@code {
+    /// <summary>Id of the meal being planned.</summary>
+    [Parameter]
+    public int MealId { get; set; }
+
+    /// <summary>Slot the planning page was offering, or empty for dinner.</summary>
+    [SupplyParameterFromQuery(Name = "slot")]
+    private string? Slot { get; set; }
+
+    /// <summary>Where to go back to, which carries the planning page's targets.</summary>
+    [SupplyParameterFromQuery(Name = "return")]
+    private string? Return { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private MealView? meal;
+    private MealSlot slot = MealSlot.Dinner;
+
+    /// <summary>Loads the meal and the slot the planning page was on.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        meal = await Meals.GetAsync(MealId);
+        slot = Enum.TryParse<MealSlot>(Slot, out var parsed) ? parsed : MealSlot.Dinner;
+    }
+
+    /// <summary>Where Cancel and a finished choice go: the planning page, with its targets kept.</summary>
+    private string BackLink =>
+        string.IsNullOrWhiteSpace(Return) || !Return.StartsWith("meals/plan", StringComparison.Ordinal)
+            ? "meals/plan"
+            : Return;
+
+    private async Task PlanAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        var variantId = int.TryParse(form["variant-id"], out var variant) ? variant : (int?)null;
+        var chosen = Enum.TryParse<MealSlot>(form["slot"], out var posted) ? posted : MealSlot.Dinner;
+
+        await Meals.PlanAsync(MealId, chosen, variantId, form["shared"] == "true");
+        Navigation.NavigateTo(BackLink);
+    }
+}

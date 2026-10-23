@@ -21,6 +21,15 @@ public class Meal
     /// <summary>Day the meal was last cooked, stamped when it is sent back to available or pooled.</summary>
     public DateOnly? LastCookedAt { get; set; }
 
+    /// <summary>Which meal of the day this is planned for, or null when it is not planned.</summary>
+    public MealSlot? PlannedSlot { get; set; }
+
+    /// <summary>The variant that was planned, or null when the meal itself was.</summary>
+    public int? PlannedVariantId { get; set; }
+
+    /// <summary>Navigation to <see cref="PlannedVariantId"/>.</summary>
+    public MealVariant? PlannedVariant { get; set; }
+
     /// <summary>The imported description, kept untouched so a split of it can always be started over.</summary>
     public string? ImportedText { get; set; }
 
