@@ -258,9 +258,32 @@ public class TaskServiceTests
             await service.CreateAsync(new CreateTaskRequest($"Task {i:D2}", Status: i < 5 ? TaskItemStatus.Done : TaskItemStatus.ToDo));
         }
 
-        var filter = new TaskFilter(Status: TaskItemStatus.ToDo);
+        var filter = new TaskFilter(Statuses: [TaskItemStatus.ToDo]);
 
         Assert.Equal(7, await service.CountAsync(filter));
         Assert.Equal(4, (await service.ListAsync(filter with { Limit = 5, Skip = 3 })).Count);
+    }
+
+    [Fact]
+    public async Task A_filter_on_several_statuses_keeps_every_one_of_them()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+
+        foreach (var status in Enum.GetValues<TaskItemStatus>())
+        {
+            await service.CreateAsync(new CreateTaskRequest(status.ToString(), Status: status));
+        }
+
+        var two = new TaskFilter(Statuses: [TaskItemStatus.ToDo, TaskItemStatus.InProgress]);
+
+        Assert.Equal(2, await service.CountAsync(two));
+        Assert.Equal(
+            [TaskItemStatus.ToDo, TaskItemStatus.InProgress],
+            (await service.ListAsync(two)).Select(t => t.Status).Order());
+
+        Assert.Equal(4, await service.CountAsync(new TaskFilter(Statuses: Enum.GetValues<TaskItemStatus>())));
+        Assert.Equal(4, await service.CountAsync(new TaskFilter(Statuses: [])));
+        Assert.Equal(1, await service.CountAsync(new TaskFilter(Statuses: [TaskItemStatus.OnHold, TaskItemStatus.OnHold])));
     }
 }

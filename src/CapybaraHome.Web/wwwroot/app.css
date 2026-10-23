@@ -380,6 +380,33 @@ textarea {
     min-height: 8rem;
 }
 
+.check-list {
+    border: 0;
+    margin: 0;
+    min-width: 0;
+    padding: 0;
+}
+
+.check-list legend {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    padding: 0;
+}
+
+.check-list label {
+    align-items: center;
+    display: flex;
+    font-weight: 400;
+    gap: 0.4rem;
+    margin-bottom: 0.15rem;
+    min-height: 1.9rem;
+}
+
+.check-list input[type="checkbox"] {
+    flex: none;
+    margin: 0;
+}
+
 .filters {
     display: grid;
     gap: 0.75rem;

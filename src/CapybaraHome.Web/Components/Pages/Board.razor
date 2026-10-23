@@ -144,7 +144,7 @@
         foreach (var status in StatusNames.All)
         {
             var filter = new TaskFilter(
-                Status: status,
+                Statuses: [status],
                 CategoryId: category,
                 DueWithinDays: Due);
 
