@@ -7,6 +7,35 @@
     --text-muted: #6b665e;
     --accent: #7a5230;
     --accent-soft: #f0e7de;
+    --content-width: 48rem;
+    --content-gutter: 1rem;
+    --field-max: 44rem;
+}
+
+/* The content column grows with the viewport; everything else keys off it. */
+
+@media (min-width: 48rem) {
+    :root {
+        --content-gutter: 2rem;
+    }
+}
+
+@media (min-width: 64rem) {
+    :root {
+        --content-width: 62rem;
+    }
+}
+
+@media (min-width: 90rem) {
+    :root {
+        --content-width: 78rem;
+    }
+}
+
+@media (min-width: 120rem) {
+    :root {
+        --content-width: 94rem;
+    }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -177,6 +206,7 @@ textarea {
 }
 
 .card-grid {
+    align-items: start;
     display: grid;
     gap: 1rem;
     grid-template-columns: 1fr;
@@ -185,6 +215,19 @@ textarea {
 @media (min-width: 36rem) {
     .card-grid {
         grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    }
+}
+
+@media (min-width: 64rem) {
+    .card-grid {
+        gap: 1.25rem;
+        grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+    }
+}
+
+@media (min-width: 90rem) {
+    .card-grid {
+        grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
     }
 }
 
@@ -319,6 +362,7 @@ input[type="text"],
 input[type="date"],
 input[type="email"],
 input[type="number"],
+input[type="password"],
 select,
 textarea {
     background: var(--surface-raised);
@@ -328,6 +372,7 @@ textarea {
     min-height: 2.75rem;
     padding: 0.4rem 0.6rem;
     width: 100%;
+    max-width: var(--field-max);
     box-sizing: border-box;
 }
 
@@ -344,6 +389,18 @@ textarea {
 @media (min-width: 36rem) {
     .filters {
         grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    }
+}
+
+@media (min-width: 64rem) {
+    .filters {
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    }
+
+    .filters input,
+    .filters select {
+        max-width: 22rem;
     }
 }
 
@@ -380,8 +437,26 @@ textarea {
     padding: 0.6rem;
 }
 
+.board-card .card-head {
+    align-items: start;
+}
+
 .board-card .task-meta {
     margin-top: 0.3rem;
+}
+
+@media (min-width: 64rem) {
+    .board {
+        gap: 1.25rem;
+    }
+
+    .board-column {
+        padding: 1rem;
+    }
+
+    .board-card {
+        padding: 0.75rem;
+    }
 }
 
 .notice {
