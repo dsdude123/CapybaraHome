@@ -53,6 +53,7 @@ public record MealVariantRequest(
 /// <param name="PlannedSlot">Which meal of the day it is planned for, or null.</param>
 /// <param name="PlannedVariantId">The variant that was planned, or null for the meal itself.</param>
 /// <param name="PlannedVariantName">Name of that variant, or null.</param>
+/// <param name="ImportedText">The imported description, untouched, or null.</param>
 /// <param name="NeedsIngredientSplit">Whether its imported description still has to be split.</param>
 /// <param name="JiraKey">Key of the JIRA issue it came from, or null.</param>
 /// <param name="Ingredients">The ingredient list, in order.</param>
@@ -70,6 +71,7 @@ public record MealView(
     MealSlot? PlannedSlot,
     int? PlannedVariantId,
     string? PlannedVariantName,
+    string? ImportedText,
     bool NeedsIngredientSplit,
     string? JiraKey,
     IReadOnlyList<MealIngredientView> Ingredients,

@@ -465,6 +465,7 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         m.PlannedSlot,
         m.PlannedVariantId,
         m.PlannedVariant == null ? null : m.PlannedVariant.Name,
+        m.ImportedText,
         m.NeedsIngredientSplit,
         m.JiraKey,
         m.Ingredients.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)

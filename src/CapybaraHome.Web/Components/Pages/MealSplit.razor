@@ -1,0 +1,179 @@
+@page "/meals/split"
+@inject MealService Meals
+@inject NavigationManager Navigation
+
+<PageTitle>Split imported meals</PageTitle>
+
+<h1>Split imported meals</h1>
+
+@if (meal is null)
+{
+    <p class="notice">Nothing is waiting to be split.</p>
+    <a class="btn btn-primary" href="meals">Back to the meals</a>
+}
+else
+{
+    <p class="muted">
+        @remaining meal(s) still to split@(skipped.Count > 0 ? $", {skipped.Count} skipped this time round" : string.Empty).
+        The suggestion below is a guess at the imported text; correct it, or clear it and start again.
+    </p>
+
+    <h2 class="card-title"><a href="meals/@meal.Id">@meal.Name</a></h2>
+
+    <form method="post" @formname="meal-split" @onsubmit="SubmitAsync">
+        <AntiforgeryToken />
+        <input type="hidden" name="meal-id" value="@meal.Id" />
+
+        <fieldset class="check-list">
+            <legend>Ingredients</legend>
+            <p class="muted">A quantity and an item per line. Clear the item to drop the line.</p>
+            @foreach (var row in rows)
+            {
+                <div class="ingredient-line">
+                    <input type="text" name="quantity" value="@row.Quantity" aria-label="Quantity" placeholder="Quantity" />
+                    <input type="text" name="item" value="@row.Item" aria-label="Ingredient" placeholder="Ingredient" />
+                </div>
+            }
+            <button class="btn btn-small" type="submit" name="action" value="add-rows" style="margin-top:0.5rem">Add lines</button>
+        </fieldset>
+
+        <div class="field">
+            <label for="split-directions">Directions</label>
+            <textarea id="split-directions" name="directions" rows="12">@directions</textarea>
+        </div>
+
+        <div class="row">
+            <button class="btn btn-primary" type="submit" name="action" value="save">Save and next</button>
+            <button class="btn" type="submit" name="action" value="clear">Clear</button>
+            <button class="btn" type="submit" name="action" value="skip">Skip</button>
+            <a class="btn" href="meals">Stop</a>
+        </div>
+    </form>
+
+    <details class="disclosure" style="margin-top:1rem">
+        <summary>The imported text, as it came over</summary>
+        <div class="disclosure-body">
+            <pre style="white-space:pre-wrap">@meal.ImportedText</pre>
+        </div>
+    </details>
+}
+
+@code {
+    /// <summary>Ids of the meals passed over this time round, so Skip moves on rather than in a circle.</summary>
+    [SupplyParameterFromQuery(Name = "skipped")]
+    private int[]? Skipped { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    /// <summary>How many blank ingredient lines the screen adds when asked for more.</summary>
+    private const int BlankRows = 3;
+
+    private MealView? meal;
+    private List<IngredientRow> rows = [];
+    private List<int> skipped = [];
+    private string? directions;
+    private int remaining;
+
+    /// <summary>Loads the next meal waiting to be split and the suggestion for it.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        skipped = Skipped?.Where(id => id > 0).Distinct().ToList() ?? [];
+
+        var waiting = await Meals.ListAsync(new MealFilter(NeedsIngredientSplit: true), MealSort.Name);
+        remaining = waiting.Count;
+        meal = waiting.FirstOrDefault(m => !skipped.Contains(m.Id));
+
+        if (meal is null)
+        {
+            return;
+        }
+
+        if (HttpContext?.Request.Method == HttpMethods.Post && HttpContext.Request.Form["action"] != "clear")
+        {
+            ReadForm(HttpContext.Request.Form);
+            return;
+        }
+
+        Suggest();
+    }
+
+    /// <summary>Fills the screen from the guess at the meal's imported text.</summary>
+    private void Suggest()
+    {
+        var suggestion = IngredientSplitter.Suggest(meal!.ImportedText);
+
+        directions = suggestion.Ingredients.Count > 0 ? suggestion.Directions : meal.ImportedText;
+        rows = suggestion.Ingredients
+            .Select(i => new IngredientRow(i.Quantity, i.Item))
+            .Concat(Blank(BlankRows))
+            .ToList();
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (HttpContext is null || meal is null)
+        {
+            return;
+        }
+
+        var action = HttpContext.Request.Form["action"].ToString();
+
+        if (action == "add-rows")
+        {
+            rows.AddRange(Blank(BlankRows));
+            return;
+        }
+
+        // Clear throws the guess away and puts the imported text back exactly as it came over.
+        if (action == "clear")
+        {
+            rows = Blank(BlankRows);
+            directions = meal.ImportedText;
+            return;
+        }
+
+        if (action == "skip")
+        {
+            skipped.Add(meal.Id);
+            Navigation.NavigateTo(Link(skipped));
+            return;
+        }
+
+        var ingredients = rows
+            .Where(row => !string.IsNullOrWhiteSpace(row.Item))
+            .Select(row => new MealIngredientInput(row.Item!, row.Quantity))
+            .ToList();
+
+        await Meals.UpdateAsync(meal.Id, new UpdateMealRequest(
+            Directions: directions ?? string.Empty,
+            Ingredients: ingredients,
+            NeedsIngredientSplit: false));
+
+        Navigation.NavigateTo(Link(skipped));
+    }
+
+    private void ReadForm(IFormCollection form)
+    {
+        directions = form["directions"];
+
+        var quantities = form["quantity"];
+        var items = form["item"];
+        rows = items
+            .Select((item, index) => new IngredientRow(index < quantities.Count ? quantities[index] : null, item))
+            .ToList();
+    }
+
+    private static string Link(IReadOnlyList<int> passedOver) =>
+        passedOver.Count == 0
+            ? "meals/split"
+            : "meals/split?" + string.Join("&", passedOver.Select(id => $"skipped={id}"));
+
+    private static List<IngredientRow> Blank(int count) =>
+        Enumerable.Range(0, count).Select(_ => new IngredientRow(null, null)).ToList();
+
+    /// <summary>One line of the ingredient list as the screen holds it.</summary>
+    /// <param name="Quantity">How much is needed, as typed.</param>
+    /// <param name="Item">What the ingredient is, as typed.</param>
+    private record IngredientRow(string? Quantity, string? Item);
+}

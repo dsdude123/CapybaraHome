@@ -732,6 +732,112 @@ public class StaticRenderingTests
         Assert.Equal(variantId, planned.PlannedVariantId);
     }
 
+    [Fact]
+    public async Task An_imported_description_is_split_corrected_and_saved_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("An imported meal"));
+            mealId = meal.Id;
+
+            await meals.UpdateAsync(mealId, new UpdateMealRequest(
+                ImportedText: "- 2 cups rice\n- 1 tin tomatoes\n\nSimmer it.",
+                Directions: "- 2 cups rice\n- 1 tin tomatoes\n\nSimmer it.",
+                NeedsIngredientSplit: true));
+        }
+
+        // The meal list points at the screen while anything is waiting.
+        Assert.Contains("meals/split", await client.GetStringAsync("/meals"));
+
+        var screen = await client.GetStringAsync("/meals/split");
+        Assert.DoesNotContain("<!--Blazor:", screen);
+        Assert.Contains("An imported meal", screen);
+        Assert.Contains("2 cups", screen);
+        Assert.Contains("rice", screen);
+        Assert.Contains("Simmer it.", screen);
+
+        // Clear throws the guess away and puts the imported text back.
+        var cleared = await PostManyAsync(client, "/meals/split", "meal-split",
+        [
+            new("action", "clear"),
+            new("meal-id", mealId.ToString()),
+            new("quantity", "2 cups"),
+            new("item", "rice"),
+            new("directions", "Simmer it."),
+        ]);
+
+        var afterClear = await cleared.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+        Assert.Contains("- 2 cups rice", afterClear);
+
+        var saved = await PostManyAsync(client, "/meals/split", "meal-split",
+        [
+            new("action", "save"),
+            new("meal-id", mealId.ToString()),
+            new("quantity", "2 cups"),
+            new("item", "rice"),
+            new("quantity", "1 tin"),
+            new("item", "tomatoes"),
+            new("quantity", string.Empty),
+            new("item", string.Empty),
+            new("directions", "Simmer it."),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+
+        using var scope2 = app.Services.CreateScope();
+        var service = scope2.ServiceProvider.GetRequiredService<MealService>();
+        var split = (await service.GetAsync(mealId))!;
+
+        Assert.False(split.NeedsIngredientSplit);
+        Assert.Equal(["rice", "tomatoes"], split.Ingredients.Select(i => i.Item));
+        Assert.Equal("Simmer it.", split.Directions);
+
+        // The imported text is kept, so the split can always be started over.
+        Assert.Contains("- 2 cups rice", split.ImportedText);
+        Assert.Contains("Nothing is waiting", await client.GetStringAsync("/meals/split"));
+    }
+
+    [Fact]
+    public async Task Skipping_a_meal_moves_on_to_the_next_one_waiting()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int first;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var one = await meals.CreateAsync(new CreateMealRequest("A first meal"));
+            var two = await meals.CreateAsync(new CreateMealRequest("A second meal"));
+            first = one.Id;
+
+            foreach (var id in new[] { one.Id, two.Id })
+            {
+                await meals.UpdateAsync(id, new UpdateMealRequest(ImportedText: "Some text", NeedsIngredientSplit: true));
+            }
+        }
+
+        var skipped = await PostManyAsync(client, "/meals/split", "meal-split",
+        [
+            new("action", "skip"),
+            new("meal-id", first.ToString()),
+            new("directions", "Some text"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, skipped.StatusCode);
+        Assert.Contains($"skipped={first}", skipped.Headers.Location!.OriginalString);
+
+        var next = await client.GetStringAsync(skipped.Headers.Location!.OriginalString);
+        Assert.Contains("A second meal", next);
+        Assert.DoesNotContain("A first meal", next);
+    }
+
     private static IEnumerable<string> Forms(string html)
     {
         foreach (var match in System.Text.RegularExpressions.Regex.Matches(html, "<form[\\s>].*?</form>",
