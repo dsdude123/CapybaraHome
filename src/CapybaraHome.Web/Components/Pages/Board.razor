@@ -48,7 +48,7 @@
         <section class="board-column">
             <h2>
                 <span>@StatusNames.Label(status)</span>
-                <span class="muted">@Column(status).Count</span>
+                <span class="muted">@Count(status)</span>
             </h2>
 
             @foreach (var task in Column(status))
@@ -81,6 +81,13 @@
                     </div>
                 </article>
             }
+
+            @if (Remaining(status) is > 0)
+            {
+                <a class="btn btn-small board-more" href="@BoardLink(status)">
+                    Load @Math.Min(ColumnPageSize, Remaining(status)) more
+                </a>
+            }
         </section>
     }
 </div>
@@ -98,7 +105,27 @@
     [SupplyParameterFromQuery(Name = "sort")]
     private string? Sort { get; set; }
 
+    /// <summary>How many cards the To do column shows, or null for one column's worth.</summary>
+    [SupplyParameterFromQuery(Name = "todo")]
+    private int? ToDoShown { get; set; }
+
+    /// <summary>How many cards the In progress column shows, or null for one column's worth.</summary>
+    [SupplyParameterFromQuery(Name = "progress")]
+    private int? InProgressShown { get; set; }
+
+    /// <summary>How many cards the On hold column shows, or null for one column's worth.</summary>
+    [SupplyParameterFromQuery(Name = "hold")]
+    private int? OnHoldShown { get; set; }
+
+    /// <summary>How many cards the Done column shows, or null for one column's worth.</summary>
+    [SupplyParameterFromQuery(Name = "done")]
+    private int? DoneShown { get; set; }
+
+    /// <summary>How many cards a column shows before Load more is needed.</summary>
+    private const int ColumnPageSize = 20;
+
     private readonly Dictionary<TaskItemStatus, IReadOnlyList<TaskView>> columns = [];
+    private readonly Dictionary<TaskItemStatus, int> counts = [];
     private IReadOnlyList<CategoryView> categories = [];
     private TaskSort sort = TaskSort.DueDate;
 
@@ -116,24 +143,51 @@
 
         foreach (var status in StatusNames.All)
         {
-            columns[status] = await Tasks.ListAsync(
-                new TaskFilter(
-                    Status: status,
-                    CategoryId: category,
-                    DueWithinDays: Due),
-                sort);
+            var filter = new TaskFilter(
+                Status: status,
+                CategoryId: category,
+                DueWithinDays: Due);
+
+            counts[status] = await Tasks.CountAsync(filter);
+            columns[status] = await Tasks.ListAsync(filter with { Limit = Shown(status) }, sort);
         }
     }
 
     private IReadOnlyList<TaskView> Column(TaskItemStatus status) =>
         columns.TryGetValue(status, out var tasks) ? tasks : [];
 
-    private async Task MoveAsync(int id, TaskItemStatus status)
-    {
-        await Tasks.UpdateAsync(id, new UpdateTaskRequest(Status: status));
+    private int Count(TaskItemStatus status) =>
+        counts.TryGetValue(status, out var count) ? count : 0;
 
-        // Back to a freshly rendered board, with the filter kept, so a refresh does not post again.
+    private int Remaining(TaskItemStatus status) => Count(status) - Column(status).Count;
+
+    /// <summary>Returns how many cards <paramref name="status"/> is asked to show, never fewer than one column's worth.</summary>
+    private int Shown(TaskItemStatus status) => Math.Max(ColumnPageSize, Asked(status) ?? ColumnPageSize);
+
+    private int? Asked(TaskItemStatus status) => status switch
+    {
+        TaskItemStatus.InProgress => InProgressShown,
+        TaskItemStatus.OnHold => OnHoldShown,
+        TaskItemStatus.Done => DoneShown,
+        _ => ToDoShown,
+    };
+
+    private static string ShownName(TaskItemStatus status) => status switch
+    {
+        TaskItemStatus.InProgress => "progress",
+        TaskItemStatus.OnHold => "hold",
+        TaskItemStatus.Done => "done",
+        _ => "todo",
+    };
+
+    /// <summary>
+    /// Returns a link to the board with the filters, the order and every column's size kept, and with
+    /// <paramref name="expand"/>, when given, grown by one page.
+    /// </summary>
+    private string BoardLink(TaskItemStatus? expand)
+    {
         var query = new List<string>();
+
         if (!string.IsNullOrEmpty(Category))
         {
             query.Add($"category={Uri.EscapeDataString(Category)}");
@@ -149,7 +203,24 @@
             query.Add($"sort={TaskSortNames.Value(sort)}");
         }
 
-        Navigation.NavigateTo("/board" + (query.Count == 0 ? string.Empty : "?" + string.Join("&", query)));
+        foreach (var status in StatusNames.All)
+        {
+            var shown = Shown(status) + (status == expand ? ColumnPageSize : 0);
+            if (shown > ColumnPageSize)
+            {
+                query.Add($"{ShownName(status)}={shown}");
+            }
+        }
+
+        return "/board" + (query.Count == 0 ? string.Empty : "?" + string.Join("&", query));
+    }
+
+    private async Task MoveAsync(int id, TaskItemStatus status)
+    {
+        await Tasks.UpdateAsync(id, new UpdateTaskRequest(Status: status));
+
+        // Back to a freshly rendered board, with the filter kept, so a refresh does not post again.
+        Navigation.NavigateTo(BoardLink(null));
     }
 
     private static bool IsOverdue(TaskView task) =>

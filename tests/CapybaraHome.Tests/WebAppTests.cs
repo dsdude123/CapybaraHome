@@ -167,4 +167,118 @@ public class WebAppTests
 
         Assert.NotEmpty(cards!);
     }
+
+    [Fact]
+    public async Task The_task_list_shows_one_page_at_a_time_and_links_to_the_next()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        for (var i = 0; i < 55; i++)
+        {
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"Task {i:D2}", DueDate: new DateOnly(2026, 11, 1).AddDays(i)));
+        }
+
+        var first = await client.GetStringAsync("/tasks");
+
+        Assert.Contains("Showing 1-50 of 55 tasks", first);
+        Assert.Contains("Task 49", first);
+        Assert.DoesNotContain("Task 50", first);
+        Assert.Contains("page=2", first);
+
+        var second = await client.GetStringAsync("/tasks?page=2");
+
+        Assert.Contains("Showing 51-55 of 55 tasks", second);
+        Assert.Contains("Task 54", second);
+        Assert.DoesNotContain("Task 49", second);
+    }
+
+    [Fact]
+    public async Task A_page_past_the_last_one_falls_back_to_the_last_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Only one"));
+
+        var page = await client.GetStringAsync("/tasks?page=99");
+
+        Assert.Contains("Only one", page);
+        Assert.Contains("Showing 1-1 of 1 task", page);
+    }
+
+    [Fact]
+    public async Task A_page_link_keeps_the_filters_and_the_order()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        for (var i = 0; i < 51; i++)
+        {
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"Task {i:D2}", DueDate: new DateOnly(2020, 1, 1).AddDays(i)));
+        }
+
+        var page = await client.GetStringAsync("/tasks?sort=title&overdue=true&text=Task");
+
+        Assert.Contains("sort=title", page);
+        Assert.Contains("overdue=true", page);
+        Assert.Contains("text=Task", page);
+    }
+
+    [Theory]
+    [InlineData(TaskItemStatus.ToDo, "todo")]
+    [InlineData(TaskItemStatus.InProgress, "progress")]
+    [InlineData(TaskItemStatus.OnHold, "hold")]
+    [InlineData(TaskItemStatus.Done, "done")]
+    public async Task A_board_column_shows_one_page_of_cards_and_loads_the_rest(TaskItemStatus status, string parameter)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        for (var i = 0; i < 25; i++)
+        {
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"Task {i:D2}", Status: status, DueDate: new DateOnly(2026, 11, 1).AddDays(i)));
+        }
+
+        var board = await client.GetStringAsync("/board");
+
+        Assert.Contains("Task 19", board);
+        Assert.DoesNotContain("Task 20", board);
+        Assert.Contains("Load 5 more", board);
+        Assert.Contains($"{parameter}=40", board);
+
+        var expanded = await client.GetStringAsync($"/board?{parameter}=40");
+
+        Assert.Contains("Task 24", expanded);
+        Assert.DoesNotContain("Load", expanded[expanded.IndexOf("Task 24", StringComparison.Ordinal)..]);
+    }
+
+    [Fact]
+    public async Task A_board_column_that_fits_offers_no_load_more()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Only one"));
+
+        var board = await client.GetStringAsync("/board");
+
+        Assert.DoesNotContain("more", board);
+    }
+
+    [Fact]
+    public async Task A_board_load_more_link_keeps_the_other_columns_and_the_order()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        for (var i = 0; i < 25; i++)
+        {
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"To do {i:D2}"));
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"Done {i:D2}", Status: TaskItemStatus.Done));
+        }
+
+        var board = await client.GetStringAsync("/board?done=40&sort=title");
+
+        Assert.Contains("todo=40&amp;done=40", board);
+        Assert.Contains("sort=title", board);
+    }
 }

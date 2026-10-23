@@ -199,4 +199,68 @@ public class TaskServiceTests
         Assert.Null(cleared!.CategoryId);
         Assert.Null(cleared.DueDate);
     }
+
+    [Theory]
+    [InlineData(TaskSort.DueDate)]
+    [InlineData(TaskSort.DueDateDescending)]
+    [InlineData(TaskSort.Title)]
+    [InlineData(TaskSort.TitleDescending)]
+    [InlineData(TaskSort.Category)]
+    [InlineData(TaskSort.RecentlyUpdated)]
+    public async Task Every_order_pages_without_repeating_or_dropping_a_task(TaskSort sort)
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var categories = new CapybaraHome.Application.Categories.CategoryService(db.Context);
+        var service = new TaskService(db.Context, db.Clock);
+        var today = DateOnly.FromDateTime(db.Clock.GetUtcNow().UtcDateTime);
+        var garden = await categories.CreateAsync(new CapybaraHome.Application.Categories.CategoryRequest("Garden"));
+
+        for (var i = 0; i < 25; i++)
+        {
+            await service.CreateAsync(new CreateTaskRequest(
+                $"Task {i:D2}",
+                CategoryId: i % 2 == 0 ? garden.Id : null,
+                DueDate: i % 3 == 0 ? null : today.AddDays(i)));
+            db.Clock.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        var all = await service.ListAsync(new TaskFilter(), sort);
+        var paged = new List<TaskView>();
+
+        for (var skip = 0; skip < 25; skip += 10)
+        {
+            paged.AddRange(await service.ListAsync(new TaskFilter(Limit: 10, Skip: skip), sort));
+        }
+
+        Assert.Equal(25, all.Count);
+        Assert.Equal(all.Select(t => t.Id), paged.Select(t => t.Id));
+    }
+
+    [Fact]
+    public async Task A_page_past_the_end_comes_back_empty()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+        await service.CreateAsync(new CreateTaskRequest("Only one"));
+
+        Assert.Empty(await service.ListAsync(new TaskFilter(Limit: 10, Skip: 10)));
+        Assert.Empty(await service.ListAsync(new TaskFilter(Limit: 10, Skip: 10), TaskSort.RecentlyUpdated));
+    }
+
+    [Fact]
+    public async Task Skipping_narrows_the_same_filter_the_count_reports()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+
+        for (var i = 0; i < 12; i++)
+        {
+            await service.CreateAsync(new CreateTaskRequest($"Task {i:D2}", Status: i < 5 ? TaskItemStatus.Done : TaskItemStatus.ToDo));
+        }
+
+        var filter = new TaskFilter(Status: TaskItemStatus.ToDo);
+
+        Assert.Equal(7, await service.CountAsync(filter));
+        Assert.Equal(4, (await service.ListAsync(filter with { Limit = 5, Skip = 3 })).Count);
+    }
 }

@@ -437,6 +437,20 @@ textarea {
     padding: 0.6rem;
 }
 
+.board-more {
+    display: block;
+    text-align: center;
+    width: 100%;
+}
+
+.pager {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
 .board-card .card-head {
     align-items: start;
 }
