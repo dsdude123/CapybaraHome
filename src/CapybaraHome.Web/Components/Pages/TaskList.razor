@@ -40,6 +40,15 @@
             <label for="filter-due">Due within (days)</label>
             <input id="filter-due" type="number" min="0" name="due" value="@Due" />
         </div>
+        <div>
+            <label for="filter-sort">Sort by</label>
+            <select id="filter-sort" name="sort">
+                @foreach (var value in TaskSortNames.All)
+                {
+                    <option value="@TaskSortNames.Value(value)" selected="@(TaskSortNames.Parse(Sort) == value)">@TaskSortNames.Label(value)</option>
+                }
+            </select>
+        </div>
     </div>
     <label style="margin-top:0.5rem">
         <input type="checkbox" name="overdue" value="true" checked="@Overdue" style="width:auto;min-height:auto" />
@@ -78,6 +87,10 @@
     [SupplyParameterFromQuery(Name = "overdue")]
     private bool Overdue { get; set; }
 
+    /// <summary>Name of the order to sort the list in, or empty for the default.</summary>
+    [SupplyParameterFromQuery(Name = "sort")]
+    private string? Sort { get; set; }
+
     private IReadOnlyList<TaskView> tasks = [];
     private IReadOnlyList<CategoryView> categories = [];
 
@@ -94,6 +107,6 @@
             DueWithinDays: Due,
             Overdue: Overdue);
 
-        tasks = await Tasks.ListAsync(filter);
+        tasks = await Tasks.ListAsync(filter, TaskSortNames.Parse(Sort));
     }
 }

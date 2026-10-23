@@ -8,15 +8,10 @@ namespace CapybaraHome.Application.Tasks;
 /// <summary>Reads and writes tasks. The only place task rules live.</summary>
 public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
 {
-    /// <summary>Returns the tasks matching <paramref name="filter"/>, due soonest first.</summary>
-    public async Task<IReadOnlyList<TaskView>> ListAsync(TaskFilter filter, CancellationToken cancellationToken = default)
+    /// <summary>Returns the tasks matching <paramref name="filter"/> in the order <paramref name="sort"/> asks for.</summary>
+    public async Task<IReadOnlyList<TaskView>> ListAsync(TaskFilter filter, TaskSort sort = TaskSort.DueDate, CancellationToken cancellationToken = default)
     {
-        var query = Filter(context.Tasks.AsNoTracking(), filter);
-
-        query = query
-            .OrderBy(t => t.DueDate == null)
-            .ThenBy(t => t.DueDate)
-            .ThenBy(t => t.Id);
+        var query = Order(Filter(context.Tasks.AsNoTracking(), filter), sort);
 
         if (filter.Limit is > 0)
         {
@@ -136,6 +131,35 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
         await context.SaveChangesAsync(cancellationToken);
         return true;
     }
+
+    private static IQueryable<TaskItem> Order(IQueryable<TaskItem> query, TaskSort sort) => sort switch
+    {
+        TaskSort.DueDateDescending => query
+            .OrderBy(t => t.DueDate == null)
+            .ThenByDescending(t => t.DueDate)
+            .ThenBy(t => t.Title)
+            .ThenBy(t => t.Id),
+        TaskSort.Title => query
+            .OrderBy(t => t.Title)
+            .ThenBy(t => t.Id),
+        TaskSort.TitleDescending => query
+            .OrderByDescending(t => t.Title)
+            .ThenBy(t => t.Id),
+        TaskSort.Category => query
+            .OrderBy(t => t.CategoryId == null)
+            .ThenBy(t => t.Category!.Name)
+            .ThenBy(t => t.DueDate == null)
+            .ThenBy(t => t.DueDate)
+            .ThenBy(t => t.Id),
+        TaskSort.RecentlyUpdated => query
+            .OrderByDescending(t => t.UpdatedAt)
+            .ThenBy(t => t.Id),
+        _ => query
+            .OrderBy(t => t.DueDate == null)
+            .ThenBy(t => t.DueDate)
+            .ThenBy(t => t.Title)
+            .ThenBy(t => t.Id),
+    };
 
     private IQueryable<TaskItem> Filter(IQueryable<TaskItem> query, TaskFilter filter)
     {

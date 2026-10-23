@@ -26,6 +26,15 @@
             <label for="board-due">Due within (days)</label>
             <input id="board-due" type="number" min="0" name="due" value="@Due" />
         </div>
+        <div>
+            <label for="board-sort">Sort by</label>
+            <select id="board-sort" name="sort">
+                @foreach (var value in TaskSortNames.All)
+                {
+                    <option value="@TaskSortNames.Value(value)" selected="@(sort == value)">@TaskSortNames.Label(value)</option>
+                }
+            </select>
+        </div>
     </div>
     <div class="row" style="margin-top:0.5rem">
         <button class="btn" type="submit">Filter</button>
@@ -67,7 +76,7 @@
                         <span>@(task.CategoryName ?? "Uncategorized")</span>
                         @if (task.DueDate is { } due)
                         {
-                            <span class="@(IsOverdue(task) ? "overdue" : null)">@due.ToString("d MMM")</span>
+                            <span class="@(IsOverdue(task) ? "overdue" : null)">Due @DateNames.Long(due)</span>
                         }
                     </div>
                 </article>
@@ -85,8 +94,13 @@
     [SupplyParameterFromQuery(Name = "due")]
     private int? Due { get; set; }
 
+    /// <summary>Name of the order to sort each column in, or empty for the default.</summary>
+    [SupplyParameterFromQuery(Name = "sort")]
+    private string? Sort { get; set; }
+
     private readonly Dictionary<TaskItemStatus, IReadOnlyList<TaskView>> columns = [];
     private IReadOnlyList<CategoryView> categories = [];
+    private TaskSort sort = TaskSort.DueDate;
 
     /// <summary>Loads the four columns and the category filter.</summary>
     protected override async Task OnParametersSetAsync()
@@ -98,13 +112,16 @@
     private async Task ReloadAsync()
     {
         var category = int.TryParse(Category, out var parsed) ? parsed : (int?)null;
+        sort = TaskSortNames.Parse(Sort);
 
         foreach (var status in StatusNames.All)
         {
-            columns[status] = await Tasks.ListAsync(new TaskFilter(
-                Status: status,
-                CategoryId: category,
-                DueWithinDays: Due));
+            columns[status] = await Tasks.ListAsync(
+                new TaskFilter(
+                    Status: status,
+                    CategoryId: category,
+                    DueWithinDays: Due),
+                sort);
         }
     }
 
@@ -125,6 +142,11 @@
         if (Due is { } due)
         {
             query.Add($"due={due}");
+        }
+
+        if (sort != TaskSort.DueDate)
+        {
+            query.Add($"sort={TaskSortNames.Value(sort)}");
         }
 
         Navigation.NavigateTo("/board" + (query.Count == 0 ? string.Empty : "?" + string.Join("&", query)));

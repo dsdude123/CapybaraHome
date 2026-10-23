@@ -44,6 +44,28 @@ public record TaskFilter(
     bool Overdue = false,
     int? Limit = null);
 
+/// <summary>The orders a task listing can be read in. A task with no due date always sorts last.</summary>
+public enum TaskSort
+{
+    /// <summary>Earliest due date first.</summary>
+    DueDate,
+
+    /// <summary>Latest due date first.</summary>
+    DueDateDescending,
+
+    /// <summary>Title from A to Z.</summary>
+    Title,
+
+    /// <summary>Title from Z to A.</summary>
+    TitleDescending,
+
+    /// <summary>Category name from A to Z, with the uncategorized last.</summary>
+    Category,
+
+    /// <summary>Most recently changed first.</summary>
+    RecentlyUpdated,
+}
+
 /// <summary>Fields accepted when creating a task.</summary>
 /// <param name="Title">Short description of the work; required.</param>
 /// <param name="Notes">Free-form detail, held as markdown.</param>

@@ -42,7 +42,7 @@ public class TaskTools
             Overdue: overdue,
             Limit: Math.Clamp(limit, 1, 200));
 
-        return await tasks.ListAsync(filter, cancellationToken);
+        return await tasks.ListAsync(filter, cancellationToken: cancellationToken);
     }
 
     /// <summary>Reads one task in full.</summary>

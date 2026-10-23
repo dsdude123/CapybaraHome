@@ -18,7 +18,7 @@ else
                     <span>@(task.CategoryName ?? "Uncategorized")</span>
                     @if (task.DueDate is { } due)
                     {
-                        <span class="@(IsOverdue(task) ? "overdue" : null)">Due @due.ToString("ddd d MMM")</span>
+                        <span class="@(IsOverdue(task) ? "overdue" : null)">Due @DateNames.Long(due)</span>
                     }
                 </div>
             </li>
