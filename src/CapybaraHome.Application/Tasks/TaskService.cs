@@ -11,23 +11,19 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <summary>Returns the tasks matching <paramref name="filter"/> in the order <paramref name="sort"/> asks for.</summary>
     public async Task<IReadOnlyList<TaskView>> ListAsync(TaskFilter filter, TaskSort sort = TaskSort.DueDate, CancellationToken cancellationToken = default)
     {
-        var query = Filter(context.Tasks.AsNoTracking(), filter);
+        var matching = Filter(context.Tasks.AsNoTracking(), filter);
 
         if (sort == TaskSort.RecentlyUpdated)
         {
-            // SQLite refuses a DateTimeOffset in ORDER BY, so this one order is applied to the rows once they are here.
-            var rows = await query.Select(Projection).ToListAsync(cancellationToken);
-            IEnumerable<TaskView> ordered = rows.OrderByDescending(t => t.UpdatedAt).ThenBy(t => t.Id);
-
-            if (filter.Limit is > 0)
-            {
-                ordered = ordered.Take(filter.Limit.Value);
-            }
-
-            return ordered.ToList();
+            return await PageByChangeAsync(matching, filter, cancellationToken);
         }
 
-        query = Order(query, sort);
+        var query = Order(matching, sort);
+
+        if (filter.Skip > 0)
+        {
+            query = query.Skip(filter.Skip);
+        }
 
         if (filter.Limit is > 0)
         {
@@ -35,6 +31,48 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
         }
 
         return await query.Select(Projection).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Returns the asked-for page of <paramref name="matching"/> ordered by when each task last
+    /// changed. SQLite refuses a DateTimeOffset in ORDER BY, so the order is settled here instead:
+    /// the first query reads only the id and the timestamp of every matching row, and the second
+    /// reads the page's rows in full, which keeps the whole listing off the wire.
+    /// </summary>
+    private async Task<IReadOnlyList<TaskView>> PageByChangeAsync(IQueryable<TaskItem> matching, TaskFilter filter, CancellationToken cancellationToken)
+    {
+        var keys = await matching
+            .Select(t => new { t.Id, t.UpdatedAt })
+            .ToListAsync(cancellationToken);
+
+        IEnumerable<int> ordered = keys
+            .OrderByDescending(k => k.UpdatedAt)
+            .ThenBy(k => k.Id)
+            .Select(k => k.Id);
+
+        if (filter.Skip > 0)
+        {
+            ordered = ordered.Skip(filter.Skip);
+        }
+
+        if (filter.Limit is > 0)
+        {
+            ordered = ordered.Take(filter.Limit.Value);
+        }
+
+        var ids = ordered.ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        var page = await context.Tasks.AsNoTracking()
+            .Where(t => ids.Contains(t.Id))
+            .Select(Projection)
+            .ToListAsync(cancellationToken);
+
+        var byId = page.ToDictionary(t => t.Id);
+        return ids.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
     }
 
     /// <summary>Returns one task, or null when no task has that id.</summary>

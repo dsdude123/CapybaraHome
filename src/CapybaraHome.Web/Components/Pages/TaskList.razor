@@ -60,11 +60,35 @@
     </div>
 </form>
 
-<p class="muted">@tasks.Count task@(tasks.Count == 1 ? string.Empty : "s")</p>
+<p class="muted">
+    @if (tasks.Count == 0)
+    {
+        @:No tasks
+    }
+    else
+    {
+        @($"Showing {first}-{first + tasks.Count - 1} of {total} task" + (total == 1 ? string.Empty : "s"))
+    }
+</p>
 
 <div class="card">
     <TaskLines Tasks="tasks" />
 </div>
+
+@if (pageCount > 1)
+{
+    <nav class="pager" aria-label="Pages of tasks">
+        @if (page > 1)
+        {
+            <a class="btn btn-small" href="@PageLink(page - 1)">Previous</a>
+        }
+        <span class="muted">Page @(page) of @pageCount</span>
+        @if (page < pageCount)
+        {
+            <a class="btn btn-small" href="@PageLink(page + 1)">Next</a>
+        }
+    </nav>
+}
 
 @code {
     /// <summary>Text to match in the title or the notes.</summary>
@@ -91,10 +115,21 @@
     [SupplyParameterFromQuery(Name = "sort")]
     private string? Sort { get; set; }
 
+    /// <summary>One-based page of the listing to show, or null for the first.</summary>
+    [SupplyParameterFromQuery(Name = "page")]
+    private int? Page { get; set; }
+
+    /// <summary>How many tasks one page of the listing holds.</summary>
+    private const int PageSize = 50;
+
     private IReadOnlyList<TaskView> tasks = [];
     private IReadOnlyList<CategoryView> categories = [];
+    private int total;
+    private int page = 1;
+    private int pageCount = 1;
+    private int first = 1;
 
-    /// <summary>Loads the categories and the list the query string asks for.</summary>
+    /// <summary>Loads the categories and the page of the list the query string asks for.</summary>
     protected override async Task OnParametersSetAsync()
     {
         categories = await Categories.ListAsync();
@@ -107,6 +142,50 @@
             DueWithinDays: Due,
             Overdue: Overdue);
 
-        tasks = await Tasks.ListAsync(filter, TaskSortNames.Parse(Sort));
+        total = await Tasks.CountAsync(filter);
+        pageCount = Math.Max(1, (total + PageSize - 1) / PageSize);
+        page = Math.Clamp(Page ?? 1, 1, pageCount);
+        first = ((page - 1) * PageSize) + 1;
+
+        tasks = await Tasks.ListAsync(filter with { Skip = first - 1, Limit = PageSize }, TaskSortNames.Parse(Sort));
+    }
+
+    /// <summary>Returns a link to <paramref name="target"/> with the current filters and order kept.</summary>
+    private string PageLink(int target)
+    {
+        var query = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(Text))
+        {
+            query.Add($"text={Uri.EscapeDataString(Text)}");
+        }
+
+        if (!string.IsNullOrEmpty(Category))
+        {
+            query.Add($"category={Uri.EscapeDataString(Category)}");
+        }
+
+        if (!string.IsNullOrEmpty(Status))
+        {
+            query.Add($"status={Uri.EscapeDataString(Status)}");
+        }
+
+        if (Due is { } due)
+        {
+            query.Add($"due={due}");
+        }
+
+        if (Overdue)
+        {
+            query.Add("overdue=true");
+        }
+
+        if (!string.IsNullOrEmpty(Sort))
+        {
+            query.Add($"sort={Uri.EscapeDataString(Sort)}");
+        }
+
+        query.Add($"page={target}");
+        return "tasks?" + string.Join("&", query);
     }
 }
