@@ -9,8 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      actions: read
+      contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
@@ -29,32 +28,42 @@ jobs:
           --settings .github/coverage.runsettings
           --results-directory ${{ runner.temp }}/coverage
 
-      - name: Keep this branch's coverage as the baseline
+      - name: Record this branch's coverage as the baseline
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ github.ref_name }}
-          path: ${{ runner.temp }}/coverage/**/*.cobertura.xml
-          retention-days: 90
-          if-no-files-found: error
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          archive="${RUNNER_TEMP}/${BRANCH//\//-}.tar.gz"
+          tar -czf "$archive" -C "${RUNNER_TEMP}/coverage" \
+            $(cd "${RUNNER_TEMP}/coverage" && find . -name '*.cobertura.xml' -printf '%P\n')
+          work="${RUNNER_TEMP}/baseline"
+          mkdir -p "$work"
+          mv "$archive" "$work/"
+          git -C "$work" init -q -b coverage-baseline
+          git -C "$work" add -A
+          git -C "$work" \
+            -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "Coverage baseline for ${GITHUB_SHA}"
+          git -C "$work" push -q --force \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" \
+            coverage-baseline
 
       - name: Fetch the base branch's coverage
         if: github.event_name == 'pull_request'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          name="coverage-${BASE_REF//\//-}"
+          archive="${BASE_REF//\//-}.tar.gz"
           target="${RUNNER_TEMP}/coverage-base"
           mkdir -p "$target"
-          runs=$(gh run list --workflow build.yml --branch "$BASE_REF" --event push \
-            --status success --limit 10 --json databaseId --jq '.[].databaseId' || true)
-          for id in $runs; do
-            if gh run download "$id" --name "$name" --dir "$target"; then
-              echo "Baseline taken from run $id."
-              break
-            fi
-          done
+          if git fetch --depth 1 origin coverage-baseline 2>/dev/null \
+            && git cat-file -e "FETCH_HEAD:${archive}" 2>/dev/null; then
+            git show "FETCH_HEAD:${archive}" | tar -xzf - -C "$target"
+            echo "Baseline taken from the coverage-baseline branch."
+          else
+            echo "No baseline recorded for ${BASE_REF} yet."
+          fi
 
       - name: Build the coverage report
         if: github.event_name == 'pull_request'
