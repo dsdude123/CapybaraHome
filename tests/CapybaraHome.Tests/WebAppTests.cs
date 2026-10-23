@@ -312,4 +312,90 @@ public class WebAppTests
         Assert.Contains("todo=40&amp;done=25", board);
         Assert.Contains("sort=title", board);
     }
+
+    [Fact]
+    public async Task Every_combination_of_status_checkboxes_lists_exactly_those_statuses()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var titles = new Dictionary<TaskItemStatus, string>();
+
+        foreach (var status in StatusNames.All)
+        {
+            var title = $"Work in {status}";
+            titles[status] = title;
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest(title, Status: status));
+        }
+
+        for (var mask = 0; mask < 1 << 4; mask++)
+        {
+            var chosen = StatusNames.All.Where((_, i) => (mask & (1 << i)) != 0).ToList();
+            var query = string.Join("&", chosen.Select(status => $"status={status}"));
+            var response = await client.GetAsync("/tasks?" + query);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var html = await response.Content.ReadAsStringAsync();
+
+            foreach (var status in StatusNames.All)
+            {
+                // Nothing checked is the unfiltered list, so every task shows.
+                var shown = chosen.Count == 0 || chosen.Contains(status);
+
+                Assert.Equal(shown, html.Contains(titles[status], StringComparison.Ordinal));
+                Assert.Equal(chosen.Contains(status), Checked(html, $"filter-status-{status}"));
+            }
+        }
+    }
+
+    [Fact]
+    public async Task A_page_link_keeps_every_checked_status()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        for (var i = 0; i < 30; i++)
+        {
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"To do {i:D2}"));
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"Going {i:D2}", Status: TaskItemStatus.InProgress));
+            await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest($"Held {i:D2}", Status: TaskItemStatus.OnHold));
+        }
+
+        var first = await client.GetStringAsync("/tasks?status=ToDo&status=InProgress&sort=title");
+
+        Assert.Contains("Showing 1-50 of 60 tasks", first);
+        Assert.Contains("status=ToDo", first);
+        Assert.Contains("status=InProgress", first);
+        Assert.Contains("sort=title", first);
+        Assert.DoesNotContain("Held 00", first);
+
+        var second = await client.GetStringAsync("/tasks?status=ToDo&status=InProgress&sort=title&page=2");
+
+        Assert.Contains("Showing 51-60 of 60 tasks", second);
+        Assert.DoesNotContain("Held 00", second);
+    }
+
+    [Fact]
+    public async Task A_status_the_filter_does_not_offer_is_ignored()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Only one"));
+
+        var html = await client.GetStringAsync("/tasks?status=Nonsense");
+
+        Assert.Contains("Only one", html);
+        Assert.DoesNotContain("status=Nonsense", html);
+    }
+
+    /// <summary>Returns whether the checkbox with <paramref name="id"/> is rendered checked.</summary>
+    private static bool Checked(string html, string id)
+    {
+        var tag = System.Text.RegularExpressions.Regex.Match(html, $"<input[^>]*id=\"{id}\"[^>]*>");
+
+        Assert.True(tag.Success, $"No input with id {id}");
+
+        return tag.Value.Contains("checked", StringComparison.Ordinal);
+    }
 }

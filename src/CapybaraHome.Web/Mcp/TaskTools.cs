@@ -36,7 +36,7 @@ public class TaskTools
     {
         var filter = new TaskFilter(
             Text: text,
-            Status: status,
+            Statuses: status is { } one ? [one] : null,
             CategoryId: categoryId,
             DueWithinDays: dueWithinDays,
             Overdue: overdue,

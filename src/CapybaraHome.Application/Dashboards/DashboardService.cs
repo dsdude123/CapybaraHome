@@ -156,14 +156,14 @@ public class DashboardService(ICapybaraHomeDbContext context, TaskService tasks)
     private async Task<DashboardCardView> FillAsync(DashboardCard card, CancellationToken cancellationToken)
     {
         var filter = new TaskFilter(
-            Status: card.Status,
+            Statuses: card.Status is { } status ? [status] : null,
             CategoryId: card.CategoryId,
             DueWithinDays: card.DueWithinDays);
 
         if (card.Kind == DashboardCardKind.CategoryProgress)
         {
             var total = await tasks.CountAsync(new TaskFilter(CategoryId: card.CategoryId), cancellationToken);
-            var done = await tasks.CountAsync(new TaskFilter(CategoryId: card.CategoryId, Status: TaskItemStatus.Done), cancellationToken);
+            var done = await tasks.CountAsync(new TaskFilter(CategoryId: card.CategoryId, Statuses: [TaskItemStatus.Done]), cancellationToken);
             return View(card, total, done, []);
         }
 

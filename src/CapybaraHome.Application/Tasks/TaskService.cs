@@ -221,9 +221,10 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
                 || (t.Notes != null && EF.Functions.Like(t.Notes, $"%{text}%")));
         }
 
-        if (filter.Status is { } status)
+        if (filter.Statuses is { Count: > 0 } statuses)
         {
-            query = query.Where(t => t.Status == status);
+            var wanted = statuses.Distinct().ToList();
+            query = query.Where(t => wanted.Contains(t.Status));
         }
 
         if (filter.Uncategorized)

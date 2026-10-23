@@ -29,7 +29,7 @@ public record TaskView(
 
 /// <summary>Filters for a task listing. Every member is optional and narrows the result.</summary>
 /// <param name="Text">Case-insensitive substring matched against title and notes.</param>
-/// <param name="Status">Keep only tasks in this state.</param>
+/// <param name="Statuses">Keep only tasks in one of these states; null or empty keeps every state.</param>
 /// <param name="CategoryId">Keep only tasks in this category.</param>
 /// <param name="Uncategorized">When true, keep only tasks with no category.</param>
 /// <param name="DueWithinDays">Keep only tasks due no more than this many days from today.</param>
@@ -38,7 +38,7 @@ public record TaskView(
 /// <param name="Skip">Number of matching tasks to pass over before the first one returned.</param>
 public record TaskFilter(
     string? Text = null,
-    TaskItemStatus? Status = null,
+    IReadOnlyCollection<TaskItemStatus>? Statuses = null,
     int? CategoryId = null,
     bool Uncategorized = false,
     int? DueWithinDays = null,

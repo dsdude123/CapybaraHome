@@ -26,16 +26,16 @@
                 }
             </select>
         </div>
-        <div>
-            <label for="filter-status">Status</label>
-            <select id="filter-status" name="status">
-                <option value="" selected="@(Status is null or "")">All</option>
-                @foreach (var value in StatusNames.All)
-                {
-                    <option value="@value" selected="@(Status == value.ToString())">@StatusNames.Label(value)</option>
-                }
-            </select>
-        </div>
+        <fieldset class="check-list">
+            <legend>Status</legend>
+            @foreach (var value in StatusNames.All)
+            {
+                <label for="filter-status-@value">
+                    <input id="filter-status-@value" type="checkbox" name="status" value="@value" checked="@selected.Contains(value)" />
+                    @StatusNames.Label(value)
+                </label>
+            }
+        </fieldset>
         <div>
             <label for="filter-due">Due within (days)</label>
             <input id="filter-due" type="number" min="0" name="due" value="@Due" />
@@ -99,9 +99,9 @@
     [SupplyParameterFromQuery(Name = "category")]
     private string? Category { get; set; }
 
-    /// <summary>Status name to filter on, or empty for all.</summary>
+    /// <summary>Status names to filter on, or none for all of them.</summary>
     [SupplyParameterFromQuery(Name = "status")]
-    private string? Status { get; set; }
+    private string[]? Statuses { get; set; }
 
     /// <summary>Days-away bound to filter on, or null for any.</summary>
     [SupplyParameterFromQuery(Name = "due")]
@@ -123,6 +123,7 @@
     private const int PageSize = 50;
 
     private IReadOnlyList<TaskView> tasks = [];
+    private List<TaskItemStatus> selected = [];
     private IReadOnlyList<CategoryView> categories = [];
     private int total;
     private int page = 1;
@@ -133,10 +134,11 @@
     protected override async Task OnParametersSetAsync()
     {
         categories = await Categories.ListAsync();
+        selected = Selected();
 
         var filter = new TaskFilter(
             Text: string.IsNullOrWhiteSpace(Text) ? null : Text,
-            Status: Enum.TryParse<TaskItemStatus>(Status, out var parsedStatus) ? parsedStatus : null,
+            Statuses: selected,
             CategoryId: int.TryParse(Category, out var parsedCategory) ? parsedCategory : null,
             Uncategorized: Category == "none",
             DueWithinDays: Due,
@@ -148,6 +150,22 @@
         first = ((page - 1) * PageSize) + 1;
 
         tasks = await Tasks.ListAsync(filter with { Skip = first - 1, Limit = PageSize }, TaskSortNames.Parse(Sort));
+    }
+
+    /// <summary>
+    /// Returns the statuses the query string asks for, in the order the filter shows them, with
+    /// anything unrecognised left out.
+    /// </summary>
+    private List<TaskItemStatus> Selected()
+    {
+        if (Statuses is not { Length: > 0 })
+        {
+            return [];
+        }
+
+        return StatusNames.All
+            .Where(value => Statuses.Any(name => string.Equals(name, value.ToString(), StringComparison.OrdinalIgnoreCase)))
+            .ToList();
     }
 
     /// <summary>Returns a link to <paramref name="target"/> with the current filters and order kept.</summary>
@@ -165,9 +183,9 @@
             query.Add($"category={Uri.EscapeDataString(Category)}");
         }
 
-        if (!string.IsNullOrEmpty(Status))
+        foreach (var status in selected)
         {
-            query.Add($"status={Uri.EscapeDataString(Status)}");
+            query.Add($"status={status}");
         }
 
         if (Due is { } due)
