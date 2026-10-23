@@ -431,6 +431,19 @@ textarea {
     }
 }
 
+.ingredient-line {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: 1fr;
+    margin-bottom: 0.5rem;
+}
+
+@media (min-width: 36rem) {
+    .ingredient-line {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    }
+}
+
 .board {
     display: grid;
     gap: 1rem;

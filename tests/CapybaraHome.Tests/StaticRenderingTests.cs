@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using CapybaraHome.Application.Jira;
+using CapybaraHome.Application.Meals;
+using CapybaraHome.Domain.Meals;
 using CapybaraHome.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +40,8 @@ public class StaticRenderingTests
     [InlineData("/board")]
     [InlineData("/tasks")]
     [InlineData("/tasks/new")]
+    [InlineData("/meals")]
+    [InlineData("/meals/new")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -57,6 +61,8 @@ public class StaticRenderingTests
     [InlineData("/board")]
     [InlineData("/tasks")]
     [InlineData("/tasks/new")]
+    [InlineData("/meals")]
+    [InlineData("/meals/new")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -312,6 +318,129 @@ public class StaticRenderingTests
         Assert.DoesNotContain("It is not shown again", await client.GetStringAsync("/settings"));
     }
 
+    [Fact]
+    public async Task A_meal_is_created_with_its_ingredients_and_edited_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var created = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "save"),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Queued)),
+            new("last-cooked", string.Empty),
+            new("directions", "Cook it"),
+            new("quantity", "2 cups"),
+            new("item", "first item"),
+            new("quantity", string.Empty),
+            new("item", "second item"),
+            new("quantity", string.Empty),
+            new("item", string.Empty),
+            new("new-tags", "quick, oven"),
+            new("new-tag-facet", nameof(MealTagFacet.Effort)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
+        var editor = created.Headers.Location!.OriginalString;
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var meal = await context.Meals.Include(m => m.Ingredients).Include(m => m.Tags).SingleAsync();
+
+            Assert.Equal("A meal", meal.Name);
+            Assert.Equal(MealStatus.Queued, meal.Status);
+            Assert.Equal(["first item", "second item"], meal.Ingredients.OrderBy(i => i.SortOrder).Select(i => i.Item));
+            Assert.Equal("2 cups", meal.Ingredients.OrderBy(i => i.SortOrder).First().Quantity);
+            Assert.Equal(["oven", "quick"], meal.Tags.Select(t => t.Name).Order());
+        }
+
+        var edited = await PostManyAsync(client, editor, "meal-editor",
+        [
+            new("action", "save"),
+            new("name", "A renamed meal"),
+            new("status", nameof(MealStatus.Available)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("item", "first item"),
+            new("quantity", "2 cups"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Effort)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, edited.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var meal = await context.Meals.Include(m => m.Ingredients).SingleAsync();
+
+            Assert.Equal("A renamed meal", meal.Name);
+            Assert.Equal(MealStatus.Available, meal.Status);
+            Assert.NotNull(meal.LastCookedAt);
+            Assert.Single(meal.Ingredients);
+        }
+    }
+
+    [Fact]
+    public async Task Asking_for_more_ingredient_lines_keeps_what_was_typed()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "add-rows"),
+            new("name", "Half typed"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("directions", "so far"),
+            new("quantity", "1 tin"),
+            new("item", "an item"),
+            new("new-tags", "a new tag"),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        var html = await posted.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("Half typed", html);
+        Assert.Contains("1 tin", html);
+        Assert.Contains("an item", html);
+
+        // The tags typed into the box are only created on a save, so they have to come back with
+        // the page or a press of Add lines throws them away.
+        Assert.Contains("a new tag", html);
+
+        using var scope = app.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+        Assert.Empty(context.Meals);
+    }
+
+    [Fact]
+    public async Task The_meal_filters_travel_in_the_query_string()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int tagId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            var tag = await tags.EnsureAsync(new MealTagRequest("quick", MealTagFacet.Effort));
+            tagId = tag.Id;
+
+            await meals.CreateAsync(new CreateMealRequest("A tagged meal", Status: MealStatus.Queued, TagIds: [tag.Id]));
+            await meals.CreateAsync(new CreateMealRequest("A plain meal"));
+        }
+
+        Assert.Contains("A tagged meal", await client.GetStringAsync("/meals?text=tagged"));
+        Assert.DoesNotContain("A plain meal", await client.GetStringAsync("/meals?text=tagged"));
+        Assert.DoesNotContain("A plain meal", await client.GetStringAsync($"/meals?tag={tagId}"));
+        Assert.DoesNotContain("A tagged meal", await client.GetStringAsync($"/meals?status={nameof(MealStatus.Closed)}"));
+        Assert.Contains("A tagged meal", await client.GetStringAsync("/meals?sort=name-desc"));
+    }
+
     private static IEnumerable<string> Forms(string html)
     {
         foreach (var match in System.Text.RegularExpressions.Regex.Matches(html, "<form[\\s>].*?</form>",
@@ -335,6 +464,20 @@ public class StaticRenderingTests
     {
         fields["_handler"] = handler;
         fields["__RequestVerificationToken"] = await TokenAsync(client, path);
+
+        return await client.PostAsync(path, new FormUrlEncodedContent(fields));
+    }
+
+    // The meal editor posts repeated names, one pair per ingredient line, so its fields cannot be
+    // carried in a dictionary the way the other forms' are.
+    private static async Task<HttpResponseMessage> PostManyAsync(
+        HttpClient client,
+        string path,
+        string handler,
+        List<KeyValuePair<string, string>> fields)
+    {
+        fields.Add(new("_handler", handler));
+        fields.Add(new("__RequestVerificationToken", await TokenAsync(client, path)));
 
         return await client.PostAsync(path, new FormUrlEncodedContent(fields));
     }

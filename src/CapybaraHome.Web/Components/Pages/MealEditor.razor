@@ -1,0 +1,294 @@
+@page "/meals/new"
+@page "/meals/{Id:int}"
+@using CapybaraHome.Domain.Meals
+@inject MealService Meals
+@inject MealTagService Tags
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "Create a meal" : "Edit a meal")</PageTitle>
+
+<h1>@(Id is null ? "Create a meal" : "Edit a meal")</h1>
+
+<form method="post" @formname="meal-editor" @onsubmit="SubmitAsync">
+    <AntiforgeryToken />
+
+    <div class="field">
+        <label for="meal-name">Name</label>
+        <input id="meal-name" type="text" name="name" value="@name" />
+    </div>
+
+    <div class="filters">
+        <div class="field">
+            <label for="meal-status">Status</label>
+            <select id="meal-status" name="status">
+                @foreach (var value in MealStatusNames.All)
+                {
+                    <option value="@value" selected="@(status == value)">@MealStatusNames.Label(value)</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="meal-last-cooked">Last cooked</label>
+            <input id="meal-last-cooked" type="date" name="last-cooked" value="@lastCooked" />
+            <input type="hidden" name="last-cooked-held" value="@lastCookedHeld" />
+        </div>
+    </div>
+
+    <label class="row" style="align-items:center;gap:0.5rem">
+        <input type="checkbox" name="one-time" value="true" checked="@isOneTime" style="width:auto;min-height:auto" />
+        One-time meal
+    </label>
+
+    <fieldset class="check-list" style="margin-top:0.75rem">
+        <legend>Ingredients</legend>
+        <p class="muted">A quantity and an item per line. Clear the item to drop the line.</p>
+        @for (var index = 0; index < rows.Count; index++)
+        {
+            var row = rows[index];
+            <div class="ingredient-line">
+                <input type="text" name="quantity" value="@row.Quantity" aria-label="Quantity" placeholder="Quantity" />
+                <input type="text" name="item" value="@row.Item" aria-label="Ingredient" placeholder="Ingredient" />
+            </div>
+        }
+        <button class="btn btn-small" type="submit" name="action" value="add-rows" style="margin-top:0.5rem">Add lines</button>
+    </fieldset>
+
+    <div class="field">
+        <label for="meal-directions">Directions</label>
+        <textarea id="meal-directions" name="directions" rows="10">@directions</textarea>
+    </div>
+
+    <fieldset class="check-list">
+        <legend>Tags</legend>
+        @if (tags.Count == 0)
+        {
+            <p class="muted">No tags yet. Add some below.</p>
+        }
+        @foreach (var facet in MealTagFacetNames.All)
+        {
+            var choices = tags.Where(t => t.Facet == facet).ToList();
+            if (choices.Count > 0)
+            {
+                <p class="muted">@MealTagFacetNames.Label(facet)</p>
+                @foreach (var tag in choices)
+                {
+                    <label for="meal-tag-@tag.Id">
+                        <input id="meal-tag-@tag.Id" type="checkbox" name="tag" value="@tag.Id" checked="@selectedTags.Contains(tag.Id)" />
+                        @tag.Name
+                    </label>
+                }
+            }
+        }
+    </fieldset>
+
+    <div class="filters">
+        <div class="field">
+            <label for="meal-new-tags">New tags</label>
+            <input id="meal-new-tags" type="text" name="new-tags" value="@newTags" placeholder="Separate with commas" />
+        </div>
+        <div class="field">
+            <label for="meal-new-tag-facet">New tags describe</label>
+            <select id="meal-new-tag-facet" name="new-tag-facet">
+                @foreach (var value in MealTagFacetNames.All)
+                {
+                    <option value="@value" selected="@(newTagFacet == value)">@MealTagFacetNames.Label(value)</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+
+    <div class="row">
+        <button class="btn btn-primary" type="submit" name="action" value="save">Save</button>
+        <a class="btn" href="meals">Cancel</a>
+    </div>
+</form>
+
+@if (Id is not null)
+{
+    <form method="post" @formname="meal-delete" @onsubmit="DeleteAsync" style="margin-top:0.75rem">
+        <AntiforgeryToken />
+        <button class="btn btn-danger" type="submit">Delete</button>
+    </form>
+}
+
+@code {
+    /// <summary>Id of the meal being edited, or null when creating one.</summary>
+    [Parameter]
+    public int? Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    /// <summary>How many blank ingredient lines a fresh editor offers, and how many a press of Add lines adds.</summary>
+    private const int BlankRows = 3;
+
+    private IReadOnlyList<MealTagView> tags = [];
+    private List<IngredientRow> rows = [];
+    private List<int> selectedTags = [];
+    private string? name;
+    private string? directions;
+    private string? lastCooked;
+    private string? lastCookedHeld;
+    private string? newTags;
+    private MealStatus status = MealStatus.Pooled;
+    private MealTagFacet newTagFacet = MealTagFacet.Trait;
+    private bool isOneTime;
+    private string? error;
+
+    /// <summary>
+    /// Fills the editor. A post carries the edited values, so they are read back out of the form
+    /// rather than the database, which is what lets a press of Add lines keep what was typed.
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        tags = await Tags.ListAsync();
+
+        if (HttpContext?.Request.Method == HttpMethods.Post)
+        {
+            ReadForm(HttpContext.Request.Form);
+            return;
+        }
+
+        if (Id is null)
+        {
+            rows = Blank(BlankRows);
+            return;
+        }
+
+        var meal = await Meals.GetAsync(Id.Value);
+        if (meal is null)
+        {
+            Navigation.NavigateTo("meals");
+            return;
+        }
+
+        name = meal.Name;
+        directions = meal.Directions;
+        status = meal.Status;
+        isOneTime = meal.IsOneTime;
+        lastCooked = meal.LastCookedAt?.ToString("yyyy-MM-dd");
+        lastCookedHeld = lastCooked;
+        selectedTags = meal.Tags.Select(t => t.Id).ToList();
+        rows = meal.Ingredients.Select(i => new IngredientRow(i.Quantity, i.Item)).Concat(Blank(BlankRows)).ToList();
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        if (HttpContext.Request.Form["action"] == "add-rows")
+        {
+            rows.AddRange(Blank(BlankRows));
+            return;
+        }
+
+        error = null;
+
+        var ingredients = rows
+            .Where(row => !string.IsNullOrWhiteSpace(row.Item))
+            .Select(row => new MealIngredientInput(row.Item!, row.Quantity))
+            .ToList();
+
+        var date = DateOnly.TryParse(lastCooked, out var parsed) ? parsed : (DateOnly?)null;
+
+        // A blank date box only clears the date when the meal had one. Left blank on a meal that
+        // never had one it says nothing, so sending the meal back to available still stamps today.
+        var cleared = date is null && !string.IsNullOrEmpty(lastCookedHeld);
+        var chosen = await WithNewTagsAsync(newTags ?? string.Empty);
+
+        try
+        {
+            if (Id is null)
+            {
+                var created = await Meals.CreateAsync(new CreateMealRequest(
+                    name ?? string.Empty, directions, status, isOneTime, date, ingredients, chosen));
+
+                Navigation.NavigateTo($"meals/{created.Id}");
+                return;
+            }
+
+            await Meals.UpdateAsync(Id.Value, new UpdateMealRequest(
+                Name: name,
+                Directions: directions ?? string.Empty,
+                Status: status,
+                IsOneTime: isOneTime,
+                LastCookedAt: date,
+                ClearLastCookedAt: cleared,
+                Ingredients: ingredients,
+                TagIds: chosen));
+
+            Navigation.NavigateTo("meals");
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Id is not null)
+        {
+            await Meals.DeleteAsync(Id.Value);
+        }
+
+        Navigation.NavigateTo("meals");
+    }
+
+    /// <summary>Creates the tags typed into the new tags box and returns every tag the meal should carry.</summary>
+    private async Task<List<int>> WithNewTagsAsync(string typed)
+    {
+        var chosen = selectedTags.ToList();
+
+        foreach (var tagName in typed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var tag = await Tags.EnsureAsync(new MealTagRequest(tagName, newTagFacet));
+            if (!chosen.Contains(tag.Id))
+            {
+                chosen.Add(tag.Id);
+            }
+        }
+
+        return chosen;
+    }
+
+    private void ReadForm(IFormCollection form)
+    {
+        name = form["name"];
+        directions = form["directions"];
+        lastCooked = form["last-cooked"];
+        lastCookedHeld = form["last-cooked-held"];
+        isOneTime = form["one-time"] == "true";
+        status = Enum.TryParse<MealStatus>(form["status"], out var posted) ? posted : MealStatus.Pooled;
+        newTagFacet = Enum.TryParse<MealTagFacet>(form["new-tag-facet"], out var facet) ? facet : MealTagFacet.Trait;
+        newTags = form["new-tags"];
+
+        selectedTags = form["tag"]
+            .Select(value => int.TryParse(value, out var id) ? id : 0)
+            .Where(id => id > 0)
+            .ToList();
+
+        var quantities = form["quantity"];
+        var items = form["item"];
+        rows = items
+            .Select((item, index) => new IngredientRow(index < quantities.Count ? quantities[index] : null, item))
+            .ToList();
+    }
+
+    private static List<IngredientRow> Blank(int count) =>
+        Enumerable.Range(0, count).Select(_ => new IngredientRow(null, null)).ToList();
+
+    /// <summary>One line of the ingredient list as the editor holds it.</summary>
+    /// <param name="Quantity">How much is needed, as typed.</param>
+    /// <param name="Item">What the ingredient is, as typed.</param>
+    private record IngredientRow(string? Quantity, string? Item);
+}

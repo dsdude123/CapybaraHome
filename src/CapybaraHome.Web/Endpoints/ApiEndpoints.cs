@@ -2,8 +2,10 @@ using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.DataTransfer;
 using CapybaraHome.Application.Jira;
+using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
+using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Web.Auth;
 
@@ -19,6 +21,8 @@ public static class ApiEndpoints
 
         MapTasks(api);
         MapCategories(api);
+        MapMeals(api);
+        MapMealTags(api);
         MapDashboard(api);
         MapTransfer(api);
     }
@@ -73,6 +77,95 @@ public static class ApiEndpoints
         });
 
         tasks.MapDelete("/{id:int}", async (int id, TaskService service, CancellationToken cancellationToken) =>
+            await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+    }
+
+    private static void MapMeals(IEndpointRouteBuilder api)
+    {
+        var meals = api.MapGroup("/meals");
+
+        meals.MapGet("/", async (
+            MealService service,
+            string? text,
+            MealStatus? status,
+            int[]? tagId,
+            bool? needsIngredientSplit,
+            int? limit,
+            CancellationToken cancellationToken) =>
+        {
+            var filter = new MealFilter(text, status is { } one ? [one] : null, tagId, needsIngredientSplit, limit);
+            return Results.Ok(await service.ListAsync(filter, cancellationToken: cancellationToken));
+        });
+
+        meals.MapGet("/{id:int}", async (int id, MealService service, CancellationToken cancellationToken) =>
+            await service.GetAsync(id, cancellationToken) is { } meal ? Results.Ok(meal) : Results.NotFound());
+
+        meals.MapPost("/", async (CreateMealRequest request, MealService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateAsync(request, cancellationToken);
+                return Results.Created($"/api/meals/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        meals.MapPatch("/{id:int}", async (int id, UpdateMealRequest request, MealService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        meals.MapDelete("/{id:int}", async (int id, MealService service, CancellationToken cancellationToken) =>
+            await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+    }
+
+    private static void MapMealTags(IEndpointRouteBuilder api)
+    {
+        var tags = api.MapGroup("/meal-tags");
+
+        tags.MapGet("/", async (MealTagService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListAsync(cancellationToken)));
+
+        tags.MapPost("/", async (MealTagRequest request, MealTagService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var tag = await service.EnsureAsync(request, cancellationToken);
+                return Results.Created($"/api/meal-tags/{tag.Id}", tag);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        tags.MapPut("/{id:int}", async (int id, MealTagRequest request, MealTagService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        tags.MapDelete("/{id:int}", async (int id, MealTagService service, CancellationToken cancellationToken) =>
             await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
     }
 

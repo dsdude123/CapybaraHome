@@ -1,3 +1,5 @@
+using CapybaraHome.Application.Meals;
+using CapybaraHome.Domain.Meals;
 using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.DataTransfer;
 using CapybaraHome.Application.Tasks;
@@ -118,5 +120,104 @@ public class DataTransferServiceTests
         {
             destination.Delete(recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task A_meal_survives_a_round_trip_with_its_ingredients_and_tags()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var transfer = new DataTransferService(db.Context, db.Clock);
+        var tags = new MealTagService(db.Context);
+        var meals = new MealService(db.Context, db.Clock);
+        var tag = await tags.EnsureAsync(new MealTagRequest("quick", MealTagFacet.Effort));
+        await meals.CreateAsync(new CreateMealRequest(
+            "A meal", "Cook it", MealStatus.Queued, false, new DateOnly(2026, 9, 1),
+            [new MealIngredientInput("an item", "2 cups")], [tag.Id]));
+
+        var json = await transfer.ExportToJsonAsync();
+
+        await using var restored = await TestDatabase.CreateAsync();
+        var into = new DataTransferService(restored.Context, restored.Clock);
+        var summary = await into.ImportFromJsonAsync(json, ImportMode.Merge);
+
+        Assert.Equal(1, summary.MealsAdded);
+
+        var meal = await new MealService(restored.Context, restored.Clock).ListAsync(new MealFilter());
+        var only = Assert.Single(meal);
+        Assert.Equal("A meal", only.Name);
+        Assert.Equal(MealStatus.Queued, only.Status);
+        Assert.Equal(new DateOnly(2026, 9, 1), only.LastCookedAt);
+        Assert.Equal("2 cups", Assert.Single(only.Ingredients).Quantity);
+        Assert.Equal("quick", Assert.Single(only.Tags).Name);
+    }
+
+    [Fact]
+    public async Task A_merge_updates_the_meals_it_can_match_on_their_jira_key()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var transfer = new DataTransferService(db.Context, db.Clock);
+        db.Context.Meals.Add(new Meal { Name = "Old name", JiraKey = "FOOD-1" });
+        await db.Context.SaveChangesAsync();
+
+        var document = new BackupDocument(
+            BackupDocument.CurrentFormatVersion,
+            db.Clock.GetUtcNow(),
+            [],
+            [],
+            [],
+            [new MealRecord(1, "New name", null, MealStatus.Available, false, null, null, false, "FOOD-1", [], [], db.Clock.GetUtcNow(), db.Clock.GetUtcNow())],
+            []);
+
+        var summary = await transfer.ImportAsync(document, ImportMode.Merge);
+
+        Assert.Equal(1, summary.MealsUpdated);
+        Assert.Equal(0, summary.MealsAdded);
+        Assert.Equal("New name", db.Context.Meals.Single().Name);
+    }
+
+    [Fact]
+    public async Task An_export_from_before_meals_existed_still_reads()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var transfer = new DataTransferService(db.Context, db.Clock);
+
+        var json = """
+        {
+          "formatVersion": 1,
+          "exportedAt": "2026-10-22T00:00:00+00:00",
+          "categories": [],
+          "tasks": [ { "id": 1, "title": "A restored task", "status": "ToDo",
+            "createdAt": "2026-10-01T00:00:00+00:00", "updatedAt": "2026-10-01T00:00:00+00:00" } ],
+          "dashboardCards": []
+        }
+        """;
+
+        var summary = await transfer.ImportFromJsonAsync(json, ImportMode.Merge);
+
+        Assert.Equal(1, summary.TasksAdded);
+        Assert.Equal(0, summary.MealsAdded);
+        Assert.Equal("A restored task", db.Context.Tasks.Single().Title);
+    }
+
+    [Fact]
+    public async Task Replacing_clears_the_meals_that_were_there_first()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var transfer = new DataTransferService(db.Context, db.Clock);
+        db.Context.Meals.Add(new Meal { Name = "Should not survive" });
+        await db.Context.SaveChangesAsync();
+
+        var document = new BackupDocument(
+            BackupDocument.CurrentFormatVersion,
+            db.Clock.GetUtcNow(),
+            [],
+            [],
+            [],
+            [new MealRecord(1, "The only meal", null, MealStatus.Pooled, false, null, null, false, null, [], [], db.Clock.GetUtcNow(), db.Clock.GetUtcNow())],
+            []);
+
+        await transfer.ImportAsync(document, ImportMode.Replace);
+
+        Assert.Equal("The only meal", db.Context.Meals.Single().Name);
     }
 }

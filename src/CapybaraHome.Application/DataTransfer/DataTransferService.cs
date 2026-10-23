@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Domain.Dashboards;
+using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,10 +11,10 @@ namespace CapybaraHome.Application.DataTransfer;
 /// <summary>How an import treats the data already in the database.</summary>
 public enum ImportMode
 {
-    /// <summary>Add and update by JIRA key and category name, leaving anything else in place.</summary>
+    /// <summary>Add and update by JIRA key, category name and tag name, leaving anything else in place.</summary>
     Merge,
 
-    /// <summary>Delete every task, category and card first, then load the document.</summary>
+    /// <summary>Delete every task, category, card and meal first, then load the document.</summary>
     Replace,
 }
 
@@ -22,7 +23,15 @@ public enum ImportMode
 /// <param name="TasksAdded">Tasks created.</param>
 /// <param name="TasksUpdated">Tasks matched by JIRA key and overwritten.</param>
 /// <param name="CardsAdded">Dashboard cards created.</param>
-public record ImportSummary(int CategoriesAdded, int TasksAdded, int TasksUpdated, int CardsAdded);
+/// <param name="MealsAdded">Meals created.</param>
+/// <param name="MealsUpdated">Meals matched by JIRA key and overwritten.</param>
+public record ImportSummary(
+    int CategoriesAdded,
+    int TasksAdded,
+    int TasksUpdated,
+    int CardsAdded,
+    int MealsAdded = 0,
+    int MealsUpdated = 0);
 
 /// <summary>Exports the whole database to one JSON document and reads it back.</summary>
 public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider clock)
@@ -50,12 +59,28 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 t.CompletedAt, t.JiraKey, t.CreatedAt, t.UpdatedAt))
             .ToListAsync(cancellationToken);
 
+        var tags = await context.MealTags.AsNoTracking()
+            .OrderBy(t => t.Id)
+            .Select(t => new MealTagRecord(t.Id, t.Name, t.Facet))
+            .ToListAsync(cancellationToken);
+
+        var meals = await context.Meals.AsNoTracking()
+            .OrderBy(m => m.Id)
+            .Select(m => new MealRecord(
+                m.Id, m.Name, m.Directions, m.Status, m.IsOneTime, m.LastCookedAt,
+                m.ImportedText, m.NeedsIngredientSplit, m.JiraKey,
+                m.Ingredients.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)
+                    .Select(i => new MealIngredientRecord(i.Quantity, i.Item, i.SortOrder)).ToList(),
+                m.Tags.OrderBy(t => t.Id).Select(t => t.Id).ToList(),
+                m.CreatedAt, m.UpdatedAt))
+            .ToListAsync(cancellationToken);
+
         var cards = await context.DashboardCards.AsNoTracking()
             .OrderBy(c => c.SortOrder)
             .Select(c => new DashboardCardRecord(c.Title, c.Kind, c.CategoryId, c.Status, c.DueWithinDays, c.SortOrder))
             .ToListAsync(cancellationToken);
 
-        return new BackupDocument(BackupDocument.CurrentFormatVersion, clock.GetUtcNow(), categories, tasks, cards);
+        return new BackupDocument(BackupDocument.CurrentFormatVersion, clock.GetUtcNow(), categories, tasks, cards, meals, tags);
     }
 
     /// <summary>Serializes an export to JSON.</summary>
@@ -72,10 +97,11 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         var document = JsonSerializer.Deserialize<BackupDocument>(json, JsonOptions)
             ?? throw new InvalidOperationException("The file holds no backup document.");
 
-        if (document.FormatVersion != BackupDocument.CurrentFormatVersion)
+        if (document.FormatVersion is < BackupDocument.OldestReadableFormatVersion or > BackupDocument.CurrentFormatVersion)
         {
             throw new InvalidOperationException(
-                $"The file is format version {document.FormatVersion}; this build reads version {BackupDocument.CurrentFormatVersion}.");
+                $"The file is format version {document.FormatVersion}; this build reads versions "
+                + $"{BackupDocument.OldestReadableFormatVersion} to {BackupDocument.CurrentFormatVersion}.");
         }
 
         return await ImportAsync(document, mode, cancellationToken);
@@ -91,6 +117,8 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         if (mode == ImportMode.Replace)
         {
             context.DashboardCards.RemoveRange(await context.DashboardCards.ToListAsync(cancellationToken));
+            context.Meals.RemoveRange(await context.Meals.Include(m => m.Tags).ToListAsync(cancellationToken));
+            context.MealTags.RemoveRange(await context.MealTags.ToListAsync(cancellationToken));
             context.Tasks.RemoveRange(await context.Tasks.ToListAsync(cancellationToken));
             context.Categories.RemoveRange(await context.Categories.ToListAsync(cancellationToken));
             await context.SaveChangesAsync(cancellationToken);
@@ -190,6 +218,104 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         }
 
         await context.SaveChangesAsync(cancellationToken);
-        return new ImportSummary(categoriesAdded, tasksAdded, tasksUpdated, cardsAdded);
+
+        var (mealsAdded, mealsUpdated) = await ImportMealsAsync(document, cancellationToken);
+        return new ImportSummary(categoriesAdded, tasksAdded, tasksUpdated, cardsAdded, mealsAdded, mealsUpdated);
+    }
+
+    /// <summary>
+    /// Loads the meals in <paramref name="document"/>. Tags are matched by name and meals by JIRA
+    /// key, so a merge of an export taken from this installation updates rather than duplicates;
+    /// a meal with no JIRA key is always added, since nothing else identifies it.
+    /// </summary>
+    private async Task<(int Added, int Updated)> ImportMealsAsync(BackupDocument document, CancellationToken cancellationToken)
+    {
+        if (document.Meals is not { Count: > 0 } && document.MealTags is not { Count: > 0 })
+        {
+            return (0, 0);
+        }
+
+        var tagByExportedId = new Dictionary<int, MealTag>();
+        var tagByName = await context.MealTags.ToDictionaryAsync(t => t.Name, t => t, cancellationToken);
+
+        foreach (var record in document.MealTags ?? [])
+        {
+            if (!tagByName.TryGetValue(record.Name, out var tag))
+            {
+                tag = new MealTag { Name = record.Name, Facet = record.Facet };
+                context.MealTags.Add(tag);
+                tagByName[record.Name] = tag;
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            else
+            {
+                tag.Facet = record.Facet;
+            }
+
+            tagByExportedId[record.Id] = tag;
+        }
+
+        var added = 0;
+        var updated = 0;
+        var existingByJiraKey = await context.Meals
+            .Include(m => m.Ingredients)
+            .Include(m => m.Tags)
+            .Where(m => m.JiraKey != null)
+            .ToDictionaryAsync(m => m.JiraKey!, m => m, cancellationToken);
+
+        foreach (var record in document.Meals ?? [])
+        {
+            var tags = record.TagIds
+                .Where(tagByExportedId.ContainsKey)
+                .Select(id => tagByExportedId[id])
+                .ToList();
+
+            var ingredients = record.Ingredients
+                .Select(i => new MealIngredient { Quantity = i.Quantity, Item = i.Item, SortOrder = i.SortOrder })
+                .ToList();
+
+            if (record.JiraKey is { Length: > 0 } key && existingByJiraKey.TryGetValue(key, out var existing))
+            {
+                existing.Name = record.Name;
+                existing.Directions = record.Directions;
+                existing.Status = record.Status;
+                existing.IsOneTime = record.IsOneTime;
+                existing.LastCookedAt = record.LastCookedAt;
+                existing.ImportedText = record.ImportedText;
+                existing.NeedsIngredientSplit = record.NeedsIngredientSplit;
+                context.MealIngredients.RemoveRange(existing.Ingredients);
+                existing.Ingredients = ingredients;
+                existing.Tags = tags;
+                updated++;
+                continue;
+            }
+
+            var meal = new Meal
+            {
+                Name = record.Name,
+                Directions = record.Directions,
+                Status = record.Status,
+                IsOneTime = record.IsOneTime,
+                LastCookedAt = record.LastCookedAt,
+                ImportedText = record.ImportedText,
+                NeedsIngredientSplit = record.NeedsIngredientSplit,
+                JiraKey = record.JiraKey,
+                Ingredients = ingredients,
+                Tags = tags,
+                CreatedAt = record.CreatedAt,
+                UpdatedAt = record.UpdatedAt,
+            };
+
+            context.Meals.Add(meal);
+            if (record.JiraKey is { Length: > 0 } newKey)
+            {
+                existingByJiraKey[newKey] = meal;
+            }
+
+            added++;
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+        return (added, updated);
     }
 }

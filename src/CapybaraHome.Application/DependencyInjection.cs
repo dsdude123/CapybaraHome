@@ -2,6 +2,7 @@ using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.DataTransfer;
 using CapybaraHome.Application.Jira;
+using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,8 @@ public static class DependencyInjection
 
         services.AddScoped<TaskService>();
         services.AddScoped<CategoryService>();
+        services.AddScoped<MealService>();
+        services.AddScoped<MealTagService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<UserService>();
         services.AddScoped<ApiTokenService>();

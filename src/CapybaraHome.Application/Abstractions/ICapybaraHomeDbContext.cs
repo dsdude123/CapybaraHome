@@ -1,4 +1,5 @@
 using CapybaraHome.Domain.Dashboards;
+using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Domain.Users;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,15 @@ public interface ICapybaraHomeDbContext
 
     /// <summary>Tasks.</summary>
     DbSet<TaskItem> Tasks { get; }
+
+    /// <summary>Meals.</summary>
+    DbSet<Meal> Meals { get; }
+
+    /// <summary>Lines of the meals' ingredient lists.</summary>
+    DbSet<MealIngredient> MealIngredients { get; }
+
+    /// <summary>Tags meals are filtered by.</summary>
+    DbSet<MealTag> MealTags { get; }
 
     /// <summary>Dashboard cards.</summary>
     DbSet<DashboardCard> DashboardCards { get; }

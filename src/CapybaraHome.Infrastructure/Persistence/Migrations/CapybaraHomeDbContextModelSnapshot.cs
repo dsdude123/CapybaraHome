@@ -55,6 +55,112 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("DashboardCards", (string)null);
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Directions")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImportedText")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsOneTime")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("JiraKey")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("LastCookedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("NeedsIngredientSplit")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JiraKey")
+                        .IsUnique()
+                        .HasFilter("\"JiraKey\" IS NOT NULL");
+
+                    b.HasIndex("LastCookedAt");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("Meals");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealIngredient", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Item")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MealId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Quantity")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MealId", "SortOrder");
+
+                    b.ToTable("MealIngredients");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealTag", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Facet")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("MealTags");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.Category", b =>
                 {
                     b.Property<int>("Id")
@@ -227,6 +333,21 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
+            modelBuilder.Entity("MealMealTag", b =>
+                {
+                    b.Property<int>("MealsId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TagsId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("MealsId", "TagsId");
+
+                    b.HasIndex("TagsId");
+
+                    b.ToTable("MealTagLinks", (string)null);
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Dashboards.DashboardCard", b =>
                 {
                     b.HasOne("CapybaraHome.Domain.Tasks.Category", "Category")
@@ -235,6 +356,17 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealIngredient", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Meals.Meal", "Meal")
+                        .WithMany("Ingredients")
+                        .HasForeignKey("MealId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Meal");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskItem", b =>
@@ -254,6 +386,26 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("MealMealTag", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Meals.Meal", null)
+                        .WithMany()
+                        .HasForeignKey("MealsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CapybaraHome.Domain.Meals.MealTag", null)
+                        .WithMany()
+                        .HasForeignKey("TagsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
+                {
+                    b.Navigation("Ingredients");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.Category", b =>
