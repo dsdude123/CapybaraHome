@@ -55,6 +55,82 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("DashboardCards", (string)null);
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.FrequentGroceryItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Item")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Quantity")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SortOrder");
+
+                    b.ToTable("FrequentGroceryItems");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.GroceryItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GroceryListId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Item")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Quantity")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroceryListId", "SortOrder");
+
+                    b.ToTable("GroceryItems");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.GroceryList", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClosedAt");
+
+                    b.ToTable("GroceryLists");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
                 {
                     b.Property<int>("Id")
@@ -444,6 +520,17 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.GroceryItem", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Grocery.GroceryList", "List")
+                        .WithMany("Items")
+                        .HasForeignKey("GroceryListId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("List");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
                 {
                     b.HasOne("CapybaraHome.Domain.Meals.MealVariant", "PlannedVariant")
@@ -538,6 +625,11 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TagsId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.GroceryList", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>

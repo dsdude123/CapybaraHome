@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Domain.Meals;
@@ -43,6 +44,9 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
+    [InlineData("/grocery")]
+    [InlineData("/grocery/generate")]
+    [InlineData("/grocery/print")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -65,6 +69,9 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
+    [InlineData("/grocery")]
+    [InlineData("/grocery/generate")]
+    [InlineData("/grocery/print")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -838,6 +845,210 @@ public class StaticRenderingTests
         var next = await client.GetStringAsync(skipped.Headers.Location!.OriginalString);
         Assert.Contains("A second meal", next);
         Assert.DoesNotContain("A first meal", next);
+    }
+
+    [Fact]
+    public async Task A_grocery_list_is_generated_from_the_frequent_items_and_the_plan_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var frequent = await PostAsync(client, "/settings", "add-frequent", new()
+        {
+            ["frequentForm.Quantity"] = "2 pints",
+            ["frequentForm.Item"] = "milk",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, frequent.StatusCode);
+        Assert.Contains("milk", await client.GetStringAsync("/settings"));
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("Curry", Ingredients:
+                [new MealIngredientInput("rice", "2 cups"), new MealIngredientInput("tomatoes", "1 tin")]));
+            await meals.PlanAsync(meal.Id, MealSlot.Dinner);
+        }
+
+        var prompts = await client.GetStringAsync("/grocery/generate");
+        Assert.Contains("Frequent items", prompts);
+        Assert.Contains("2 pints milk", prompts);
+        Assert.Contains("Curry", prompts);
+        Assert.Contains("2 cups rice", prompts);
+
+        // The boxes name their own position, since an unticked box posts nothing at all.
+        var added = await PostManyAsync(client, "/grocery/generate", "grocery-generate",
+        [
+            new("action", "add"),
+            new("item", "milk"),
+            new("quantity", "2 pints"),
+            new("source", string.Empty),
+            new("item", "rice"),
+            new("quantity", "2 cups"),
+            new("source", "Curry"),
+            new("item", "tomatoes"),
+            new("quantity", "1 tin"),
+            new("source", "Curry"),
+            new("pick", "0"),
+            new("pick", "1"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, added.StatusCode);
+        Assert.Contains("added=2", added.Headers.Location!.OriginalString);
+
+        var list = await client.GetStringAsync("/grocery");
+        Assert.Contains("Added 2 item(s)", await client.GetStringAsync(added.Headers.Location!.OriginalString));
+        Assert.Contains("2 pints milk", list);
+        Assert.Contains("2 cups rice", list);
+        Assert.DoesNotContain("1 tin tomatoes", list);
+
+        // What is on the list is marked instead of being offered a second time.
+        var again = await client.GetStringAsync("/grocery/generate");
+        Assert.Contains("already on the list", again);
+
+        var typed = await PostManyAsync(client, "/grocery", "grocery-add",
+        [
+            new("quantity", string.Empty),
+            new("item", "batteries"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, typed.StatusCode);
+        Assert.Contains("batteries", await client.GetStringAsync("/grocery"));
+
+        var printed = await client.GetStringAsync("/grocery/print");
+        Assert.Contains("2 pints milk", printed);
+        Assert.Contains("batteries", printed);
+
+        // Paper gets the list and nothing else: no navigation, no links to press.
+        Assert.DoesNotContain("nav-bar", printed);
+
+        int itemId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var grocery = scope.ServiceProvider.GetRequiredService<GroceryService>();
+            var current = (await grocery.GetCurrentAsync())!;
+            itemId = current.Items.Single(i => i.Item == "batteries").Id;
+        }
+
+        var dropped = await PostManyAsync(client, "/grocery", $"drop-{itemId}", []);
+
+        Assert.Equal(HttpStatusCode.Redirect, dropped.StatusCode);
+        Assert.DoesNotContain("batteries", await client.GetStringAsync("/grocery"));
+    }
+
+    [Fact]
+    public async Task A_fresh_list_is_started_from_the_page_and_the_old_one_stays_printable()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostManyAsync(client, "/grocery", "grocery-add", [new("quantity", string.Empty), new("item", "milk")]);
+
+        var fresh = await PostManyAsync(client, "/grocery", "grocery-fresh", []);
+
+        Assert.Equal(HttpStatusCode.Redirect, fresh.StatusCode);
+
+        var page = await client.GetStringAsync("/grocery");
+        Assert.Contains("Nothing on the list yet", page);
+        Assert.Contains("Earlier lists", page);
+
+        int closedId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var grocery = scope.ServiceProvider.GetRequiredService<GroceryService>();
+            var lists = await grocery.ListAsync(includeClosed: true);
+            closedId = lists.Single(l => l.ClosedAt is not null).Id;
+        }
+
+        Assert.Contains("milk", await client.GetStringAsync($"/grocery/print/{closedId}"));
+        Assert.DoesNotContain("milk", await client.GetStringAsync("/grocery/print"));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Every_box_the_generator_renders_adds_the_item_beside_it(int position)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var grocery = scope.ServiceProvider.GetRequiredService<GroceryService>();
+            await grocery.AddFrequentAsync(new GroceryItemInput("milk", "2 pints"));
+
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("Curry", Ingredients:
+                [new MealIngredientInput("rice", "2 cups"), new MealIngredientInput("tomatoes", "1 tin")]));
+            await meals.PlanAsync(meal.Id, MealSlot.Dinner);
+        }
+
+        // Each box is rendered with the position it posts, so the page is the list of them.
+        var prompts = await client.GetStringAsync("/grocery/generate");
+        Assert.Contains($"value=\"{position}\"", prompts);
+
+        var added = await PostManyAsync(client, "/grocery/generate", "grocery-generate",
+        [
+            new("action", "add"),
+            new("item", "milk"),
+            new("quantity", "2 pints"),
+            new("source", string.Empty),
+            new("item", "rice"),
+            new("quantity", "2 cups"),
+            new("source", "Curry"),
+            new("item", "tomatoes"),
+            new("quantity", "1 tin"),
+            new("source", "Curry"),
+            new("pick", position.ToString()),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, added.StatusCode);
+
+        using var scope2 = app.Services.CreateScope();
+        var service = scope2.ServiceProvider.GetRequiredService<GroceryService>();
+        var item = Assert.Single((await service.GetCurrentAsync())!.Items);
+
+        Assert.Equal(new[] { "milk", "rice", "tomatoes" }[position], item.Item);
+    }
+
+    [Fact]
+    public async Task The_generator_says_what_to_set_up_when_there_is_nothing_to_ask_about()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var page = await client.GetStringAsync("/grocery/generate");
+
+        Assert.Contains("Nothing to ask about", page);
+        Assert.Contains("meals/plan", page);
+    }
+
+    [Fact]
+    public async Task A_frequent_item_is_added_and_deleted_from_the_settings_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostAsync(client, "/settings", "add-frequent", new()
+        {
+            ["frequentForm.Quantity"] = string.Empty,
+            ["frequentForm.Item"] = "washing up liquid",
+        });
+
+        Assert.Contains("washing up liquid", await client.GetStringAsync("/settings"));
+
+        int id;
+        using (var scope = app.Services.CreateScope())
+        {
+            var grocery = scope.ServiceProvider.GetRequiredService<GroceryService>();
+            id = Assert.Single(await grocery.ListFrequentAsync()).Id;
+        }
+
+        var deleted = await PostAsync(client, "/settings", $"delete-frequent-{id}", []);
+
+        Assert.Equal(HttpStatusCode.Redirect, deleted.StatusCode);
+        Assert.DoesNotContain("washing up liquid", await client.GetStringAsync("/settings"));
     }
 
     private static IEnumerable<string> Forms(string html)
