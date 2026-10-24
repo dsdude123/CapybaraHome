@@ -22,6 +22,19 @@ public class MealTagServiceTests
     }
 
     [Fact]
+    public async Task A_tag_typed_in_another_case_is_the_same_tag()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealTagService(db.Context);
+
+        var first = await service.EnsureAsync(new MealTagRequest("quick", MealTagFacet.Effort));
+        var again = await service.EnsureAsync(new MealTagRequest("Quick", MealTagFacet.Effort));
+
+        Assert.Equal(first.Id, again.Id);
+        Assert.Single(await service.ListAsync());
+    }
+
+    [Fact]
     public async Task A_blank_name_is_refused()
     {
         await using var db = await TestDatabase.CreateAsync();
