@@ -210,6 +210,7 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <summary>
     /// Returns what the planning screens can choose from: every matching meal, and every variant
     /// of those meals as a row of its own, since a variant is picked the same way a meal is.
+    /// The filter's limit counts rows, variants included, not meals.
     /// </summary>
     public async Task<IReadOnlyList<MealPlanOption>> ListOptionsAsync(
         MealFilter filter,
@@ -226,6 +227,13 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
 
             options.AddRange(meal.Variants.Select(variant => new MealPlanOption(
                 meal.Id, variant.Id, $"{meal.Name} ({variant.Name})", meal.Status, meal.LastCookedAt, meal.Tags, true)));
+
+            // Expanding the meals can only add rows, so a meal query already cut to the limit
+            // holds enough of them; what it can do is overshoot, which is cut here.
+            if (filter.Limit is { } limit && options.Count >= limit)
+            {
+                return options.GetRange(0, limit);
+            }
         }
 
         return options;
