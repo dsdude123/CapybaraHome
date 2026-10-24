@@ -1,5 +1,6 @@
 using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Domain.Dashboards;
+using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Domain.Users;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,24 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Tasks.</summary>
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
 
+    /// <summary>Meals.</summary>
+    public DbSet<Meal> Meals => Set<Meal>();
+
+    /// <summary>Lines of the meals' ingredient lists.</summary>
+    public DbSet<MealIngredient> MealIngredients => Set<MealIngredient>();
+
+    /// <summary>Tags meals are filtered by.</summary>
+    public DbSet<MealTag> MealTags => Set<MealTag>();
+
+    /// <summary>Versions of a meal that change its directions or its ingredients.</summary>
+    public DbSet<MealVariant> MealVariants => Set<MealVariant>();
+
+    /// <summary>Lines the variants add to their meals' ingredient lists.</summary>
+    public DbSet<MealVariantIngredient> MealVariantIngredients => Set<MealVariantIngredient>();
+
+    /// <summary>The meals' ingredients the variants leave out.</summary>
+    public DbSet<MealVariantRemoval> MealVariantRemovals => Set<MealVariantRemoval>();
+
     /// <summary>Cards on the shared dashboard.</summary>
     public DbSet<DashboardCard> DashboardCards => Set<DashboardCard>();
 
@@ -25,7 +44,7 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Bearer tokens issued to the connector.</summary>
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 
-    /// <summary>Stamps <c>CreatedAt</c> and <c>UpdatedAt</c> on tasks before saving.</summary>
+    /// <summary>Stamps <c>CreatedAt</c> and <c>UpdatedAt</c> on tasks and meals before saving.</summary>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         StampTimestamps();
@@ -66,6 +85,26 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
                 }
             }
             else if (entry.State == EntityState.Modified && !entry.Property(t => t.UpdatedAt).IsModified)
+            {
+                entry.Entity.UpdatedAt = now;
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Meal>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                if (entry.Entity.CreatedAt == default)
+                {
+                    entry.Entity.CreatedAt = now;
+                }
+
+                if (entry.Entity.UpdatedAt == default)
+                {
+                    entry.Entity.UpdatedAt = now;
+                }
+            }
+            else if (entry.State == EntityState.Modified && !entry.Property(m => m.UpdatedAt).IsModified)
             {
                 entry.Entity.UpdatedAt = now;
             }

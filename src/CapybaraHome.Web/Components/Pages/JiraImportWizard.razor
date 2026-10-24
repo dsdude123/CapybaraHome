@@ -2,6 +2,8 @@
 @using CapybaraHome.Web.Jira
 @inject JiraCloudClient Jira
 @inject JiraImportService Import
+@inject JiraMealImportService MealImport
+@inject MealTagService MealTags
 @inject JiraWizardStore Wizard
 
 <PageTitle>Import from JIRA</PageTitle>
@@ -83,15 +85,30 @@
             from <code>@projectKey</code>.
         </p>
         <p class="muted">
-            Epics become categories and every other issue becomes a task, titles as they are in JIRA.
-            A task already carrying one of these JIRA keys is overwritten; nothing else here is touched,
-            and nothing in JIRA is changed. A large project takes a minute, so the page waits while it runs.
+            A copy, either way: nothing is deduplicated, nothing in JIRA is changed, and a row already
+            carrying one of these JIRA keys is overwritten. A large project takes a minute, so the page
+            waits while it runs.
         </p>
 
         <div class="row">
             <EditForm Model="importForm" FormName="jira-import" OnValidSubmit="RunAsync">
                 <InputText type="hidden" @bind-Value="importForm.Ticket" />
-                <button class="btn btn-primary" type="submit">Import</button>
+
+                <fieldset class="check-list">
+                    <legend>Import these issues as</legend>
+                    <InputRadioGroup @bind-Value="importForm.Kind">
+                        <label class="row" style="align-items:center;gap:0.5rem">
+                            <InputRadio Value="@("tasks")" style="width:auto;min-height:0" />
+                            <span>Tasks — epics become categories, every other issue becomes a task</span>
+                        </label>
+                        <label class="row" style="align-items:center;gap:0.5rem">
+                            <InputRadio Value="@("meals")" style="width:auto;min-height:0" />
+                            <span>Meals — each issue becomes a meal, labels become tags, descriptions are carried across whole</span>
+                        </label>
+                    </InputRadioGroup>
+                </fieldset>
+
+                <button class="btn btn-primary" type="submit" style="margin-top:0.5rem">Import</button>
             </EditForm>
 
             <EditForm Model="backForm" FormName="jira-back" OnValidSubmit="GoBack">
@@ -100,23 +117,75 @@
             </EditForm>
         </div>
     }
+    else if (step == Step.Facets)
+    {
+        <h2 class="card-title">4. Sort the labels</h2>
+        <p class="muted">
+            @labels.Count label(s) on these issues. Say what each one describes and the meal filters get a
+            picker per kind instead of one long list. A label already in use keeps the kind it has, and any
+            of this can be changed later.
+        </p>
+
+        <form method="post" @formname="jira-facets" @onsubmit="ImportMealsAsync">
+            <AntiforgeryToken />
+            <input type="hidden" name="ticket" value="@facetTicket" />
+
+            <div class="filters">
+                @for (var index = 0; index < labels.Count; index++)
+                {
+                    var label = labels[index];
+                    <div>
+                        <label for="facet-@index">@label</label>
+                        <input type="hidden" name="label" value="@label" />
+                        <select id="facet-@index" name="facet">
+                            @foreach (var facet in MealTagFacetNames.All)
+                            {
+                                <option value="@facet" selected="@(Chosen(label) == facet)">@MealTagFacetNames.Label(facet)</option>
+                            }
+                        </select>
+                    </div>
+                }
+            </div>
+
+            <button class="btn btn-primary" type="submit" style="margin-top:0.75rem">Import the meals</button>
+        </form>
+    }
     else
     {
-        <h2 class="card-title">4. Done</h2>
-        <p class="notice">
-            Added @report!.CategoriesAdded category(ies) and @report.TasksAdded task(s),
-            updated @report.TasksUpdated.
-        </p>
-        @foreach (var warning in report.Warnings)
+        <h2 class="card-title">@(mealReport is null ? "4." : "5.") Done</h2>
+        @if (mealReport is { } meals)
         {
-            <p class="muted">@warning</p>
-        }
+            <p class="notice">
+                Added @meals.MealsAdded meal(s) and @meals.TagsAdded tag(s), updated @meals.MealsUpdated.
+            </p>
+            @foreach (var warning in meals.Warnings)
+            {
+                <p class="muted">@warning</p>
+            }
 
-        <div class="row">
-            <a class="btn btn-primary" href="tasks">See the tasks</a>
-            <a class="btn" href="settings/jira">Import another project</a>
-            <a class="btn" href="settings">Back to settings</a>
-        </div>
+            <div class="row">
+                <a class="btn btn-primary" href="meals">See the meals</a>
+                <a class="btn" href="settings/jira">Import another project</a>
+                <a class="btn" href="settings">Back to settings</a>
+            </div>
+        }
+        else
+        {
+            <p class="notice">
+                Added @report!.CategoriesAdded category(ies) and @report.TasksAdded task(s),
+                updated @report.TasksUpdated.
+            </p>
+            @foreach (var warning in report.Warnings)
+            {
+                <p class="muted">@warning</p>
+            }
+
+            <div class="row">
+                <a class="btn btn-primary" href="tasks">See the tasks</a>
+                <a class="btn" href="settings/jira">Import another project</a>
+                <a class="btn" href="settings">Back to settings</a>
+            </div>
+        }
     }
 
     @if (error is not null)
@@ -131,6 +200,7 @@
         Connect,
         ChooseProject,
         Confirm,
+        Facets,
         Done,
     }
 
@@ -140,7 +210,14 @@
     private string? projectKey;
     private int? approximateCount;
     private JiraImportReport? report;
+    private JiraMealImportReport? mealReport;
+    private IReadOnlyList<string> labels = [];
+    private IReadOnlyList<MealTagView> knownTags = [];
+    private string? facetTicket;
     private string? error;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
 
     [SupplyParameterFromForm(Name = "connectForm")]
     private ConnectForm? postedConnectForm { get; set; }
@@ -171,6 +248,17 @@
     /// </summary>
     protected override void OnInitialized()
     {
+        // The labels step posts a plain form, since it carries a row per label rather than a model.
+        if (HttpContext?.Request.HasFormContentType == true
+            && HttpContext.Request.Form["_handler"].ToString() == "jira-facets")
+        {
+            facetTicket = HttpContext.Request.Form["ticket"];
+            step = Step.Facets;
+            Describe(facetTicket);
+            labels = Wizard.Find(facetTicket)?.Labels ?? [];
+            return;
+        }
+
         if (postedImportForm is not null)
         {
             step = Step.Confirm;
@@ -259,9 +347,36 @@
 
         projectKey = entry.ProjectKey;
 
+        JiraIssueSnapshot? snapshot = null;
+
         try
         {
-            using var snapshot = await Jira.FetchIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
+            snapshot = await Jira.FetchIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
+
+            // Meals take one more step, where the labels are sorted into the kinds the filters use,
+            // so the credentials are kept until that step has run the import.
+            if (importForm.Kind == "meals")
+            {
+                entry.Labels = JiraMealImportService.Labels(snapshot.Issues);
+                labels = entry.Labels;
+                knownTags = await MealTags.ListAsync();
+                facetTicket = importForm.Ticket;
+                step = labels.Count > 0 ? Step.Facets : Step.Done;
+
+                if (step == Step.Done)
+                {
+                    mealReport = await MealImport.ImportAsync(snapshot.Issues);
+                    Wizard.Remove(importForm.Ticket);
+                    return;
+                }
+
+                // The board the labels were read from is the board that gets imported, so it is
+                // held for the next step rather than fetched again. The store disposes it.
+                entry.Snapshot = snapshot;
+                snapshot = null;
+                return;
+            }
+
             report = await Import.ImportAsync(snapshot.Issues);
 
             // The credentials are of no further use, so they go now rather than at expiry.
@@ -273,7 +388,66 @@
             error = ex.Message;
             step = Step.Confirm;
         }
+        finally
+        {
+            snapshot?.Dispose();
+        }
     }
+
+    /// <summary>Runs the meal import once the labels have been sorted.</summary>
+    private async Task ImportMealsAsync()
+    {
+        error = null;
+
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var entry = Resume(facetTicket);
+        if (entry is null)
+        {
+            return;
+        }
+
+        projectKey = entry.ProjectKey;
+
+        var postedLabels = HttpContext.Request.Form["label"];
+        var postedFacets = HttpContext.Request.Form["facet"];
+        var facets = new Dictionary<string, MealTagFacet>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < postedLabels.Count; index++)
+        {
+            if (postedLabels[index] is { Length: > 0 } label
+                && index < postedFacets.Count
+                && Enum.TryParse<MealTagFacet>(postedFacets[index], out var facet))
+            {
+                facets[label] = facet;
+            }
+        }
+
+        try
+        {
+            var snapshot = entry.Snapshot
+                ?? await Jira.FetchIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
+            entry.Snapshot = snapshot;
+
+            mealReport = await MealImport.ImportAsync(snapshot.Issues, facets);
+
+            Wizard.Remove(facetTicket);
+            step = Step.Done;
+        }
+        catch (Exception ex) when (ex is ArgumentException or JiraRequestException or InvalidOperationException)
+        {
+            error = ex.Message;
+            step = Step.Facets;
+        }
+    }
+
+    /// <summary>Returns the kind a label is already filed under, or a trait when it is new.</summary>
+    private MealTagFacet Chosen(string label) =>
+        knownTags.FirstOrDefault(tag => string.Equals(tag.Name, label, StringComparison.OrdinalIgnoreCase))?.Facet
+            ?? MealTagFacet.Trait;
 
     private void GoBack()
     {
@@ -327,5 +501,8 @@
 
         /// <summary>Key of the chosen project.</summary>
         public string? ProjectKey { get; set; }
+
+        /// <summary>What the issues are imported as: <c>tasks</c> or <c>meals</c>.</summary>
+        public string Kind { get; set; } = "tasks";
     }
 }

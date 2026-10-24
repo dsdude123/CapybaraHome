@@ -1,0 +1,211 @@
+@page "/meals"
+@using CapybaraHome.Domain.Meals
+@inject MealService Meals
+@inject MealTagService Tags
+
+<PageTitle>Meals</PageTitle>
+
+<div class="page-head">
+    <h1>Meals</h1>
+    <a class="btn btn-primary btn-small" href="meals/new">Create</a>
+</div>
+
+@if (waitingToSplit > 0)
+{
+    <p class="notice">
+        @waitingToSplit imported meal(s) still have their ingredients inside the description.
+        <a href="meals/split">Split them</a>.
+    </p>
+}
+
+<form method="get" action="meals" class="card" style="margin-bottom:1rem">
+    <div class="filters">
+        <div>
+            <label for="filter-text">Search</label>
+            <input id="filter-text" type="text" name="text" value="@Text" />
+        </div>
+        @foreach (var facet in MealTagFacetNames.All)
+        {
+            var choices = tags.Where(t => t.Facet == facet).ToList();
+            if (choices.Count > 0)
+            {
+                <div>
+                    <label for="filter-@facet">@MealTagFacetNames.Label(facet)</label>
+                    <select id="filter-@facet" name="tag">
+                        <option value="">Any</option>
+                        @foreach (var tag in choices)
+                        {
+                            <option value="@tag.Id" selected="@selectedTags.Contains(tag.Id)">@tag.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+        }
+        <fieldset class="check-list">
+            <legend>Status</legend>
+            @foreach (var value in MealStatusNames.All)
+            {
+                <label for="filter-status-@value">
+                    <input id="filter-status-@value" type="checkbox" name="status" value="@value" checked="@selectedStatuses.Contains(value)" />
+                    @MealStatusNames.Label(value)
+                </label>
+            }
+        </fieldset>
+        <div>
+            <label for="filter-sort">Sort by</label>
+            <select id="filter-sort" name="sort">
+                @foreach (var value in MealSortNames.All)
+                {
+                    <option value="@MealSortNames.Value(value)" selected="@(MealSortNames.Parse(Sort) == value)">@MealSortNames.Label(value)</option>
+                }
+            </select>
+        </div>
+    </div>
+    <div class="row" style="margin-top:0.5rem">
+        <button class="btn" type="submit">Filter</button>
+        <a class="btn" href="meals">Clear</a>
+    </div>
+</form>
+
+<p class="muted">
+    @if (meals.Count == 0)
+    {
+        @:No meals
+    }
+    else
+    {
+        @($"Showing {first}-{first + meals.Count - 1} of {total} meal" + (total == 1 ? string.Empty : "s"))
+    }
+</p>
+
+<div class="card">
+    <MealLines Meals="meals" />
+</div>
+
+@if (pageCount > 1)
+{
+    <nav class="pager" aria-label="Pages of meals">
+        @if (page > 1)
+        {
+            <a class="btn btn-small" href="@PageLink(page - 1)">Previous</a>
+        }
+        <span class="muted">Page @(page) of @pageCount</span>
+        @if (page < pageCount)
+        {
+            <a class="btn btn-small" href="@PageLink(page + 1)">Next</a>
+        }
+    </nav>
+}
+
+@code {
+    /// <summary>Text to match in the name, the directions or the ingredients.</summary>
+    [SupplyParameterFromQuery(Name = "text")]
+    private string? Text { get; set; }
+
+    /// <summary>Status names to filter on, or none for all of them.</summary>
+    [SupplyParameterFromQuery(Name = "status")]
+    private string[]? Statuses { get; set; }
+
+    /// <summary>Ids of the tags to filter on, one per facet picker.</summary>
+    [SupplyParameterFromQuery(Name = "tag")]
+    private string[]? TagIds { get; set; }
+
+    /// <summary>Name of the order to sort the list in, or empty for the default.</summary>
+    [SupplyParameterFromQuery(Name = "sort")]
+    private string? Sort { get; set; }
+
+    /// <summary>One-based page of the listing to show, or null for the first.</summary>
+    [SupplyParameterFromQuery(Name = "page")]
+    private int? Page { get; set; }
+
+    /// <summary>How many meals one page of the listing holds.</summary>
+    private const int PageSize = 50;
+
+    private IReadOnlyList<MealView> meals = [];
+    private IReadOnlyList<MealTagView> tags = [];
+    private List<MealStatus> selectedStatuses = [];
+    private List<int> selectedTags = [];
+    private int total;
+    private int waitingToSplit;
+    private int page = 1;
+    private int pageCount = 1;
+    private int first = 1;
+
+    /// <summary>Loads the tags and the page of the list the query string asks for.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        tags = await Tags.ListAsync();
+        selectedStatuses = SelectedStatuses();
+        selectedTags = SelectedTags();
+
+        var filter = new MealFilter(
+            Text: string.IsNullOrWhiteSpace(Text) ? null : Text,
+            Statuses: selectedStatuses,
+            TagIds: selectedTags);
+
+        total = await Meals.CountAsync(filter);
+        waitingToSplit = await Meals.CountAsync(new MealFilter(NeedsIngredientSplit: true));
+        pageCount = Math.Max(1, (total + PageSize - 1) / PageSize);
+        page = Math.Clamp(Page ?? 1, 1, pageCount);
+        first = ((page - 1) * PageSize) + 1;
+
+        meals = await Meals.ListAsync(filter with { Skip = first - 1, Limit = PageSize }, MealSortNames.Parse(Sort));
+    }
+
+    /// <summary>Returns the statuses the query string asks for, with anything unrecognised left out.</summary>
+    private List<MealStatus> SelectedStatuses()
+    {
+        if (Statuses is not { Length: > 0 })
+        {
+            return [];
+        }
+
+        return MealStatusNames.All
+            .Where(value => Statuses.Any(name => string.Equals(name, value.ToString(), StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    /// <summary>Returns the tag ids the query string asks for, with the empty pickers left out.</summary>
+    private List<int> SelectedTags()
+    {
+        if (TagIds is not { Length: > 0 })
+        {
+            return [];
+        }
+
+        return TagIds
+            .Select(value => int.TryParse(value, out var id) ? id : 0)
+            .Where(id => id > 0 && tags.Any(tag => tag.Id == id))
+            .Distinct()
+            .ToList();
+    }
+
+    /// <summary>Returns a link to <paramref name="target"/> with the current filters and order kept.</summary>
+    private string PageLink(int target)
+    {
+        var query = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(Text))
+        {
+            query.Add($"text={Uri.EscapeDataString(Text)}");
+        }
+
+        foreach (var status in selectedStatuses)
+        {
+            query.Add($"status={status}");
+        }
+
+        foreach (var tag in selectedTags)
+        {
+            query.Add($"tag={tag}");
+        }
+
+        if (!string.IsNullOrEmpty(Sort))
+        {
+            query.Add($"sort={Uri.EscapeDataString(Sort)}");
+        }
+
+        query.Add($"page={target}");
+        return "meals?" + string.Join("&", query);
+    }
+}

@@ -2,6 +2,7 @@ using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.DataTransfer;
 using CapybaraHome.Application.Jira;
+using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,12 +19,15 @@ public static class DependencyInjection
 
         services.AddScoped<TaskService>();
         services.AddScoped<CategoryService>();
+        services.AddScoped<MealService>();
+        services.AddScoped<MealTagService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<UserService>();
         services.AddScoped<ApiTokenService>();
         services.AddScoped<DataTransferService>();
         services.AddScoped<BackupWriter>();
         services.AddScoped<JiraImportService>();
+        services.AddScoped<JiraMealImportService>();
 
         // The import pulls hundreds of issues a page at a time, so the client is given longer
         // than the default minute before it gives up on a single page.

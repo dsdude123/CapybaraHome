@@ -1,0 +1,207 @@
+@page "/meals/{MealId:int}/variants/new"
+@page "/meals/{MealId:int}/variants/{Id:int}"
+@inject MealService Meals
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "Add a variant" : "Edit a variant")</PageTitle>
+
+<h1>@(Id is null ? "Add a variant" : "Edit a variant")</h1>
+
+@if (meal is null)
+{
+    <p class="muted">That meal is gone.</p>
+}
+else
+{
+    <p class="muted">A variant of <a href="meals/@meal.Id">@meal.Name</a>. It shares the meal's status and the day it was last cooked.</p>
+
+    <form method="post" @formname="variant-editor" @onsubmit="SubmitAsync">
+        <AntiforgeryToken />
+
+        <div class="field">
+            <label for="variant-name">Name</label>
+            <input id="variant-name" type="text" name="name" value="@name" />
+        </div>
+
+        <div class="field">
+            <label for="variant-directions">Directions modifications</label>
+            <textarea id="variant-directions" name="directions" rows="8">@directions</textarea>
+        </div>
+
+        <fieldset class="check-list">
+            <legend>Ingredients added</legend>
+            <p class="muted">A quantity and an item per line. Clear the item to drop the line.</p>
+            @foreach (var row in rows)
+            {
+                <div class="ingredient-line">
+                    <input type="text" name="quantity" value="@row.Quantity" aria-label="Quantity" placeholder="Quantity" />
+                    <input type="text" name="item" value="@row.Item" aria-label="Ingredient" placeholder="Ingredient" />
+                </div>
+            }
+            <button class="btn btn-small" type="submit" name="action" value="add-rows" style="margin-top:0.5rem">Add lines</button>
+        </fieldset>
+
+        <fieldset class="check-list">
+            <legend>Ingredients removed</legend>
+            @if (meal.Ingredients.Count == 0)
+            {
+                <p class="muted">The meal has no ingredients to leave out.</p>
+            }
+            @foreach (var ingredient in meal.Ingredients)
+            {
+                <label for="variant-remove-@ingredient.Id">
+                    <input id="variant-remove-@ingredient.Id" type="checkbox" name="removed" value="@ingredient.Id"
+                           checked="@removed.Contains(ingredient.Id)" />
+                    @($"{ingredient.Quantity} {ingredient.Item}".Trim())
+                </label>
+            }
+        </fieldset>
+
+        @if (error is not null)
+        {
+            <p class="error">@error</p>
+        }
+
+        <div class="row">
+            <button class="btn btn-primary" type="submit" name="action" value="save">Save</button>
+            <a class="btn" href="meals/@MealId">Cancel</a>
+        </div>
+    </form>
+
+    @if (Id is not null)
+    {
+        <form method="post" @formname="variant-delete" @onsubmit="DeleteAsync" style="margin-top:0.75rem">
+            <AntiforgeryToken />
+            <button class="btn btn-danger" type="submit">Delete</button>
+        </form>
+    }
+}
+
+@code {
+    /// <summary>Id of the meal the variant belongs to.</summary>
+    [Parameter]
+    public int MealId { get; set; }
+
+    /// <summary>Id of the variant being edited, or null when adding one.</summary>
+    [Parameter]
+    public int? Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    /// <summary>How many blank ingredient lines a fresh editor offers, and how many a press of Add lines adds.</summary>
+    private const int BlankRows = 3;
+
+    private MealView? meal;
+    private List<IngredientRow> rows = [];
+    private List<int> removed = [];
+    private string? name;
+    private string? directions;
+    private string? error;
+
+    /// <summary>Loads the meal and fills the editor, from the posted form when there is one.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        meal = await Meals.GetAsync(MealId);
+        if (meal is null)
+        {
+            return;
+        }
+
+        if (HttpContext?.Request.Method == HttpMethods.Post)
+        {
+            ReadForm(HttpContext.Request.Form);
+            return;
+        }
+
+        var variant = Id is { } id ? meal.Variants.SingleOrDefault(v => v.Id == id) : null;
+        if (Id is not null && variant is null)
+        {
+            Navigation.NavigateTo($"meals/{MealId}");
+            return;
+        }
+
+        name = variant?.Name;
+        directions = variant?.DirectionsModifications;
+        removed = variant?.RemovedIngredientIds.ToList() ?? [];
+        rows = (variant?.AddedIngredients.Select(i => new IngredientRow(i.Quantity, i.Item)) ?? [])
+            .Concat(Blank(BlankRows))
+            .ToList();
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        if (HttpContext.Request.Form["action"] == "add-rows")
+        {
+            rows.AddRange(Blank(BlankRows));
+            return;
+        }
+
+        error = null;
+
+        var added = rows
+            .Where(row => !string.IsNullOrWhiteSpace(row.Item))
+            .Select(row => new MealIngredientInput(row.Item!, row.Quantity))
+            .ToList();
+
+        var request = new MealVariantRequest(name ?? string.Empty, directions, added, removed);
+
+        try
+        {
+            if (Id is null)
+            {
+                await Meals.CreateVariantAsync(MealId, request);
+            }
+            else
+            {
+                await Meals.UpdateVariantAsync(Id.Value, request);
+            }
+
+            Navigation.NavigateTo($"meals/{MealId}");
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Id is not null)
+        {
+            await Meals.DeleteVariantAsync(Id.Value);
+        }
+
+        Navigation.NavigateTo($"meals/{MealId}");
+    }
+
+    private void ReadForm(IFormCollection form)
+    {
+        name = form["name"];
+        directions = form["directions"];
+
+        removed = form["removed"]
+            .Select(value => int.TryParse(value, out var id) ? id : 0)
+            .Where(id => id > 0)
+            .ToList();
+
+        var quantities = form["quantity"];
+        var items = form["item"];
+        rows = items
+            .Select((item, index) => new IngredientRow(index < quantities.Count ? quantities[index] : null, item))
+            .ToList();
+    }
+
+    private static List<IngredientRow> Blank(int count) =>
+        Enumerable.Range(0, count).Select(_ => new IngredientRow(null, null)).ToList();
+
+    /// <summary>One line of the added ingredient list as the editor holds it.</summary>
+    /// <param name="Quantity">How much is needed, as typed.</param>
+    /// <param name="Item">What the ingredient is, as typed.</param>
+    private record IngredientRow(string? Quantity, string? Item);
+}

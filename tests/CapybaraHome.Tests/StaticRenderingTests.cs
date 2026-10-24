@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using CapybaraHome.Application.Jira;
+using CapybaraHome.Application.Meals;
+using CapybaraHome.Domain.Meals;
 using CapybaraHome.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +40,9 @@ public class StaticRenderingTests
     [InlineData("/board")]
     [InlineData("/tasks")]
     [InlineData("/tasks/new")]
+    [InlineData("/meals")]
+    [InlineData("/meals/new")]
+    [InlineData("/meals/plan")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -57,6 +62,9 @@ public class StaticRenderingTests
     [InlineData("/board")]
     [InlineData("/tasks")]
     [InlineData("/tasks/new")]
+    [InlineData("/meals")]
+    [InlineData("/meals/new")]
+    [InlineData("/meals/plan")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -127,6 +135,75 @@ public class StaticRenderingTests
         var task = await context.Tasks.Include(t => t.Category).SingleAsync();
         Assert.Equal("A job of work", task.Title);
         Assert.Equal("A bucket", task.Category!.Name);
+    }
+
+    [Fact]
+    public async Task The_wizard_imports_a_board_as_meals_after_sorting_its_labels()
+    {
+        const string Food = """
+        { "isLast": true, "issues": [
+            { "key": "FOOD-1", "fields": {
+                "summary": "A meal",
+                "status": { "name": "Queued" },
+                "labels": [ "quick" ],
+                "updated": "2026-06-01T00:00:00.000+0000" } } ] }
+        """;
+
+        var jira = new FakeHttp().Reply(Myself).Reply(Projects).Reply(Count).Reply(Food);
+        await using var app = await AppFactory.CreateAsync(configureServices: services =>
+            services.AddHttpClient<JiraCloudClient>().ConfigurePrimaryHttpMessageHandler(jira.Handler));
+        var client = Client(app);
+
+        var connected = await PostAsync(client, "/settings/jira", "jira-connect", new()
+        {
+            ["connectForm.SiteUrl"] = "example.atlassian.net",
+            ["connectForm.Email"] = "someone@example.com",
+            ["connectForm.ApiToken"] = "a-token",
+        });
+
+        var ticket = Hidden(await connected.Content.ReadAsStringAsync(), "projectForm.Ticket");
+
+        var chosen = await PostAsync(client, "/settings/jira", "jira-project", new()
+        {
+            ["projectForm.Ticket"] = ticket,
+            ["projectForm.ProjectKey"] = "AAA",
+        });
+
+        var confirm = await chosen.Content.ReadAsStringAsync();
+        Assert.Contains("Import these issues as", confirm);
+
+        var asMeals = await PostAsync(client, "/settings/jira", "jira-import", new()
+        {
+            ["importForm.Ticket"] = Hidden(confirm, "importForm.Ticket"),
+            ["importForm.Kind"] = "meals",
+        });
+
+        var facets = await asMeals.Content.ReadAsStringAsync();
+        Assert.Contains("Sort the labels", facets);
+        Assert.Contains("quick", facets);
+
+        var imported = await PostManyAsync(client, "/settings/jira", "jira-facets",
+        [
+            new("ticket", Hidden(facets, "ticket")),
+            new("label", "quick"),
+            new("facet", nameof(MealTagFacet.Effort)),
+        ]);
+
+        var done = await imported.Content.ReadAsStringAsync();
+        Assert.Contains("Added 1 meal(s)", done);
+
+        using var scope = app.Services.CreateScope();
+        var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+        var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+        var meal = Assert.Single(await meals.ListAsync(new MealFilter()));
+
+        Assert.Equal("A meal", meal.Name);
+        Assert.Equal(MealStatus.Queued, meal.Status);
+        Assert.Equal(new DateOnly(2026, 6, 1), meal.LastCookedAt);
+        Assert.Equal(MealTagFacet.Effort, Assert.Single(await tags.ListAsync()).Facet);
+
+        // The labels were sorted against the same board that was imported, read once.
+        Assert.Single(jira.Requests, r => r.RequestUri!.AbsolutePath.Contains("search/jql"));
     }
 
     [Fact]
@@ -312,6 +389,457 @@ public class StaticRenderingTests
         Assert.DoesNotContain("It is not shown again", await client.GetStringAsync("/settings"));
     }
 
+    [Fact]
+    public async Task A_meal_is_created_with_its_ingredients_and_edited_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var created = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "save"),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Queued)),
+            new("last-cooked", string.Empty),
+            new("directions", "Cook it"),
+            new("quantity", "2 cups"),
+            new("item", "first item"),
+            new("quantity", string.Empty),
+            new("item", "second item"),
+            new("quantity", string.Empty),
+            new("item", string.Empty),
+            new("new-tags", "quick, oven"),
+            new("new-tag-facet", nameof(MealTagFacet.Effort)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
+        var editor = created.Headers.Location!.OriginalString;
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var meal = await context.Meals.Include(m => m.Ingredients).Include(m => m.Tags).SingleAsync();
+
+            Assert.Equal("A meal", meal.Name);
+            Assert.Equal(MealStatus.Queued, meal.Status);
+            Assert.Equal(["first item", "second item"], meal.Ingredients.OrderBy(i => i.SortOrder).Select(i => i.Item));
+            Assert.Equal("2 cups", meal.Ingredients.OrderBy(i => i.SortOrder).First().Quantity);
+            Assert.Equal(["oven", "quick"], meal.Tags.Select(t => t.Name).Order());
+        }
+
+        var edited = await PostManyAsync(client, editor, "meal-editor",
+        [
+            new("action", "save"),
+            new("name", "A renamed meal"),
+            new("status", nameof(MealStatus.Available)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("item", "first item"),
+            new("quantity", "2 cups"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Effort)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, edited.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var meal = await context.Meals.Include(m => m.Ingredients).SingleAsync();
+
+            Assert.Equal("A renamed meal", meal.Name);
+            Assert.Equal(MealStatus.Available, meal.Status);
+            Assert.NotNull(meal.LastCookedAt);
+            Assert.Single(meal.Ingredients);
+        }
+    }
+
+    [Fact]
+    public async Task Asking_for_more_ingredient_lines_keeps_what_was_typed()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "add-rows"),
+            new("name", "Half typed"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("directions", "so far"),
+            new("quantity", "1 tin"),
+            new("item", "an item"),
+            new("new-tags", "a new tag"),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        var html = await posted.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("Half typed", html);
+        Assert.Contains("1 tin", html);
+        Assert.Contains("an item", html);
+
+        // The tags typed into the box are only created on a save, so they have to come back with
+        // the page or a press of Add lines throws them away.
+        Assert.Contains("a new tag", html);
+
+        using var scope = app.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+        Assert.Empty(context.Meals);
+    }
+
+    [Fact]
+    public async Task A_variant_is_added_and_edited_from_the_meal_page_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        int ingredientId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("A meal", Ingredients:
+                [new MealIngredientInput("first"), new MealIngredientInput("second")]));
+            mealId = meal.Id;
+            ingredientId = meal.Ingredients[1].Id;
+        }
+
+        var blank = await client.GetStringAsync($"/meals/{mealId}/variants/new");
+        Assert.DoesNotContain("<!--Blazor:", blank);
+        foreach (var form in Forms(blank).Where(f => f.Contains("method=\"post\"", StringComparison.OrdinalIgnoreCase)))
+        {
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(form, "__RequestVerificationToken"));
+        }
+
+        var added = await PostManyAsync(client, $"/meals/{mealId}/variants/new", "variant-editor",
+        [
+            new("action", "save"),
+            new("name", "A variant"),
+            new("directions", "with a change"),
+            new("quantity", "1 tin"),
+            new("item", "an extra"),
+            new("removed", ingredientId.ToString()),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, added.StatusCode);
+
+        // The meal page lists the variant it now carries.
+        var mealPage = await client.GetStringAsync($"/meals/{mealId}");
+        Assert.Contains("A variant", mealPage);
+        Assert.Contains("1 added", mealPage);
+        Assert.Contains("1 removed", mealPage);
+
+        int variantId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var variant = Assert.Single((await meals.GetAsync(mealId))!.Variants);
+            variantId = variant.Id;
+            Assert.Equal("with a change", variant.DirectionsModifications);
+            Assert.Equal(ingredientId, Assert.Single(variant.RemovedIngredientIds));
+        }
+
+        var edited = await PostManyAsync(client, $"/meals/{mealId}/variants/{variantId}", "variant-editor",
+        [
+            new("action", "save"),
+            new("name", "A renamed variant"),
+            new("directions", string.Empty),
+            new("item", "an extra"),
+            new("quantity", "1 tin"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, edited.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var variant = Assert.Single((await meals.GetAsync(mealId))!.Variants);
+            Assert.Equal("A renamed variant", variant.Name);
+            Assert.Empty(variant.RemovedIngredientIds);
+        }
+
+        var deleted = await PostManyAsync(client, $"/meals/{mealId}/variants/{variantId}", "variant-delete", []);
+
+        Assert.Equal(HttpStatusCode.Redirect, deleted.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            Assert.Empty((await meals.GetAsync(mealId))!.Variants);
+        }
+    }
+
+    [Fact]
+    public async Task The_meal_filters_travel_in_the_query_string()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int tagId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            var tag = await tags.EnsureAsync(new MealTagRequest("quick", MealTagFacet.Effort));
+            tagId = tag.Id;
+
+            await meals.CreateAsync(new CreateMealRequest("A tagged meal", Status: MealStatus.Queued, TagIds: [tag.Id]));
+            await meals.CreateAsync(new CreateMealRequest("A plain meal"));
+        }
+
+        Assert.Contains("A tagged meal", await client.GetStringAsync("/meals?text=tagged"));
+        Assert.DoesNotContain("A plain meal", await client.GetStringAsync("/meals?text=tagged"));
+        Assert.DoesNotContain("A plain meal", await client.GetStringAsync($"/meals?tag={tagId}"));
+        Assert.DoesNotContain("A tagged meal", await client.GetStringAsync($"/meals?status={nameof(MealStatus.Closed)}"));
+        Assert.Contains("A tagged meal", await client.GetStringAsync("/meals?sort=name-desc"));
+    }
+
+    [Fact]
+    public async Task Meals_are_planned_and_sent_back_from_the_planning_page_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("A plain meal", Status: MealStatus.Available));
+            mealId = meal.Id;
+        }
+
+        // The targets travel in the query string, so the page is free of any state of its own.
+        var page = await client.GetStringAsync("/meals/plan?breakfast=1&lunch=0&dinner=2");
+        Assert.Contains("Breakfast 0 of 1", page);
+        Assert.Contains("Dinner 0 of 2", page);
+        Assert.Contains("A plain meal", page);
+
+        var planned = await PostManyAsync(client, "/meals/plan?dinner=2", $"search-{mealId}-base",
+        [
+            new("meal-id", mealId.ToString()),
+            new("variant-id", string.Empty),
+            new("slot", nameof(MealSlot.Dinner)),
+            new("shared", "true"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, planned.StatusCode);
+
+        var afterPlanning = await client.GetStringAsync("/meals/plan?dinner=2");
+        Assert.Contains("Dinner 1 of 2", afterPlanning);
+        Assert.Contains("Planned shared", afterPlanning);
+
+        var moved = await PostManyAsync(client, "/meals/plan", $"move-{mealId}",
+        [
+            new("meal-id", mealId.ToString()),
+            new("variant-id", string.Empty),
+            new("slot", nameof(MealSlot.Lunch)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, moved.StatusCode);
+
+        var back = await PostManyAsync(client, "/meals/plan", $"back-{mealId}",
+        [
+            new("meal-id", mealId.ToString()),
+            new("status", nameof(MealStatus.Available)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, back.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = (await meals.GetAsync(mealId))!;
+
+            Assert.Equal(MealStatus.Available, meal.Status);
+            Assert.Null(meal.PlannedSlot);
+            Assert.NotNull(meal.LastCookedAt);
+        }
+    }
+
+    [Theory]
+    [InlineData(MealSlot.Breakfast)]
+    [InlineData(MealSlot.Lunch)]
+    [InlineData(MealSlot.Dinner)]
+    public async Task Every_slot_button_the_planning_page_offers_plans_into_that_slot(MealSlot slot)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A plain meal", Status: MealStatus.Available))).Id;
+        }
+
+        // Each button posts its own slot, which is the only thing that tells the page them apart.
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains($"value=\"{slot}\"", page);
+
+        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}-base",
+        [
+            new("meal-id", mealId.ToString()),
+            new("variant-id", string.Empty),
+            new("slot", slot.ToString()),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, planned.StatusCode);
+
+        using var scope2 = app.Services.CreateScope();
+        var service = scope2.ServiceProvider.GetRequiredService<MealService>();
+        var meal = (await service.GetAsync(mealId))!;
+
+        Assert.Equal(slot, meal.PlannedSlot);
+        Assert.Equal(MealStatus.Planned, meal.Status);
+
+        // The slot it is already in is not offered again on its own row.
+        Assert.Contains($"value=\"{slot}\" disabled", await client.GetStringAsync("/meals/plan"));
+    }
+
+    [Fact]
+    public async Task A_meal_with_variants_is_planned_through_the_chooser_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        int variantId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("A meal with variants", Status: MealStatus.Queued));
+            mealId = meal.Id;
+            variantId = (await meals.CreateVariantAsync(mealId, new MealVariantRequest("A variant")))!.Id;
+        }
+
+        // The planning page sends a meal with variants to the chooser rather than planning it flat.
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains($"meals/plan/choose/{mealId}", page);
+        Assert.Contains("A meal with variants (A variant)", page);
+
+        var chosen = await PostManyAsync(client, $"/meals/plan/choose/{mealId}", "plan-choice",
+        [
+            new("variant-id", variantId.ToString()),
+            new("slot", nameof(MealSlot.Breakfast)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, chosen.StatusCode);
+
+        using var scope2 = app.Services.CreateScope();
+        var service = scope2.ServiceProvider.GetRequiredService<MealService>();
+        var planned = (await service.GetAsync(mealId))!;
+
+        Assert.Equal(MealStatus.Planned, planned.Status);
+        Assert.Equal(MealSlot.Breakfast, planned.PlannedSlot);
+        Assert.Equal(variantId, planned.PlannedVariantId);
+    }
+
+    [Fact]
+    public async Task An_imported_description_is_split_corrected_and_saved_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("An imported meal"));
+            mealId = meal.Id;
+
+            await meals.UpdateAsync(mealId, new UpdateMealRequest(
+                ImportedText: "- 2 cups rice\n- 1 tin tomatoes\n\nSimmer it.",
+                Directions: "- 2 cups rice\n- 1 tin tomatoes\n\nSimmer it.",
+                NeedsIngredientSplit: true));
+        }
+
+        // The meal list points at the screen while anything is waiting.
+        Assert.Contains("meals/split", await client.GetStringAsync("/meals"));
+
+        var screen = await client.GetStringAsync("/meals/split");
+        Assert.DoesNotContain("<!--Blazor:", screen);
+        Assert.Contains("An imported meal", screen);
+        Assert.Contains("2 cups", screen);
+        Assert.Contains("rice", screen);
+        Assert.Contains("Simmer it.", screen);
+
+        // Clear throws the guess away and puts the imported text back.
+        var cleared = await PostManyAsync(client, "/meals/split", "meal-split",
+        [
+            new("action", "clear"),
+            new("meal-id", mealId.ToString()),
+            new("quantity", "2 cups"),
+            new("item", "rice"),
+            new("directions", "Simmer it."),
+        ]);
+
+        var afterClear = await cleared.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+        Assert.Contains("- 2 cups rice", afterClear);
+
+        var saved = await PostManyAsync(client, "/meals/split", "meal-split",
+        [
+            new("action", "save"),
+            new("meal-id", mealId.ToString()),
+            new("quantity", "2 cups"),
+            new("item", "rice"),
+            new("quantity", "1 tin"),
+            new("item", "tomatoes"),
+            new("quantity", string.Empty),
+            new("item", string.Empty),
+            new("directions", "Simmer it."),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+
+        using var scope2 = app.Services.CreateScope();
+        var service = scope2.ServiceProvider.GetRequiredService<MealService>();
+        var split = (await service.GetAsync(mealId))!;
+
+        Assert.False(split.NeedsIngredientSplit);
+        Assert.Equal(["rice", "tomatoes"], split.Ingredients.Select(i => i.Item));
+        Assert.Equal("Simmer it.", split.Directions);
+
+        // The imported text is kept, so the split can always be started over.
+        Assert.Contains("- 2 cups rice", split.ImportedText);
+        Assert.Contains("Nothing is waiting", await client.GetStringAsync("/meals/split"));
+    }
+
+    [Fact]
+    public async Task Skipping_a_meal_moves_on_to_the_next_one_waiting()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int first;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var one = await meals.CreateAsync(new CreateMealRequest("A first meal"));
+            var two = await meals.CreateAsync(new CreateMealRequest("A second meal"));
+            first = one.Id;
+
+            foreach (var id in new[] { one.Id, two.Id })
+            {
+                await meals.UpdateAsync(id, new UpdateMealRequest(ImportedText: "Some text", NeedsIngredientSplit: true));
+            }
+        }
+
+        var skipped = await PostManyAsync(client, "/meals/split", "meal-split",
+        [
+            new("action", "skip"),
+            new("meal-id", first.ToString()),
+            new("directions", "Some text"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, skipped.StatusCode);
+        Assert.Contains($"skipped={first}", skipped.Headers.Location!.OriginalString);
+
+        var next = await client.GetStringAsync(skipped.Headers.Location!.OriginalString);
+        Assert.Contains("A second meal", next);
+        Assert.DoesNotContain("A first meal", next);
+    }
+
     private static IEnumerable<string> Forms(string html)
     {
         foreach (var match in System.Text.RegularExpressions.Regex.Matches(html, "<form[\\s>].*?</form>",
@@ -335,6 +863,20 @@ public class StaticRenderingTests
     {
         fields["_handler"] = handler;
         fields["__RequestVerificationToken"] = await TokenAsync(client, path);
+
+        return await client.PostAsync(path, new FormUrlEncodedContent(fields));
+    }
+
+    // The meal editor posts repeated names, one pair per ingredient line, so its fields cannot be
+    // carried in a dictionary the way the other forms' are.
+    private static async Task<HttpResponseMessage> PostManyAsync(
+        HttpClient client,
+        string path,
+        string handler,
+        List<KeyValuePair<string, string>> fields)
+    {
+        fields.Add(new("_handler", handler));
+        fields.Add(new("__RequestVerificationToken", await TokenAsync(client, path)));
 
         return await client.PostAsync(path, new FormUrlEncodedContent(fields));
     }

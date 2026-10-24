@@ -1,0 +1,41 @@
+@* A list of meals with their status, when they were last cooked and their tags. *@
+
+@if (Meals.Count == 0)
+{
+    <p class="muted">Nothing here.</p>
+}
+else
+{
+    <ul class="task-list">
+        @foreach (var meal in Meals)
+        {
+            <li>
+                <div class="task-line">
+                    <a class="task-link" href="@($"meals/{meal.Id}")">@meal.Name</a>
+                    <span class="pill">@MealStatusNames.Label(meal.Status)</span>
+                </div>
+                <div class="task-meta">
+                    <span>@DateNames.LastCooked(meal.LastCookedAt)</span>
+                    @if (meal.Ingredients.Count > 0)
+                    {
+                        <span>@meal.Ingredients.Count ingredient@(meal.Ingredients.Count == 1 ? string.Empty : "s")</span>
+                    }
+                    @if (meal.NeedsIngredientSplit)
+                    {
+                        <span>Needs splitting</span>
+                    }
+                    @foreach (var tag in meal.Tags)
+                    {
+                        <span>@tag.Name</span>
+                    }
+                </div>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    /// <summary>Meals to list.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<MealView> Meals { get; set; } = [];
+}
