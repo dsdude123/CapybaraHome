@@ -347,9 +347,11 @@
 
         projectKey = entry.ProjectKey;
 
+        JiraIssueSnapshot? snapshot = null;
+
         try
         {
-            using var snapshot = await Jira.FetchIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
+            snapshot = await Jira.FetchIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
 
             // Meals take one more step, where the labels are sorted into the kinds the filters use,
             // so the credentials are kept until that step has run the import.
@@ -365,8 +367,13 @@
                 {
                     mealReport = await MealImport.ImportAsync(snapshot.Issues);
                     Wizard.Remove(importForm.Ticket);
+                    return;
                 }
 
+                // The board the labels were read from is the board that gets imported, so it is
+                // held for the next step rather than fetched again. The store disposes it.
+                entry.Snapshot = snapshot;
+                snapshot = null;
                 return;
             }
 
@@ -380,6 +387,10 @@
         {
             error = ex.Message;
             step = Step.Confirm;
+        }
+        finally
+        {
+            snapshot?.Dispose();
         }
     }
 
@@ -417,7 +428,10 @@
 
         try
         {
-            using var snapshot = await Jira.FetchIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
+            var snapshot = entry.Snapshot
+                ?? await Jira.FetchIssuesAsync(entry.Connection, JiraCloudClient.ProjectQuery(projectKey));
+            entry.Snapshot = snapshot;
+
             mealReport = await MealImport.ImportAsync(snapshot.Issues, facets);
 
             Wizard.Remove(facetTicket);
