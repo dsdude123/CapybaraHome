@@ -1,0 +1,63 @@
+@page "/grocery/print"
+@page "/grocery/print/{Id:int}"
+@layout PrintLayout
+@inject GroceryService Groceries
+
+<PageTitle>Grocery list</PageTitle>
+
+@if (list is null)
+{
+    <h1>No list</h1>
+    <p class="muted">There is nothing to print yet.</p>
+    <a class="btn print-hide" href="grocery">Back to the list</a>
+}
+else
+{
+    <div class="page-head">
+        <h1>Grocery list</h1>
+        <span class="muted">@DateNames.Long(DateOnly.FromDateTime(list.StartedAt.UtcDateTime))</span>
+    </div>
+
+    @if (list.Items.Count == 0)
+    {
+        <p class="muted">Nothing on this list.</p>
+    }
+    else
+    {
+        <ul class="print-list">
+            @foreach (var item in list.Items)
+            {
+                <li>
+                    <span class="print-box" aria-hidden="true"></span>
+                    <span>
+                        @Line(item)
+                        @if (item.Source is { Length: > 0 } source)
+                        {
+                            <span class="muted"> · @source</span>
+                        }
+                    </span>
+                </li>
+            }
+        </ul>
+    }
+
+    <p class="muted print-hide" style="margin-top:1rem">Print this page from your browser.</p>
+    <a class="btn print-hide" href="grocery">Back to the list</a>
+}
+
+@code {
+    /// <summary>Id of the list to print, or null for the open one.</summary>
+    [Parameter]
+    public int? Id { get; set; }
+
+    private GroceryListView? list;
+
+    /// <summary>Loads the list named in the route, or the open one when none is named.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        list = Id is { } id ? await Groceries.GetAsync(id) : await Groceries.GetCurrentAsync();
+    }
+
+    private static string Line(GroceryItemView item) =>
+        item.Quantity is { Length: > 0 } quantity ? $"{quantity} {item.Item}" : item.Item;
+}

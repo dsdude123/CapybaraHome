@@ -1,6 +1,7 @@
 using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.DataTransfer;
+using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Tasks;
@@ -23,6 +24,7 @@ public static class ApiEndpoints
         MapCategories(api);
         MapMeals(api);
         MapMealTags(api);
+        MapGrocery(api);
         MapDashboard(api);
         MapTransfer(api);
     }
@@ -198,6 +200,61 @@ public static class ApiEndpoints
 
         tags.MapDelete("/{id:int}", async (int id, MealTagService service, CancellationToken cancellationToken) =>
             await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+    }
+
+    private static void MapGrocery(IEndpointRouteBuilder api)
+    {
+        var grocery = api.MapGroup("/grocery");
+
+        grocery.MapGet("/", async (GroceryService service, CancellationToken cancellationToken) =>
+            await service.GetCurrentAsync(cancellationToken) is { } list ? Results.Ok(list) : Results.NoContent());
+
+        grocery.MapGet("/lists", async (GroceryService service, bool? includeClosed, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListAsync(includeClosed ?? false, cancellationToken)));
+
+        grocery.MapPost("/lists", async (GroceryService service, CancellationToken cancellationToken) =>
+        {
+            var list = await service.StartFreshAsync(cancellationToken);
+            return Results.Created($"/api/grocery/lists/{list.Id}", list);
+        });
+
+        grocery.MapGet("/candidates", async (GroceryService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.CandidatesAsync(cancellationToken)));
+
+        grocery.MapPost("/items", async (GroceryItemInput request, GroceryService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var added = await service.AddItemAsync(request, cancellationToken);
+                return Results.Created($"/api/grocery/items/{added.Id}", added);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        grocery.MapDelete("/items/{id:int}", async (int id, GroceryService service, CancellationToken cancellationToken) =>
+            await service.RemoveItemAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        grocery.MapGet("/frequent", async (GroceryService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListFrequentAsync(cancellationToken)));
+
+        grocery.MapPost("/frequent", async (GroceryItemInput request, GroceryService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var added = await service.AddFrequentAsync(request, cancellationToken);
+                return Results.Created($"/api/grocery/frequent/{added.Id}", added);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        grocery.MapDelete("/frequent/{id:int}", async (int id, GroceryService service, CancellationToken cancellationToken) =>
+            await service.RemoveFrequentAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
     }
 
     private static void MapCategories(IEndpointRouteBuilder api)

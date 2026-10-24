@@ -1,0 +1,170 @@
+@page "/grocery"
+@inject GroceryService Groceries
+@inject NavigationManager Navigation
+
+<PageTitle>Grocery list</PageTitle>
+
+<div class="page-head">
+    <h1>Grocery list</h1>
+    <div class="row">
+        <a class="btn btn-primary btn-small" href="grocery/generate">Generate</a>
+        <a class="btn btn-small" href="grocery/print">Print</a>
+    </div>
+</div>
+
+@if (Added is { } added)
+{
+    <p class="notice">Added @added item(s).</p>
+}
+
+<section class="card stack">
+    <div class="card-head">
+        <h2 class="card-title">@Heading</h2>
+        <span class="muted">@ItemCount</span>
+    </div>
+
+    @if (items.Count == 0)
+    {
+        <p class="muted">Nothing on the list yet. Generate from the plan, or add something below.</p>
+    }
+    else
+    {
+        <ul class="task-list">
+            @foreach (var item in items)
+            {
+                <li>
+                    <div class="task-line">
+                        <span class="task-link">@Line(item)</span>
+                        <form method="post" @formname="@($"drop-{item.Id}")" @onsubmit="() => DropAsync(item.Id)">
+                            <AntiforgeryToken />
+                            <button class="btn btn-small" type="submit">Remove</button>
+                        </form>
+                    </div>
+                    @if (item.Source is { Length: > 0 } source)
+                    {
+                        <div class="task-meta">
+                            <span>@source</span>
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+    }
+
+    <form method="post" @formname="grocery-add" @onsubmit="AddAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="ingredient-line">
+            <input type="text" name="quantity" value="@quantity" aria-label="Quantity" placeholder="Quantity" />
+            <input type="text" name="item" value="@item" aria-label="Item" placeholder="Item" />
+        </div>
+        @if (error is not null)
+        {
+            <p class="error">@error</p>
+        }
+        <div class="row">
+            <button class="btn" type="submit">Add the item</button>
+        </div>
+    </form>
+</section>
+
+<section class="card stack" style="margin-top:1rem">
+    <h2 class="card-title">Start over</h2>
+    <p class="muted">A fresh list is only started here, never on its own. This one is kept and can still be printed.</p>
+    <form method="post" @formname="grocery-fresh" @onsubmit="FreshAsync">
+        <AntiforgeryToken />
+        <button class="btn btn-danger" type="submit">Start a fresh list</button>
+    </form>
+</section>
+
+@if (earlier.Count > 0)
+{
+    <details class="disclosure card" style="margin-top:1rem">
+        <summary>Earlier lists</summary>
+        <div class="disclosure-body">
+            <ul class="task-list">
+                @foreach (var list in earlier)
+                {
+                    <li>
+                        <div class="task-line">
+                            <a class="task-link" href="grocery/print/@list.Id">@DateNames.Long(Day(list.StartedAt))</a>
+                            <span class="pill">@list.Items.Count item(s)</span>
+                        </div>
+                    </li>
+                }
+            </ul>
+        </div>
+    </details>
+}
+
+@code {
+    /// <summary>How many items the generator just added, or null when the page was not reached from it.</summary>
+    [SupplyParameterFromQuery(Name = "added")]
+    private int? Added { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private IReadOnlyList<GroceryItemView> items = [];
+    private IReadOnlyList<GroceryListView> earlier = [];
+    private DateTimeOffset? startedAt;
+    private string? quantity;
+    private string? item;
+    private string? error;
+
+    private string Heading => startedAt is { } started ? $"Started {DateNames.Long(Day(started))}" : "No list yet";
+
+    private string ItemCount => items.Count == 1 ? "1 item" : $"{items.Count} items";
+
+    /// <summary>Loads the open list and the lists it replaced.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        var current = await Groceries.GetCurrentAsync();
+        items = current?.Items ?? [];
+        startedAt = current?.StartedAt;
+
+        earlier = (await Groceries.ListAsync(includeClosed: true))
+            .Where(list => list.ClosedAt is not null)
+            .ToList();
+    }
+
+    private async Task AddAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        error = null;
+        quantity = HttpContext.Request.Form["quantity"];
+        item = HttpContext.Request.Form["item"];
+
+        try
+        {
+            await Groceries.AddItemAsync(new GroceryItemInput(item ?? string.Empty, quantity));
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+            return;
+        }
+
+        Navigation.NavigateTo("grocery");
+    }
+
+    private async Task DropAsync(int id)
+    {
+        await Groceries.RemoveItemAsync(id);
+        Navigation.NavigateTo("grocery");
+    }
+
+    private async Task FreshAsync()
+    {
+        await Groceries.StartFreshAsync();
+        Navigation.NavigateTo("grocery");
+    }
+
+    private static string Line(GroceryItemView item) =>
+        item.Quantity is { Length: > 0 } quantity ? $"{quantity} {item.Item}" : item.Item;
+
+    private static DateOnly Day(DateTimeOffset moment) => DateOnly.FromDateTime(moment.UtcDateTime);
+}

@@ -12,6 +12,8 @@ namespace CapybaraHome.Application.DataTransfer;
 /// <param name="DashboardCards">Every dashboard card.</param>
 /// <param name="Meals">Every meal. Absent from a version 1 document, which carried no meals.</param>
 /// <param name="MealTags">Every meal tag. Absent from a version 1 document.</param>
+/// <param name="GroceryLists">Every grocery list. Absent from a document before version 3.</param>
+/// <param name="FrequentGroceryItems">Every frequent grocery item. Absent from a document before version 3.</param>
 public record BackupDocument(
     int FormatVersion,
     DateTimeOffset ExportedAt,
@@ -19,14 +21,38 @@ public record BackupDocument(
     IReadOnlyList<TaskRecord> Tasks,
     IReadOnlyList<DashboardCardRecord> DashboardCards,
     IReadOnlyList<MealRecord>? Meals = null,
-    IReadOnlyList<MealTagRecord>? MealTags = null)
+    IReadOnlyList<MealTagRecord>? MealTags = null,
+    IReadOnlyList<GroceryListRecord>? GroceryLists = null,
+    IReadOnlyList<FrequentGroceryItemRecord>? FrequentGroceryItems = null)
 {
     /// <summary>The version this build writes.</summary>
-    public const int CurrentFormatVersion = 2;
+    public const int CurrentFormatVersion = 3;
 
     /// <summary>The oldest version this build still reads, from before meals existed.</summary>
     public const int OldestReadableFormatVersion = 1;
 }
+
+/// <summary>One thing to buy in an export.</summary>
+/// <param name="Quantity">How much to buy, as written, or null.</param>
+/// <param name="Item">What to buy.</param>
+/// <param name="Source">Where it came from, or null when it was typed in.</param>
+/// <param name="SortOrder">Position in the list.</param>
+public record GroceryItemRecord(string? Quantity, string Item, string? Source, int SortOrder);
+
+/// <summary>A grocery list in an export.</summary>
+/// <param name="StartedAt">When the list was started.</param>
+/// <param name="ClosedAt">When a fresh list replaced it, or null while it was the open list.</param>
+/// <param name="Items">What was on it, in order.</param>
+public record GroceryListRecord(
+    DateTimeOffset StartedAt,
+    DateTimeOffset? ClosedAt,
+    IReadOnlyList<GroceryItemRecord> Items);
+
+/// <summary>A frequent grocery item in an export.</summary>
+/// <param name="Quantity">How much is usually bought, or null.</param>
+/// <param name="Item">What the item is.</param>
+/// <param name="SortOrder">Position in the list offered.</param>
+public record FrequentGroceryItemRecord(string? Quantity, string Item, int SortOrder);
 
 /// <summary>A meal tag in an export. Ids are carried so meals can point at them.</summary>
 /// <param name="Id">Primary key as exported.</param>

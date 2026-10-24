@@ -1,0 +1,112 @@
+@page "/grocery/generate"
+@inject GroceryService Groceries
+@inject NavigationManager Navigation
+
+<PageTitle>Generate a grocery list</PageTitle>
+
+<h1>Generate a grocery list</h1>
+<p class="muted">Tick what to buy. Nothing is added until you say so, and the list already has the rest.</p>
+
+@if (candidates.Groups.Count == 0)
+{
+    <p class="notice">
+        Nothing to ask about. Set up <a href="settings">frequent items</a>, or
+        <a href="meals/plan">plan some meals</a> first.
+    </p>
+    <a class="btn" href="grocery">Back to the list</a>
+}
+else
+{
+    <form method="post" @formname="grocery-generate" @onsubmit="AddAsync">
+        <AntiforgeryToken />
+
+        @{
+            var index = 0;
+        }
+        @foreach (var group in candidates.Groups)
+        {
+            <fieldset class="check-list">
+                <legend>@group.Name</legend>
+                @foreach (var candidate in group.Candidates)
+                {
+                    var position = index++;
+                    <input type="hidden" name="item" value="@candidate.Item" />
+                    <input type="hidden" name="quantity" value="@candidate.Quantity" />
+                    <input type="hidden" name="source" value="@candidate.Source" />
+
+                    @if (candidate.AlreadyOnList)
+                    {
+                        <p class="muted">@Line(candidate) — already on the list</p>
+                    }
+                    else
+                    {
+                        <label for="pick-@position">
+                            <input id="pick-@position" type="checkbox" name="pick" value="@position"
+                                   checked="@picked.Contains(position)" />
+                            @Line(candidate)
+                        </label>
+                    }
+                }
+            </fieldset>
+        }
+
+        <div class="row" style="margin-top:1rem">
+            <button class="btn btn-primary" type="submit" name="action" value="add">Add the ticked items</button>
+            <a class="btn" href="grocery">Cancel</a>
+        </div>
+    </form>
+}
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private GroceryCandidates candidates = new([]);
+    private HashSet<int> picked = [];
+
+    /// <summary>Reads what to ask about: the frequent items, then the ingredients of each planned meal.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        candidates = await Groceries.CandidatesAsync();
+
+        if (HttpContext?.Request.Method == HttpMethods.Post)
+        {
+            picked = HttpContext.Request.Form["pick"]
+                .Select(value => int.TryParse(value, out var position) ? position : -1)
+                .Where(position => position >= 0)
+                .ToHashSet();
+        }
+    }
+
+    /// <summary>
+    /// Adds what was ticked. The rows travel as three parallel lists with the ticked boxes naming
+    /// their positions, since an unticked box posts nothing at all.
+    /// </summary>
+    private async Task AddAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        var items = form["item"];
+        var quantities = form["quantity"];
+        var sources = form["source"];
+
+        var chosen = picked
+            .Where(position => position < items.Count)
+            .Order()
+            .Select(position => new GroceryItemInput(
+                items[position] ?? string.Empty,
+                position < quantities.Count ? quantities[position] : null,
+                position < sources.Count ? sources[position] : null))
+            .ToList();
+
+        var added = await Groceries.AddItemsAsync(chosen);
+        Navigation.NavigateTo($"grocery?added={added}");
+    }
+
+    private static string Line(GroceryCandidate candidate) =>
+        candidate.Quantity is { Length: > 0 } quantity ? $"{quantity} {candidate.Item}" : candidate.Item;
+}
