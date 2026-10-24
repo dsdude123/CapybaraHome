@@ -244,7 +244,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         }
 
         var tagByExportedId = new Dictionary<int, MealTag>();
-        var tagByName = await context.MealTags.ToDictionaryAsync(t => t.Name, t => t, cancellationToken);
+        var tagByName = await context.MealTags.ToDictionaryAsync(t => t.Name, t => t, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
         foreach (var record in document.MealTags ?? [])
         {
