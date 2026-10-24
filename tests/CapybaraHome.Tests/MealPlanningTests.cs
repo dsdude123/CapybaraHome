@@ -145,6 +145,21 @@ public class MealPlanningTests
     }
 
     [Fact]
+    public async Task The_limit_counts_variant_rows_too()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal"));
+        await service.CreateVariantAsync(meal.Id, new MealVariantRequest("First"));
+        await service.CreateVariantAsync(meal.Id, new MealVariantRequest("Second"));
+        await service.CreateAsync(new CreateMealRequest("Another meal"));
+
+        var options = await service.ListOptionsAsync(new MealFilter(Limit: 2));
+
+        Assert.Equal(["A meal", "A meal (First)"], options.Select(o => o.Name));
+    }
+
+    [Fact]
     public async Task A_meal_with_no_variants_offers_only_itself()
     {
         await using var db = await TestDatabase.CreateAsync();
