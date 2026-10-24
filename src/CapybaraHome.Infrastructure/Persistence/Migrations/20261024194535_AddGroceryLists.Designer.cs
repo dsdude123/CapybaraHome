@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CapybaraHome.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CapybaraHomeDbContext))]
-    [Migration("20261024073849_AddGroceryLists")]
+    [Migration("20261024194535_AddGroceryLists")]
     partial class AddGroceryLists
     {
         /// <inheritdoc />
@@ -67,7 +67,8 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<string>("Item")
                         .IsRequired()
                         .HasMaxLength(300)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("TEXT")
+                        .UseCollation("NOCASE");
 
                     b.Property<string>("Quantity")
                         .HasMaxLength(100)
@@ -77,6 +78,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Item")
+                        .IsUnique();
 
                     b.HasIndex("SortOrder");
 

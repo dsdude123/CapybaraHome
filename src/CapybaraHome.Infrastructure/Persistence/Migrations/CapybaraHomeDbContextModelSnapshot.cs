@@ -64,7 +64,8 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<string>("Item")
                         .IsRequired()
                         .HasMaxLength(300)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("TEXT")
+                        .UseCollation("NOCASE");
 
                     b.Property<string>("Quantity")
                         .HasMaxLength(100)
@@ -74,6 +75,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Item")
+                        .IsUnique();
 
                     b.HasIndex("SortOrder");
 

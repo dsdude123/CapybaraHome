@@ -18,7 +18,7 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     Id = table.Column<int>(type: "INTEGER", nullable: false)
                         .Annotation("Sqlite:Autoincrement", true),
                     Quantity = table.Column<string>(type: "TEXT", maxLength: 100, nullable: true),
-                    Item = table.Column<string>(type: "TEXT", maxLength: 300, nullable: false),
+                    Item = table.Column<string>(type: "TEXT", maxLength: 300, nullable: false, collation: "NOCASE"),
                     SortOrder = table.Column<int>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
@@ -64,6 +64,12 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_FrequentGroceryItems_Item",
+                table: "FrequentGroceryItems",
+                column: "Item",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_FrequentGroceryItems_SortOrder",
                 table: "FrequentGroceryItems",
                 column: "SortOrder");
@@ -77,11 +83,19 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                 name: "IX_GroceryLists_ClosedAt",
                 table: "GroceryLists",
                 column: "ClosedAt");
+
+            // Over the expression rather than the column: SQLite counts NULLs as distinct, so a
+            // unique index on ClosedAt itself would let a second open list in.
+            migrationBuilder.Sql(
+                "CREATE UNIQUE INDEX \"IX_GroceryLists_Open\" ON \"GroceryLists\" "
+                + "((\"ClosedAt\" IS NULL)) WHERE \"ClosedAt\" IS NULL;");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_GroceryLists_Open\";");
+
             migrationBuilder.DropTable(
                 name: "FrequentGroceryItems");
 

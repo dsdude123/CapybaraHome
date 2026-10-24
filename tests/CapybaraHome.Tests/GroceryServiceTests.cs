@@ -1,7 +1,9 @@
 using CapybaraHome.Application.DataTransfer;
 using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Meals;
+using CapybaraHome.Domain.Grocery;
 using CapybaraHome.Domain.Meals;
+using Microsoft.EntityFrameworkCore;
 
 namespace CapybaraHome.Tests;
 
@@ -106,6 +108,37 @@ public class GroceryServiceTests
         Assert.Equal(1, added);
         Assert.Equal(["Milk", "rice"], items.Select(i => i.Item));
         Assert.Equal("A meal", items[1].Source);
+    }
+
+    [Fact]
+    public async Task The_database_refuses_a_second_open_list_whoever_writes_it()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new GroceryService(db.Context, db.Clock);
+        await service.EnsureCurrentAsync();
+
+        // Past the service, straight at the table: the index is what holds the one-open-list rule.
+        db.Context.GroceryLists.Add(new GroceryList { StartedAt = db.Clock.GetUtcNow() });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.Context.SaveChangesAsync());
+
+        db.Context.ChangeTracker.Clear();
+        await service.StartFreshAsync();
+
+        Assert.Single(await service.ListAsync());
+        Assert.Equal(2, (await service.ListAsync(includeClosed: true)).Count);
+    }
+
+    [Fact]
+    public async Task The_database_refuses_a_frequent_item_already_held_in_another_case()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new GroceryService(db.Context, db.Clock);
+        await service.AddFrequentAsync(new GroceryItemInput("Milk"));
+
+        db.Context.FrequentGroceryItems.Add(new FrequentGroceryItem { Item = "milk", SortOrder = 1 });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.Context.SaveChangesAsync());
     }
 
     [Fact]
@@ -292,6 +325,32 @@ public class GroceryServiceTests
         Assert.Equal(0, summary.GroceryListsAdded);
         Assert.Single(await held.ListAsync(includeClosed: true));
         Assert.Equal("bread", Assert.Single((await held.GetCurrentAsync())!.Items).Item);
+    }
+
+    [Fact]
+    public async Task An_import_carrying_two_open_lists_leaves_only_the_newest_open()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var started = db.Clock.GetUtcNow();
+
+        var document = new BackupDocument(
+            BackupDocument.CurrentFormatVersion,
+            started,
+            [],
+            [],
+            [],
+            GroceryLists:
+            [
+                new GroceryListRecord(started, null, [new GroceryItemRecord(null, "rice", null, 0)]),
+                new GroceryListRecord(started.AddDays(1), null, [new GroceryItemRecord(null, "bread", null, 0)]),
+            ]);
+
+        var summary = await new DataTransferService(db.Context, db.Clock).ImportAsync(document, ImportMode.Merge);
+        var service = new GroceryService(db.Context, db.Clock);
+
+        Assert.Equal(2, summary.GroceryListsAdded);
+        Assert.Equal("bread", Assert.Single((await service.GetCurrentAsync())!.Items).Item);
+        Assert.Equal(2, (await service.ListAsync(includeClosed: true)).Count);
     }
 
     private static async Task<IReadOnlyList<GroceryCandidateGroup>> Groups(GroceryService service) =>

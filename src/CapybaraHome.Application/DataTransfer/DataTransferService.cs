@@ -289,12 +289,17 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         var listsAdded = 0;
         if (document.GroceryLists is { Count: > 0 } lists && !await context.GroceryLists.AnyAsync(cancellationToken))
         {
+            // Only one list may be open, and the database holds that, so a document carrying
+            // several open ones leaves the newest open and closes the rest as it replaced them.
+            var newestOpen = lists.Where(l => l.ClosedAt is null).Max(l => (DateTimeOffset?)l.StartedAt);
+
             foreach (var record in lists)
             {
                 context.GroceryLists.Add(new GroceryList
                 {
                     StartedAt = record.StartedAt,
-                    ClosedAt = record.ClosedAt,
+                    ClosedAt = record.ClosedAt
+                        ?? (record.StartedAt == newestOpen ? null : newestOpen),
                     Items = record.Items
                         .Select(i => new GroceryItem
                         {

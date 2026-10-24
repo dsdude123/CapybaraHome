@@ -38,6 +38,10 @@ public class GroceryService(ICapybaraHomeDbContext context, TimeProvider clock)
             list.ClosedAt = clock.GetUtcNow();
         }
 
+        // Saved before the new list is added, so the database never holds two open lists even
+        // for the length of one transaction, which is what its unique index refuses.
+        await context.SaveChangesAsync(cancellationToken);
+
         return await OpenAsync(cancellationToken);
     }
 

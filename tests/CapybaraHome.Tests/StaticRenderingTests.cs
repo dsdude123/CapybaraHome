@@ -937,6 +937,27 @@ public class StaticRenderingTests
     }
 
     [Fact]
+    public async Task The_grocery_page_says_how_a_list_starts_before_there_is_one()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var page = await client.GetStringAsync("/grocery");
+
+        Assert.Contains("No list has been started", page);
+
+        // Nothing to start over from, so that control is not offered yet.
+        Assert.DoesNotContain("Start a fresh list", page);
+
+        await PostManyAsync(client, "/grocery", "grocery-add", [new("quantity", string.Empty), new("item", "milk")]);
+
+        var started = await client.GetStringAsync("/grocery");
+
+        Assert.DoesNotContain("No list has been started", started);
+        Assert.Contains("Start a fresh list", started);
+    }
+
+    [Fact]
     public async Task A_fresh_list_is_started_from_the_page_and_the_old_one_stays_printable()
     {
         await using var app = await AppFactory.CreateAsync();

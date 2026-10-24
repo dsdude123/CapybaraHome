@@ -20,10 +20,20 @@
 <section class="card stack">
     <div class="card-head">
         <h2 class="card-title">@Heading</h2>
-        <span class="muted">@ItemCount</span>
+        @if (HasList)
+        {
+            <span class="muted">@ItemCount</span>
+        }
     </div>
 
-    @if (items.Count == 0)
+    @if (startedAt is null)
+    {
+        <p class="muted">
+            No list has been started. Generating from the plan, or adding an item below,
+            starts one; it then stays open until you start a fresh one yourself.
+        </p>
+    }
+    else if (items.Count == 0)
     {
         <p class="muted">Nothing on the list yet. Generate from the plan, or add something below.</p>
     }
@@ -67,14 +77,17 @@
     </form>
 </section>
 
-<section class="card stack" style="margin-top:1rem">
-    <h2 class="card-title">Start over</h2>
-    <p class="muted">A fresh list is only started here, never on its own. This one is kept and can still be printed.</p>
-    <form method="post" @formname="grocery-fresh" @onsubmit="FreshAsync">
-        <AntiforgeryToken />
-        <button class="btn btn-danger" type="submit">Start a fresh list</button>
-    </form>
-</section>
+@if (HasList)
+{
+    <section class="card stack" style="margin-top:1rem">
+        <h2 class="card-title">Start over</h2>
+        <p class="muted">A fresh list is only started here, never on its own. This one is kept and can still be printed.</p>
+        <form method="post" @formname="grocery-fresh" @onsubmit="FreshAsync">
+            <AntiforgeryToken />
+            <button class="btn btn-danger" type="submit">Start a fresh list</button>
+        </form>
+    </section>
+}
 
 @if (earlier.Count > 0)
 {
@@ -114,6 +127,8 @@
     private string Heading => startedAt is { } started ? $"Started {DateNames.Long(Day(started))}" : "No list yet";
 
     private string ItemCount => items.Count == 1 ? "1 item" : $"{items.Count} items";
+
+    private bool HasList => startedAt is not null;
 
     /// <summary>Loads the open list and the lists it replaced.</summary>
     protected override async Task OnParametersSetAsync()
