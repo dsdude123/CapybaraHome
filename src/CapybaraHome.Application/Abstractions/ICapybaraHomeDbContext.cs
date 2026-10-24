@@ -33,6 +33,9 @@ public interface ICapybaraHomeDbContext
     /// <summary>The meals' ingredients the variants leave out.</summary>
     DbSet<MealVariantRemoval> MealVariantRemovals { get; }
 
+    /// <summary>How many meals each slot aims for.</summary>
+    DbSet<MealPlanTarget> MealPlanTargets { get; }
+
     /// <summary>Dashboard cards.</summary>
     DbSet<DashboardCard> DashboardCards { get; }
 

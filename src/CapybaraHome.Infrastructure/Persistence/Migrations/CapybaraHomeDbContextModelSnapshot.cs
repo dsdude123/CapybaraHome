@@ -146,6 +146,20 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("MealIngredients");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealPlanTarget", b =>
+                {
+                    b.Property<string>("Slot")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Slot");
+
+                    b.ToTable("MealPlanTargets");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Meals.MealTag", b =>
                 {
                     b.Property<int>("Id")

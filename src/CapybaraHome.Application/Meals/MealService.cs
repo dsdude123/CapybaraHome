@@ -239,6 +239,44 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         return options;
     }
 
+    /// <summary>Returns the stored target for each slot, leaving out the slots nothing was stored for.</summary>
+    public async Task<IReadOnlyDictionary<MealSlot, int>> GetTargetsAsync(CancellationToken cancellationToken = default)
+    {
+        return await context.MealPlanTargets.AsNoTracking()
+            .ToDictionaryAsync(target => target.Slot, target => target.Count, cancellationToken);
+    }
+
+    /// <summary>
+    /// Stores how many meals each slot aims for, so the planning page opens on the last numbers
+    /// used rather than the defaults. A slot left out of <paramref name="targets"/> goes back to
+    /// the default, since its row is removed.
+    /// </summary>
+    public async Task SaveTargetsAsync(
+        IReadOnlyDictionary<MealSlot, int> targets,
+        CancellationToken cancellationToken = default)
+    {
+        var stored = await context.MealPlanTargets.ToListAsync(cancellationToken);
+
+        foreach (var target in stored.Where(target => !targets.ContainsKey(target.Slot)))
+        {
+            context.MealPlanTargets.Remove(target);
+        }
+
+        foreach (var (slot, count) in targets)
+        {
+            if (stored.FirstOrDefault(target => target.Slot == slot) is { } existing)
+            {
+                existing.Count = Math.Max(0, count);
+            }
+            else
+            {
+                context.MealPlanTargets.Add(new MealPlanTarget { Slot = slot, Count = Math.Max(0, count) });
+            }
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     /// <summary>Adds a variant to a meal, or returns null when no meal has that id.</summary>
     /// <exception cref="ArgumentException">The name is blank, or an ingredient to leave out is not the meal's.</exception>
     public async Task<MealVariantView?> CreateVariantAsync(int mealId, MealVariantRequest request, CancellationToken cancellationToken = default)

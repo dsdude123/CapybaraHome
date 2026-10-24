@@ -10,8 +10,9 @@
     <a class="btn btn-primary btn-small" href="meals/new">Create a meal</a>
 </div>
 
-<form method="get" action="meals/plan" class="card" style="margin-bottom:1rem">
-    <h2 class="card-title">How many this time</h2>
+<form method="post" @formname="plan-targets" @onsubmit="SaveTargetsAsync" class="card" style="margin-bottom:1rem">
+    <AntiforgeryToken />
+    <h2 class="card-title">How many each time</h2>
     <div class="filters">
         @foreach (var slot in MealSlotNames.All)
         {
@@ -22,8 +23,8 @@
         }
     </div>
     <div class="row" style="margin-top:0.5rem">
-        <button class="btn" type="submit">Apply</button>
-        <a class="btn" href="meals/plan">Reset</a>
+        <button class="btn" type="submit" name="targets" value="save">Save</button>
+        <button class="btn" type="submit" name="targets" value="reset">Reset</button>
     </div>
 </form>
 
@@ -73,10 +74,6 @@
     <h2 class="card-title">Search meals</h2>
 
     <form method="get" action="meals/plan">
-        @foreach (var slot in MealSlotNames.All)
-        {
-            <input type="hidden" name="@TargetName(slot)" value="@Target(slot)" />
-        }
         <div class="filters">
             <div>
                 <label for="search-text">Search</label>
@@ -125,18 +122,6 @@
 </section>
 
 @code {
-    /// <summary>How many breakfasts to plan, or null for the default.</summary>
-    [SupplyParameterFromQuery(Name = "breakfast")]
-    private int? Breakfast { get; set; }
-
-    /// <summary>How many lunches to plan, or null for the default.</summary>
-    [SupplyParameterFromQuery(Name = "lunch")]
-    private int? Lunch { get; set; }
-
-    /// <summary>How many dinners to plan, or null for the default.</summary>
-    [SupplyParameterFromQuery(Name = "dinner")]
-    private int? Dinner { get; set; }
-
     /// <summary>Text to match when searching for a meal to plan.</summary>
     [SupplyParameterFromQuery(Name = "text")]
     private string? Text { get; set; }
@@ -162,12 +147,14 @@
     private IReadOnlyList<MealPlanOption> review = [];
     private List<MealPlanSlotCount> counts = [];
     private List<int> selectedTags = [];
+    private IReadOnlyDictionary<MealSlot, int> targets = new Dictionary<MealSlot, int>();
     private MealSlot nextSlot = MealSlot.Dinner;
 
     /// <summary>Loads the plan, the search and the meals worth reviewing.</summary>
     protected override async Task OnParametersSetAsync()
     {
         tags = await Tags.ListAsync();
+        targets = await Meals.GetTargetsAsync();
         selectedTags = SelectedTags();
 
         planned = await Meals.ListAsync(
@@ -308,12 +295,34 @@
         Navigation.NavigateTo(Navigation.Uri);
     }
 
-    private int Target(MealSlot slot) => slot switch
+    /// <summary>Stores the counts typed into the form, or clears them so the defaults come back.</summary>
+    private async Task SaveTargetsAsync()
     {
-        MealSlot.Breakfast => Breakfast ?? MealSlotNames.DefaultTarget(slot),
-        MealSlot.Lunch => Lunch ?? MealSlotNames.DefaultTarget(slot),
-        _ => Dinner ?? MealSlotNames.DefaultTarget(slot),
-    };
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        var typed = new Dictionary<MealSlot, int>();
+
+        if (form["targets"] != "reset")
+        {
+            foreach (var slot in MealSlotNames.All)
+            {
+                if (int.TryParse(form[TargetName(slot)], out var count))
+                {
+                    typed[slot] = count;
+                }
+            }
+        }
+
+        await Meals.SaveTargetsAsync(typed);
+        Navigation.NavigateTo(Navigation.Uri);
+    }
+
+    private int Target(MealSlot slot) =>
+        targets.TryGetValue(slot, out var stored) ? stored : MealSlotNames.DefaultTarget(slot);
 
     private static string TargetName(MealSlot slot) => slot switch
     {
@@ -337,9 +346,8 @@
             .ToList();
     }
 
-    /// <summary>Returns a link to this page with the targets kept and the search cleared.</summary>
-    private string PlanLink() =>
-        "meals/plan?" + string.Join("&", MealSlotNames.All.Select(slot => $"{TargetName(slot)}={Target(slot)}"));
+    /// <summary>Returns a link to this page with the search cleared.</summary>
+    private static string PlanLink() => "meals/plan";
 
     private string ChooseLink(MealPlanOption option) =>
         $"meals/plan/choose/{option.MealId}?slot={nextSlot}&return={Uri.EscapeDataString(PlanLink())}";

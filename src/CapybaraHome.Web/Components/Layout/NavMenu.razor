@@ -1,3 +1,5 @@
+@inject NavigationManager Navigation
+
 <nav class="nav-bar">
     <a class="brand" href="">CapybaraHome</a>
 
@@ -12,10 +14,10 @@
             <NavLink class="nav-link" href="tasks">Tasks</NavLink>
         </li>
         <li>
-            <NavLink class="nav-link" href="meals">Meals</NavLink>
+            <a class="nav-link @(OnMeals ? "active" : null)" href="meals">Meals</a>
         </li>
         <li>
-            <NavLink class="nav-link" href="meals/plan">Plan</NavLink>
+            <NavLink class="nav-link" href="meals/plan">Meal Plan</NavLink>
         </li>
         <li>
             <NavLink class="nav-link" href="settings">Settings</NavLink>
@@ -37,3 +39,21 @@
         </AuthorizeView>
     </div>
 </nav>
+
+@code {
+    /// <summary>
+    /// Whether the Meals link is the current one. The planning page lives under the same path but
+    /// has a link of its own, so a plain prefix match would light both of them at once.
+    /// </summary>
+    private bool OnMeals
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].Trim('/');
+            return path.Equals("meals", StringComparison.OrdinalIgnoreCase)
+                || (path.StartsWith("meals/", StringComparison.OrdinalIgnoreCase)
+                    && !path.Equals("meals/plan", StringComparison.OrdinalIgnoreCase)
+                    && !path.StartsWith("meals/plan/", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+}
