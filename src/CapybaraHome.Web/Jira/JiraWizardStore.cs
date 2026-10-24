@@ -33,6 +33,12 @@ public sealed class JiraWizardStore(TimeProvider clock)
 
         /// <summary>The labels found on the chosen project's issues, once they have been read.</summary>
         public IReadOnlyList<string> Labels { get; set; } = [];
+
+        /// <summary>
+        /// The issues the wizard already fetched, kept so the step that sorts the labels and the
+        /// step that imports read one board rather than fetching it twice. The store disposes it.
+        /// </summary>
+        public JiraIssueSnapshot? Snapshot { get; set; }
     }
 
     /// <summary>Keeps a connection and hands back the ticket that finds it again.</summary>
@@ -61,9 +67,9 @@ public sealed class JiraWizardStore(TimeProvider clock)
     /// <summary>Drops an entry, and the credentials in it, as soon as the import is done with them.</summary>
     public void Remove(string? ticket)
     {
-        if (ticket is not null)
+        if (ticket is not null && entries.TryRemove(ticket, out var entry))
         {
-            entries.TryRemove(ticket, out _);
+            entry.Snapshot?.Dispose();
         }
     }
 
@@ -73,9 +79,9 @@ public sealed class JiraWizardStore(TimeProvider clock)
 
         foreach (var (ticket, entry) in entries)
         {
-            if (entry.ExpiresAt <= now)
+            if (entry.ExpiresAt <= now && entries.TryRemove(ticket, out var dropped))
             {
-                entries.TryRemove(ticket, out _);
+                dropped.Snapshot?.Dispose();
             }
         }
     }

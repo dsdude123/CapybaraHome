@@ -149,8 +149,7 @@ public class StaticRenderingTests
                 "updated": "2026-06-01T00:00:00.000+0000" } } ] }
         """;
 
-        // The meal path reads the board twice: once to collect the labels, once to import.
-        var jira = new FakeHttp().Reply(Myself).Reply(Projects).Reply(Count).Reply(Food).Reply(Food);
+        var jira = new FakeHttp().Reply(Myself).Reply(Projects).Reply(Count).Reply(Food);
         await using var app = await AppFactory.CreateAsync(configureServices: services =>
             services.AddHttpClient<JiraCloudClient>().ConfigurePrimaryHttpMessageHandler(jira.Handler));
         var client = Client(app);
@@ -202,6 +201,9 @@ public class StaticRenderingTests
         Assert.Equal(MealStatus.Queued, meal.Status);
         Assert.Equal(new DateOnly(2026, 6, 1), meal.LastCookedAt);
         Assert.Equal(MealTagFacet.Effort, Assert.Single(await tags.ListAsync()).Facet);
+
+        // The labels were sorted against the same board that was imported, read once.
+        Assert.Single(jira.Requests, r => r.RequestUri!.AbsolutePath.Contains("search/jql"));
     }
 
     [Fact]
