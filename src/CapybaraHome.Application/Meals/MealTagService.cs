@@ -17,7 +17,7 @@ public class MealTagService(ICapybaraHomeDbContext context)
             .ToListAsync(cancellationToken);
     }
 
-    /// <summary>Returns the tag with this name, creating it when there is none.</summary>
+    /// <summary>Returns the tag with this name, whatever its case, creating it when there is none.</summary>
     /// <exception cref="ArgumentException">The name is blank.</exception>
     public async Task<MealTagView> EnsureAsync(MealTagRequest request, CancellationToken cancellationToken = default)
     {
@@ -27,7 +27,8 @@ public class MealTagService(ICapybaraHomeDbContext context)
             throw new ArgumentException("A tag needs a name.", nameof(request));
         }
 
-        var existing = await context.MealTags.SingleOrDefaultAsync(t => t.Name == name, cancellationToken);
+        var lowered = name.ToLowerInvariant();
+        var existing = await context.MealTags.SingleOrDefaultAsync(t => t.Name.ToLower() == lowered, cancellationToken);
         if (existing is not null)
         {
             return new MealTagView(existing.Id, existing.Name, existing.Facet);
