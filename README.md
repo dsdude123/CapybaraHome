@@ -60,6 +60,11 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   date, or overdue only.
 - **Create** — the button in the header goes to `/tasks/new`; the same page edits an existing
   task at `/tasks/{id}`.
+- **Automations** (`/automations`) — tasks created on a timer: every day, week, two weeks,
+  month, three months or year, counted from a start date, at a time of day that defaults to
+  midnight. The editor previews the next five executions, and an automation can skip its run
+  while a task with the same title is still open. Times are the server's own clock, so in a
+  container they follow `TZ`. A run missed while the app was down happens once when it is back.
 - **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
@@ -114,8 +119,8 @@ cookie and is not affected by an authenticator.
 - `GET /api/export` downloads the whole database as one JSON document. Settings has the same
   link, and a file picker to load one back in.
 - `POST /api/import?mode=Merge|Replace` reads a document back. A merge matches categories by
-  name and tasks by JIRA key, so re-importing an export of this installation updates rather
-  than duplicates.
+  name, tasks by JIRA key and automations by title, so re-importing an export of this
+  installation updates rather than duplicates.
 - **Import from JIRA** (`/settings/jira`) is a four-step wizard: the address of your JIRA
   Cloud site, the email address of your Atlassian account and an API token; then the project
   to copy, chosen from the ones that account can see; then a confirmation with the issue

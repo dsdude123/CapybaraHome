@@ -4,6 +4,7 @@ using System.Text;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Domain.Meals;
+using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,6 +41,8 @@ public class StaticRenderingTests
     [InlineData("/board")]
     [InlineData("/tasks")]
     [InlineData("/tasks/new")]
+    [InlineData("/automations")]
+    [InlineData("/automations/new")]
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
@@ -62,6 +65,8 @@ public class StaticRenderingTests
     [InlineData("/board")]
     [InlineData("/tasks")]
     [InlineData("/tasks/new")]
+    [InlineData("/automations")]
+    [InlineData("/automations/new")]
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
@@ -894,6 +899,147 @@ public class StaticRenderingTests
         var next = await client.GetStringAsync(skipped.Headers.Location!.OriginalString);
         Assert.Contains("A second meal", next);
         Assert.DoesNotContain("A first meal", next);
+    }
+
+    [Fact]
+    public async Task An_automation_is_created_edited_and_deleted_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var created = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = "Take the bins out",
+            ["form.Notes"] = "Green bin this week",
+            ["form.Frequency"] = nameof(TaskAutomationFrequency.BiWeekly),
+            ["form.StartsOn"] = "2026-11-02",
+            ["form.TimeOfDay"] = "07:30",
+            ["form.CategoryId"] = string.Empty,
+            ["form.SkipWhenOpenTaskExists"] = "true",
+            ["form.IsEnabled"] = "true",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
+        var editor = created.Headers.Location!.OriginalString;
+
+        int id;
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var automation = await context.TaskAutomations.SingleAsync();
+            id = automation.Id;
+
+            Assert.Equal("Take the bins out", automation.Title);
+            Assert.Equal("Green bin this week", automation.Notes);
+            Assert.Equal(TaskAutomationFrequency.BiWeekly, automation.Frequency);
+            Assert.Equal(new DateOnly(2026, 11, 2), automation.StartsOn);
+            Assert.Equal(new TimeOnly(7, 30), automation.TimeOfDay);
+            Assert.True(automation.SkipWhenOpenTaskExists);
+        }
+
+        // The list shows it with the interval it keeps and the execution it is waiting for.
+        var list = await client.GetStringAsync("/automations");
+        Assert.Contains("Take the bins out", list);
+        Assert.Contains("Every two weeks", list);
+        Assert.Contains("Never run", list);
+
+        var edited = await PostAsync(client, editor, "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = "Take the bins out and rinse them",
+            ["form.Notes"] = string.Empty,
+            ["form.Frequency"] = nameof(TaskAutomationFrequency.Monthly),
+            ["form.StartsOn"] = "2026-12-01",
+            ["form.TimeOfDay"] = "00:00",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, edited.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var automation = await context.TaskAutomations.SingleAsync();
+
+            Assert.Equal("Take the bins out and rinse them", automation.Title);
+            Assert.Null(automation.Notes);
+            Assert.Equal(TaskAutomationFrequency.Monthly, automation.Frequency);
+
+            // An unticked checkbox posts nothing, which has to read as off rather than as unset.
+            Assert.False(automation.SkipWhenOpenTaskExists);
+        }
+
+        var deleted = await PostAsync(client, $"/automations/{id}", "automation-delete", []);
+
+        Assert.Equal(HttpStatusCode.Redirect, deleted.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            Assert.Empty(context.TaskAutomations);
+        }
+    }
+
+    [Theory]
+    [InlineData(TaskAutomationFrequency.Daily)]
+    [InlineData(TaskAutomationFrequency.Weekly)]
+    [InlineData(TaskAutomationFrequency.BiWeekly)]
+    [InlineData(TaskAutomationFrequency.Monthly)]
+    [InlineData(TaskAutomationFrequency.Quarterly)]
+    [InlineData(TaskAutomationFrequency.Yearly)]
+    public async Task The_preview_button_shows_every_frequencys_executions_without_saving(TaskAutomationFrequency frequency)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "preview",
+            ["form.Title"] = "Still being set up",
+            ["form.Frequency"] = frequency.ToString(),
+            ["form.StartsOn"] = "2026-11-02",
+            ["form.TimeOfDay"] = "06:00",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        var html = await posted.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("Next executions", html);
+        Assert.Contains("November 2, 2026 at 6:00 AM", html);
+
+        // The typed title comes back with the page, and nothing was saved.
+        Assert.Contains("Still being set up", html);
+
+        using var scope = app.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+        Assert.Empty(context.TaskAutomations);
+    }
+
+    [Fact]
+    public async Task A_blank_title_comes_back_as_an_error_on_the_editor()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = "   ",
+            ["form.Frequency"] = nameof(TaskAutomationFrequency.Weekly),
+            ["form.StartsOn"] = "2026-11-02",
+            ["form.TimeOfDay"] = "00:00",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        var html = await posted.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("An automation needs a title", html);
     }
 
     private static IEnumerable<string> Forms(string html)

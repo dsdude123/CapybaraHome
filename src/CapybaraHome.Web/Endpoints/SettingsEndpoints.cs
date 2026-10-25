@@ -41,8 +41,9 @@ public static class SettingsEndpoints
             {
                 var summary = await service.ImportFromJsonAsync(json, mode ?? ImportMode.Merge, cancellationToken);
                 return Back(message:
-                    $"Added {summary.CategoriesAdded} categories, {summary.TasksAdded} tasks, {summary.MealsAdded} meals "
-                    + $"and {summary.CardsAdded} cards; updated {summary.TasksUpdated} tasks and {summary.MealsUpdated} meals.");
+                    $"Added {summary.CategoriesAdded} categories, {summary.TasksAdded} tasks, {summary.MealsAdded} meals, "
+                    + $"{summary.AutomationsAdded} automations and {summary.CardsAdded} cards; updated "
+                    + $"{summary.TasksUpdated} tasks, {summary.MealsUpdated} meals and {summary.AutomationsUpdated} automations.");
             }
             catch (Exception ex) when (ex is InvalidOperationException or System.Text.Json.JsonException)
             {

@@ -12,6 +12,7 @@ namespace CapybaraHome.Application.DataTransfer;
 /// <param name="DashboardCards">Every dashboard card.</param>
 /// <param name="Meals">Every meal. Absent from a version 1 document, which carried no meals.</param>
 /// <param name="MealTags">Every meal tag. Absent from a version 1 document.</param>
+/// <param name="TaskAutomations">Every task automation. Absent from a document before version 3.</param>
 public record BackupDocument(
     int FormatVersion,
     DateTimeOffset ExportedAt,
@@ -19,10 +20,11 @@ public record BackupDocument(
     IReadOnlyList<TaskRecord> Tasks,
     IReadOnlyList<DashboardCardRecord> DashboardCards,
     IReadOnlyList<MealRecord>? Meals = null,
-    IReadOnlyList<MealTagRecord>? MealTags = null)
+    IReadOnlyList<MealTagRecord>? MealTags = null,
+    IReadOnlyList<TaskAutomationRecord>? TaskAutomations = null)
 {
     /// <summary>The version this build writes.</summary>
-    public const int CurrentFormatVersion = 2;
+    public const int CurrentFormatVersion = 3;
 
     /// <summary>The oldest version this build still reads, from before meals existed.</summary>
     public const int OldestReadableFormatVersion = 1;
@@ -111,6 +113,33 @@ public record TaskRecord(
     DateOnly? DueDate,
     DateTimeOffset? CompletedAt,
     string? JiraKey,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>A task automation in an export.</summary>
+/// <param name="Title">Title it gives the tasks it creates.</param>
+/// <param name="Notes">Notes it copies onto them.</param>
+/// <param name="CategoryId">Category they were filed under, or null.</param>
+/// <param name="Frequency">How often it runs.</param>
+/// <param name="StartsOn">Day the interval is counted from.</param>
+/// <param name="TimeOfDay">Time of day each run happens at.</param>
+/// <param name="SkipWhenOpenTaskExists">Whether a run does nothing when a task with the same title is already open.</param>
+/// <param name="IsEnabled">Whether it runs at all.</param>
+/// <param name="LastRunAt">When it last ran, or null.</param>
+/// <param name="LastRunSkipped">Whether that run skipped its task.</param>
+/// <param name="CreatedAt">When it was created.</param>
+/// <param name="UpdatedAt">When it last changed.</param>
+public record TaskAutomationRecord(
+    string Title,
+    string? Notes,
+    int? CategoryId,
+    TaskAutomationFrequency Frequency,
+    DateOnly StartsOn,
+    TimeOnly TimeOfDay,
+    bool SkipWhenOpenTaskExists,
+    bool IsEnabled,
+    DateTimeOffset? LastRunAt,
+    bool LastRunSkipped,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 

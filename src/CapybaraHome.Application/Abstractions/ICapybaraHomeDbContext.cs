@@ -15,6 +15,9 @@ public interface ICapybaraHomeDbContext
     /// <summary>Tasks.</summary>
     DbSet<TaskItem> Tasks { get; }
 
+    /// <summary>Rules that create tasks on a timer.</summary>
+    DbSet<TaskAutomation> TaskAutomations { get; }
+
     /// <summary>Meals.</summary>
     DbSet<Meal> Meals { get; }
 

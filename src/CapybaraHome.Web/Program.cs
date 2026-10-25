@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using CapybaraHome.Application;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.DataTransfer;
+using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
 using CapybaraHome.Infrastructure;
 using CapybaraHome.Infrastructure.Persistence;
@@ -30,6 +31,7 @@ builder.Services.AddInfrastructure(
 
 builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(BackupOptions.SectionName));
 builder.Services.AddHostedService<ScheduledBackupService>();
+builder.Services.AddHostedService<TaskAutomationRunner>();
 
 // The wizard's pages render statically, so what step one learned is held here between posts.
 builder.Services.AddSingleton<JiraWizardStore>();
