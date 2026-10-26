@@ -1027,6 +1027,78 @@ public class StaticRenderingTests
     }
 
     [Fact]
+    public async Task The_automation_list_says_its_piece_for_every_state_a_row_can_be_in()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        // Seeded through the context rather than the service, because the stamps a row's labels
+        // read — when it was created, when it last ran — are not things a caller gets to set.
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var longAgo = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+            context.TaskAutomations.AddRange(
+                Row("No offset", longAgo, dueInDays: null),
+                Row("Same day", longAgo, dueInDays: 0),
+                Row("Next day", longAgo, dueInDays: 1),
+                Row("A fortnight", longAgo, dueInDays: 14),
+                Row("Paused one", longAgo, isEnabled: false),
+                Row("Ran cleanly", longAgo, lastRunAt: longAgo.AddDays(1)),
+                Row("Stood down", longAgo, lastRunAt: longAgo.AddDays(1), lastRunSkipped: true),
+                // Counted yearly from the last day the calendar has, so there is no next one.
+                Row("Off the end", new DateTimeOffset(9999, 12, 31, 23, 59, 0, TimeSpan.Zero),
+                    startsOn: DateOnly.MaxValue),
+                Row("Still to come", DateTimeOffset.UtcNow, startsOn: DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1)));
+
+            await context.SaveChangesAsync();
+        }
+
+        var html = await client.GetStringAsync("/automations");
+
+        // Every arm of the due-date label.
+        Assert.Contains("No due date", html);
+        Assert.Contains("Due the day it is created", html);
+        Assert.Contains("Due the day after it is created", html);
+        Assert.Contains("Due 14 days after it is created", html);
+
+        // Paused shows both as a pill on the title line and as the row's next execution.
+        Assert.Contains(">Paused</span>", html);
+        Assert.Contains("Paused, nothing scheduled", html);
+
+        // A schedule with nothing left, one that is overdue, and one still waiting.
+        Assert.Contains("No further executions", html);
+        Assert.Contains("Due, runs at the next check", html);
+        Assert.Contains("Next ", html);
+
+        // Never run, run, and run but stood down.
+        Assert.Contains("Never run", html);
+        Assert.Contains("Last run ", html);
+        Assert.Contains(", skipped", html);
+    }
+
+    private static Domain.Tasks.TaskAutomation Row(
+        string title,
+        DateTimeOffset createdAt,
+        DateOnly startsOn = default,
+        int? dueInDays = null,
+        bool isEnabled = true,
+        DateTimeOffset? lastRunAt = null,
+        bool lastRunSkipped = false) => new()
+        {
+            Title = title,
+            Frequency = startsOn == DateOnly.MaxValue ? TaskAutomationFrequency.Yearly : TaskAutomationFrequency.Daily,
+            StartsOn = startsOn == default ? DateOnly.FromDateTime(createdAt.UtcDateTime) : startsOn,
+            DueInDays = dueInDays,
+            IsEnabled = isEnabled,
+            LastRunAt = lastRunAt,
+            LastRunSkipped = lastRunSkipped,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+        };
+
+    [Fact]
     public async Task A_due_date_before_the_task_is_created_comes_back_as_an_error_on_the_editor()
     {
         await using var app = await AppFactory.CreateAsync();
