@@ -38,12 +38,16 @@ dotnet test --settings .github/coverage.runsettings --results-directory ./covera
 ```
 
 Every pull request gets a comment with line and branch coverage on the branch against the
-latest `main` build, broken down by assembly and by file. It comes from the `Build`
-workflow: a push to `main` records its cobertura report on the orphan `coverage-baseline`
-branch, one `<branch>.tar.gz` force-pushed over the last, and a pull request reads the
-archive for its base branch from there. The branch is used rather than a build artifact
-because artifacts on a public repository expire after at most 90 days, which would lose the
-baseline over a long quiet spell.
+commit it branched from, broken down by assembly and by file. The `Build` workflow measures
+both sides in the one run: the branch as it builds anyway, and the merge base with the
+pull request's own base branch in a `git worktree` beside it. Nothing is stored between
+runs, so a pull request stacked on another branch is compared against that branch rather
+than against `main`, at any depth.
+
+That costs a second build and test run per pull request. It is the price of the stacked
+case working: a stored baseline can only be recorded for branches that are pushed to, and
+the orphan `coverage-baseline` branch this replaces only ever held `main`, so every stacked
+pull request read `n/a`.
 
 ## Screens
 

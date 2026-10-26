@@ -193,8 +193,8 @@ def build(base, head, base_label):
     parts = [MARKER, "### Test coverage", ""]
     if base is None:
         parts.append(
-            f"No coverage report was found for `{base_label}`, so this run has nothing to "
-            "compare against. The next push to that branch will record one."
+            "The base commit's coverage could not be measured, so there is nothing to "
+            "compare against. The run log for this check says why."
         )
         parts.append("")
     parts.append(overall_table(base, head))
@@ -215,10 +215,7 @@ def build(base, head, base_label):
         parts.append("")
         parts.append("</details>")
     parts.append("")
-    parts.append(
-        f"Collected with coverlet via `dotnet test`. Base is the latest successful "
-        f"`{base_label}` build."
-    )
+    parts.append(f"Collected with coverlet via `dotnet test`. Base is {base_label}.")
     return "\n".join(parts) + "\n"
 
 
@@ -227,7 +224,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--head", required=True)
     parser.add_argument("--base")
-    parser.add_argument("--base-label", default="main")
+    parser.add_argument("--base-label", default="the base commit")
     parser.add_argument("--out", required=True)
     arguments = parser.parse_args()
 
