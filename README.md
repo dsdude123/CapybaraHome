@@ -37,13 +37,20 @@ For a coverage report locally, the same settings CI uses:
 dotnet test --settings .github/coverage.runsettings --results-directory ./coverage
 ```
 
-Every pull request gets a comment with line and branch coverage on the branch against the
-latest `main` build, broken down by assembly and by file. It comes from the `Build`
-workflow: a push to `main` records its cobertura report on the orphan `coverage-baseline`
-branch, one `<branch>.tar.gz` force-pushed over the last, and a pull request reads the
-archive for its base branch from there. The branch is used rather than a build artifact
-because artifacts on a public repository expire after at most 90 days, which would lose the
-baseline over a long quiet spell.
+Every pull request gets a comment with line and branch coverage, broken down by assembly
+and by file, against the current tip of the branch it would merge into. The `Build`
+workflow measures both sides in the one run: the pull request as GitHub already builds it,
+which is the branch merged into that tip, and the tip on its own in a `git worktree`
+beside it. The two sides therefore differ by exactly the pull request's own commits, and a
+pull request stacked on another branch is compared against that branch, at any depth.
+
+Both figures are measured from source every run, so there is no stored baseline that can
+fall behind the branch it claims to describe.
+
+That costs a second build and test run per pull request. It is the price of the stacked
+case working: a stored baseline can only be recorded for branches that are pushed to, so
+the orphan `coverage-baseline` branch this replaces only ever held `main`, and every
+stacked pull request read `n/a`.
 
 ## Screens
 
