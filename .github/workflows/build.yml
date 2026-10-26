@@ -44,8 +44,7 @@ jobs:
             echo "No merge base with ${BASE_REF}."
             exit 0
           }
-          echo "BASE_LABEL=the merge base with \`${BASE_REF}\`, commit \`${base:0:7}\`" \
-            >> "$GITHUB_ENV"
+          echo "COVERAGE_BASE_SHA=${base}" >> "$GITHUB_ENV"
           git worktree add -q --detach "${RUNNER_TEMP}/base-src" "$base"
           dotnet test "${RUNNER_TEMP}/base-src" --configuration Release \
             --settings "${GITHUB_WORKSPACE}/.github/coverage.runsettings" \
@@ -54,12 +53,15 @@ jobs:
 
       - name: Build the coverage report
         if: github.event_name == 'pull_request'
-        run: >
-          python3 .github/scripts/coverage_report.py
-          --head ${{ runner.temp }}/coverage
-          --base ${{ runner.temp }}/coverage-base
-          --base-label "${{ env.BASE_LABEL }}"
-          --out ${{ runner.temp }}/coverage.md
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          python3 .github/scripts/coverage_report.py \
+            --head "${RUNNER_TEMP}/coverage" \
+            --base "${RUNNER_TEMP}/coverage-base" \
+            --base-ref "$BASE_REF" \
+            --base-sha "${COVERAGE_BASE_SHA:-}" \
+            --out "${RUNNER_TEMP}/coverage.md"
 
       - name: Comment the coverage report on the pull request
         if: >
