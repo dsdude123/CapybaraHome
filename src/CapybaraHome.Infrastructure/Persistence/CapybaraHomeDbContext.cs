@@ -20,6 +20,12 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Rules that create tasks on a timer.</summary>
     public DbSet<TaskAutomation> TaskAutomations => Set<TaskAutomation>();
 
+    /// <summary>Things that happen when a task is completed.</summary>
+    public DbSet<TaskCloseOperation> TaskCloseOperations => Set<TaskCloseOperation>();
+
+    /// <summary>What one completion asked of one of those operations.</summary>
+    public DbSet<TaskCloseOperationRun> TaskCloseOperationRuns => Set<TaskCloseOperationRun>();
+
     /// <summary>Meals.</summary>
     public DbSet<Meal> Meals => Set<Meal>();
 

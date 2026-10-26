@@ -11,6 +11,12 @@ public sealed class FakeHttp
     /// <summary>The requests the client has sent, in order.</summary>
     public List<HttpRequestMessage> Requests { get; } = [];
 
+    /// <summary>
+    /// The bodies of those requests, in the same order, with an empty string where there was no
+    /// body. They are read here because the client disposes a request's content once it is sent.
+    /// </summary>
+    public List<string> Bodies { get; } = [];
+
     /// <summary>The header value on the last request, if there was one.</summary>
     public string? LastAuthorization => Requests.LastOrDefault()?.Headers.Authorization?.ToString();
 
@@ -29,15 +35,16 @@ public sealed class FakeHttp
 
     private sealed class FakeHandler(FakeHttp owner) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             owner.Requests.Add(request);
+            owner.Bodies.Add(request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken));
 
             var (status, body) = owner.replies.Count > 1 ? owner.replies.Dequeue() : owner.replies.Peek();
-            return Task.FromResult(new HttpResponseMessage(status)
+            return new HttpResponseMessage(status)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
-            });
+            };
         }
     }
 }

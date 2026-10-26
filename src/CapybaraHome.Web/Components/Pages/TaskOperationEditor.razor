@@ -1,0 +1,339 @@
+@page "/tasks/{TaskId:int}/operations/new"
+@page "/tasks/{TaskId:int}/operations/{Id:int}"
+@inject TaskService Tasks
+@inject TaskCloseOperationService CloseOperations
+@inject TimeProvider Clock
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "Add an operation" : "Edit an operation")</PageTitle>
+
+<h1>@(Id is null ? "Add an operation" : "Edit an operation")</h1>
+
+@if (task is null)
+{
+    <p class="muted">That task no longer exists.</p>
+}
+else if (kind is null)
+{
+    <p class="muted">
+        Pick what should happen when <strong>@task.Title</strong> is moved to done. A task can have
+        as many operations as you need, and they run in the order you add them.
+    </p>
+
+    <div class="card">
+        <ul class="task-list">
+            @foreach (var kind in CloseOperationNames.AllKinds)
+            {
+                <li>
+                    <div class="task-line">
+                        <a class="task-link" href="@($"tasks/{TaskId}/operations/new?kind={kind}")">@CloseOperationNames.Label(kind)</a>
+                    </div>
+                    <div class="task-meta">
+                        <span>@CloseOperationNames.Description(kind)</span>
+                    </div>
+                </li>
+            }
+        </ul>
+    </div>
+
+    <div class="row" style="margin-top:0.75rem">
+        <a class="btn" href="@($"tasks/{TaskId}")">Cancel</a>
+    </div>
+}
+else
+{
+    <p class="muted">
+        @CloseOperationNames.Label(kind.Value) when <strong>@task.Title</strong> is moved to done.
+        @if (Id is not null)
+        {
+            <span>To run something else instead, remove this operation and add the other one.</span>
+        }
+    </p>
+
+    <EditForm Model="form" FormName="operation-editor" OnValidSubmit="SubmitAsync">
+
+        @if (kind == TaskCloseOperationKind.Webhook)
+        {
+            <div class="field">
+                <label for="operation-url">URL</label>
+                <InputText id="operation-url" type="url" @bind-Value="form.WebhookUrl" placeholder="https://" />
+            </div>
+
+            <div class="field">
+                <label for="operation-method">How to call it</label>
+                <InputSelect id="operation-method" @bind-Value="form.WebhookMethod">
+                    @foreach (var method in CloseOperationNames.AllMethods)
+                    {
+                        <option value="@method">@CloseOperationNames.Label(method)</option>
+                    }
+                </InputSelect>
+            </div>
+
+            <p class="muted">
+                A POST carries the task's title, notes, category, due date and completion time as
+                JSON. Redirects are not followed, and the server itself and link-local addresses
+                cannot be called.
+            </p>
+        }
+
+        @if (kind == TaskCloseOperationKind.CreateTask)
+        {
+            <div class="field">
+                <label for="operation-title">Title of the new task</label>
+                <InputText id="operation-title" type="text" @bind-Value="form.FollowUpTitle" placeholder="@task.Title" />
+            </div>
+
+            <div class="filters">
+                <div class="field">
+                    <label for="operation-due-mode">Due</label>
+                    <InputSelect id="operation-due-mode" @bind-Value="form.DueDateMode">
+                        @foreach (var mode in CloseOperationNames.AllDueDateModes)
+                        {
+                            <option value="@mode">@CloseOperationNames.Label(mode)</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="field">
+                    <label for="operation-due-value">How many</label>
+                    <InputNumber id="operation-due-value" @bind-Value="form.DueDateValue" />
+                </div>
+
+                <div class="field">
+                    <label for="operation-due-on">On this date</label>
+                    <InputDate id="operation-due-on" @bind-Value="form.DueDateOn" />
+                </div>
+            </div>
+
+            <fieldset class="check-list">
+                <legend>Options</legend>
+                <label for="operation-carry">
+                    <InputCheckbox id="operation-carry" @bind-Value="form.CarryOperationsForward" />
+                    Give the new task the same operations, so completing it sets the next one again
+                </label>
+            </fieldset>
+
+            <p class="muted">@Preview()</p>
+        }
+
+        @if (kind == TaskCloseOperationKind.PrintDocument)
+        {
+            <div class="field">
+                <label for="operation-document-title">Heading</label>
+                <InputText id="operation-document-title" type="text" @bind-Value="form.DocumentTitle" placeholder="@task.Title" />
+            </div>
+
+            <div class="field">
+                <label for="operation-document-body">Body</label>
+                <InputTextArea id="operation-document-body" @bind-Value="form.DocumentBody" placeholder="The task's description" />
+            </div>
+
+            <p class="muted">
+                The document is listed under Documents, where it opens on a page laid out to print.
+                CapybaraHome has no printer of its own, so printing is your browser's print dialog.
+            </p>
+        }
+
+        <fieldset class="check-list">
+            <legend>Runs</legend>
+            <label for="operation-enabled">
+                <InputCheckbox id="operation-enabled" @bind-Value="form.IsEnabled" />
+                Run this operation when the task is completed
+            </label>
+        </fieldset>
+
+        @if (error is not null)
+        {
+            <p class="error">@error</p>
+        }
+
+        <div class="row">
+            <button class="btn btn-primary" type="submit" name="form.Action" value="save">Save</button>
+            @if (kind == TaskCloseOperationKind.CreateTask)
+            {
+                <button class="btn" type="submit" name="form.Action" value="preview">Update preview</button>
+            }
+            <a class="btn" href="@($"tasks/{TaskId}")">Cancel</a>
+        </div>
+    </EditForm>
+}
+
+@code {
+    /// <summary>Task the operation belongs to.</summary>
+    [Parameter]
+    public int TaskId { get; set; }
+
+    /// <summary>Id of the operation being edited, or null when adding one.</summary>
+    [Parameter]
+    public int? Id { get; set; }
+
+    /// <summary>
+    /// Kind being added, as the chooser's links name it. A query string parameter can only be one
+    /// of the types the framework binds, which does not include an enum, so the name arrives as
+    /// text and is read into <see cref="kind"/>.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "kind")]
+    public string? KindName { get; set; }
+
+    [SupplyParameterFromForm(Name = "form")]
+    private OperationForm? postedForm { get; set; }
+
+    private OperationForm form = new();
+    private TaskCloseOperationKind? kind;
+    private TaskView? task;
+    private string? error;
+
+    /// <summary>Loads the task and fills the form, either from the posted values or from the operation.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        task = await Tasks.GetAsync(TaskId);
+        if (task is null)
+        {
+            return;
+        }
+
+        kind = Enum.TryParse<TaskCloseOperationKind>(KindName, out var named) ? named : null;
+
+        // A post carries the edited values; anything else means the form is being opened fresh.
+        if (postedForm is not null)
+        {
+            form = postedForm;
+            return;
+        }
+
+        if (Id is null)
+        {
+            form = new OperationForm();
+            return;
+        }
+
+        var operation = await CloseOperations.GetAsync(Id.Value);
+        if (operation is null || operation.TaskId != TaskId)
+        {
+            Navigation.NavigateTo($"tasks/{TaskId}");
+            return;
+        }
+
+        // An existing operation keeps the kind it was saved with, so the query string does not
+        // decide which fields are shown for it.
+        kind = operation.Kind;
+        form = new OperationForm
+        {
+            WebhookUrl = operation.WebhookUrl ?? string.Empty,
+            WebhookMethod = operation.WebhookMethod,
+            FollowUpTitle = operation.FollowUpTitle ?? string.Empty,
+            DueDateMode = operation.DueDateMode,
+            DueDateValue = operation.DueDateValue,
+            DueDateOn = operation.DueDateOn?.ToDateTime(TimeOnly.MinValue),
+            CarryOperationsForward = operation.CarryOperationsForward,
+            DocumentTitle = operation.DocumentTitle ?? string.Empty,
+            DocumentBody = operation.DocumentBody ?? string.Empty,
+            IsEnabled = operation.IsEnabled,
+        };
+    }
+
+    /// <summary>Returns the line that says what due date the rule would give a task completed today.</summary>
+    private string Preview()
+    {
+        var today = DateOnly.FromDateTime(Clock.GetUtcNow().UtcDateTime);
+        var due = TaskDueDate.Resolve(form.DueDateMode, form.DueDateValue, DueOn(), today);
+
+        if (TaskDueDate.Validate(form.DueDateMode, form.DueDateValue, DueOn()) is { } problem)
+        {
+            return problem;
+        }
+
+        return due is { } date
+            ? $"Completed today, the new task would be due {DateNames.Long(date)}."
+            : "The new task would have no due date.";
+    }
+
+    /// <summary>Saves, or re-renders so the preview is of the posted values.</summary>
+    private async Task SubmitAsync()
+    {
+        if (string.Equals(form.Action, "preview", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        error = null;
+
+        try
+        {
+            if (Id is null)
+            {
+                await CloseOperations.CreateAsync(TaskId, new CreateTaskCloseOperationRequest(
+                    kind ?? TaskCloseOperationKind.CreateTask,
+                    form.WebhookUrl,
+                    form.WebhookMethod,
+                    form.FollowUpTitle,
+                    form.DueDateMode,
+                    form.DueDateValue,
+                    DueOn(),
+                    form.CarryOperationsForward,
+                    form.DocumentTitle,
+                    form.DocumentBody,
+                    form.IsEnabled));
+            }
+            else
+            {
+                await CloseOperations.UpdateAsync(Id.Value, new UpdateTaskCloseOperationRequest(
+                    WebhookUrl: form.WebhookUrl ?? string.Empty,
+                    WebhookMethod: form.WebhookMethod,
+                    FollowUpTitle: form.FollowUpTitle ?? string.Empty,
+                    DueDateMode: form.DueDateMode,
+                    DueDateValue: form.DueDateValue,
+                    DueDateOn: DueOn(),
+                    CarryOperationsForward: form.CarryOperationsForward,
+                    DocumentTitle: form.DocumentTitle ?? string.Empty,
+                    DocumentBody: form.DocumentBody ?? string.Empty,
+                    IsEnabled: form.IsEnabled));
+            }
+
+            Navigation.NavigateTo($"tasks/{TaskId}");
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private DateOnly? DueOn() => form.DueDateOn is { } value ? DateOnly.FromDateTime(value) : null;
+
+    /// <summary>What the editor posts back.</summary>
+    private class OperationForm
+    {
+        /// <summary>URL a webhook calls.</summary>
+        public string? WebhookUrl { get; set; }
+
+        /// <summary>Method it is sent with.</summary>
+        public TaskWebhookMethod WebhookMethod { get; set; } = TaskWebhookMethod.Post;
+
+        /// <summary>Title to give the created task, or empty to reuse this task's.</summary>
+        public string? FollowUpTitle { get; set; }
+
+        /// <summary>How the created task's due date is worked out.</summary>
+        public TaskDueDateMode DueDateMode { get; set; } = TaskDueDateMode.None;
+
+        /// <summary>How many days, weeks, months or years later it is due.</summary>
+        public int? DueDateValue { get; set; }
+
+        /// <summary>Day it is due when that is picked by hand.</summary>
+        public DateTime? DueDateOn { get; set; }
+
+        /// <summary>Whether the created task gets the same operations.</summary>
+        public bool CarryOperationsForward { get; set; } = true;
+
+        /// <summary>Heading to give the produced document, or empty to reuse the task's title.</summary>
+        public string? DocumentTitle { get; set; }
+
+        /// <summary>Body of the produced document, or empty to reuse the task's notes.</summary>
+        public string? DocumentBody { get; set; }
+
+        /// <summary>Whether the operation runs at all.</summary>
+        public bool IsEnabled { get; set; } = true;
+
+        /// <summary>Which button was pressed: <c>save</c>, or <c>preview</c> to re-render only.</summary>
+        public string? Action { get; set; }
+    }
+}

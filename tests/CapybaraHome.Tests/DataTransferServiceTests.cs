@@ -14,7 +14,7 @@ public class DataTransferServiceTests
     public async Task An_export_imported_into_an_empty_database_restores_what_was_there()
     {
         await using var source = await TestDatabase.CreateAsync();
-        var tasks = new TaskService(source.Context, source.Clock);
+        var tasks = source.Tasks();
         var categories = new CategoryService(source.Context);
         var category = await categories.CreateAsync(new CategoryRequest("Garage", "#A8D5BA", 3));
         await tasks.CreateAsync(new CreateTaskRequest("Clear the shelves", "with the ladder", TaskItemStatus.InProgress, category.Id, new DateOnly(2026, 12, 1)));
@@ -27,13 +27,55 @@ public class DataTransferServiceTests
         Assert.Equal(1, summary.CategoriesAdded);
         Assert.Equal(1, summary.TasksAdded);
 
-        var restored = await new TaskService(target.Context, target.Clock).ListAsync(new TaskFilter());
+        var restored = await target.Tasks().ListAsync(new TaskFilter());
         var restoredTask = Assert.Single(restored);
         Assert.Equal("Clear the shelves", restoredTask.Title);
         Assert.Equal("with the ladder", restoredTask.Notes);
         Assert.Equal(TaskItemStatus.InProgress, restoredTask.Status);
         Assert.Equal(new DateOnly(2026, 12, 1), restoredTask.DueDate);
         Assert.Equal("Garage", restoredTask.CategoryName);
+    }
+
+    [Fact]
+    public async Task A_task_carries_its_close_operations_through_an_export_and_back()
+    {
+        await using var source = await TestDatabase.CreateAsync();
+        var task = await source.Tasks().CreateAsync(new CreateTaskRequest("Bleed the radiators"));
+        var operations = source.CloseOperations();
+
+        await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(
+            TaskCloseOperationKind.CreateTask,
+            FollowUpTitle: "Bleed them again",
+            DueDateMode: TaskDueDateMode.InMonths,
+            DueDateValue: 12,
+            CarryOperationsForward: false));
+
+        await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(
+            TaskCloseOperationKind.Webhook,
+            WebhookUrl: "https://hooks.example.com/radiators",
+            WebhookMethod: TaskWebhookMethod.Get,
+            IsEnabled: false));
+
+        var json = await new DataTransferService(source.Context, source.Clock).ExportToJsonAsync();
+
+        await using var target = await TestDatabase.CreateAsync();
+        await new DataTransferService(target.Context, target.Clock).ImportFromJsonAsync(json, ImportMode.Merge);
+
+        var restoredTask = Assert.Single(await target.Tasks().ListAsync(new TaskFilter()));
+        var restored = await target.CloseOperations().ListAsync(restoredTask.Id);
+
+        Assert.Equal(2, restored.Count);
+
+        var followUp = Assert.Single(restored, o => o.Kind == TaskCloseOperationKind.CreateTask);
+        Assert.Equal("Bleed them again", followUp.FollowUpTitle);
+        Assert.Equal(TaskDueDateMode.InMonths, followUp.DueDateMode);
+        Assert.Equal(12, followUp.DueDateValue);
+        Assert.False(followUp.CarryOperationsForward);
+
+        var webhook = Assert.Single(restored, o => o.Kind == TaskCloseOperationKind.Webhook);
+        Assert.Equal("https://hooks.example.com/radiators", webhook.WebhookUrl);
+        Assert.Equal(TaskWebhookMethod.Get, webhook.WebhookMethod);
+        Assert.False(webhook.IsEnabled);
     }
 
     [Fact]
@@ -254,7 +296,7 @@ public class DataTransferServiceTests
         var categories = new CategoryService(source.Context);
         var category = await categories.CreateAsync(new CategoryRequest("Garden"));
         var automations = new TaskAutomationService(
-            source.Context, new TaskService(source.Context, source.Clock), source.Clock);
+            source.Context, source.Tasks(), source.Clock);
 
         await automations.CreateAsync(new CreateTaskAutomationRequest(
             "Water the tomatoes",
@@ -275,7 +317,7 @@ public class DataTransferServiceTests
         Assert.Equal(1, first.AutomationsAdded);
 
         var restored = Assert.Single(await new TaskAutomationService(
-            target.Context, new TaskService(target.Context, target.Clock), target.Clock).ListAsync());
+            target.Context, target.Tasks(), target.Clock).ListAsync());
 
         Assert.Equal("Water the tomatoes", restored.Title);
         Assert.Equal("The ones in the greenhouse", restored.Notes);

@@ -11,7 +11,7 @@ public class TaskServiceTests
     public async Task Creating_a_task_trims_the_title_and_starts_it_to_do()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
 
         var created = await service.CreateAsync(new CreateTaskRequest("  Mow the lawn  "));
 
@@ -24,7 +24,7 @@ public class TaskServiceTests
     public async Task A_blank_title_is_refused()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
 
         await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(new CreateTaskRequest("   ")));
     }
@@ -33,7 +33,7 @@ public class TaskServiceTests
     public async Task Moving_a_task_to_done_stamps_when_it_finished_and_moving_it_back_clears_that()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         var created = await service.CreateAsync(new CreateTaskRequest("Fix the gate"));
 
         var done = await service.UpdateAsync(created.Id, new UpdateTaskRequest(Status: TaskItemStatus.Done));
@@ -47,7 +47,7 @@ public class TaskServiceTests
     public async Task A_listing_defaults_to_the_earliest_due_date_with_the_undated_last()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         var today = DateOnly.FromDateTime(db.Clock.GetUtcNow().UtcDateTime);
 
         await service.CreateAsync(new CreateTaskRequest("No date"));
@@ -63,7 +63,7 @@ public class TaskServiceTests
     public async Task The_latest_due_date_first_still_puts_the_undated_last()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         var today = DateOnly.FromDateTime(db.Clock.GetUtcNow().UtcDateTime);
 
         await service.CreateAsync(new CreateTaskRequest("No date"));
@@ -79,7 +79,7 @@ public class TaskServiceTests
     public async Task Sorting_by_what_changed_last_puts_the_newest_change_first()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         var first = await service.CreateAsync(new CreateTaskRequest("Older"));
         await service.CreateAsync(new CreateTaskRequest("Newer"));
 
@@ -95,7 +95,7 @@ public class TaskServiceTests
     public async Task Sorting_by_title_runs_both_ways()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
 
         await service.CreateAsync(new CreateTaskRequest("Beta"));
         await service.CreateAsync(new CreateTaskRequest("Alpha"));
@@ -111,7 +111,7 @@ public class TaskServiceTests
     public async Task Sorting_by_category_leaves_the_uncategorized_last()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         var categories = new CategoryService(db.Context);
         var second = await categories.CreateAsync(new CategoryRequest("Bravo"));
         var first = await categories.CreateAsync(new CategoryRequest("Alpha"));
@@ -129,7 +129,7 @@ public class TaskServiceTests
     public async Task Filtering_by_days_away_keeps_only_the_tasks_due_inside_the_window()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         var today = DateOnly.FromDateTime(db.Clock.GetUtcNow().UtcDateTime);
 
         await service.CreateAsync(new CreateTaskRequest("Due tomorrow", DueDate: today.AddDays(1)));
@@ -145,7 +145,7 @@ public class TaskServiceTests
     public async Task Overdue_leaves_out_what_is_already_done()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         var today = DateOnly.FromDateTime(db.Clock.GetUtcNow().UtcDateTime);
 
         await service.CreateAsync(new CreateTaskRequest("Late", DueDate: today.AddDays(-2)));
@@ -160,7 +160,7 @@ public class TaskServiceTests
     public async Task Searching_matches_the_title_and_the_notes()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
 
         await service.CreateAsync(new CreateTaskRequest("Service the boiler"));
         await service.CreateAsync(new CreateTaskRequest("Call the plumber", "about the boiler"));
@@ -175,7 +175,7 @@ public class TaskServiceTests
     public async Task A_category_that_does_not_exist_is_refused()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => service.CreateAsync(new CreateTaskRequest("Anything", CategoryId: 404)));
@@ -186,7 +186,7 @@ public class TaskServiceTests
     {
         await using var db = await TestDatabase.CreateAsync();
         var categories = new CapybaraHome.Application.Categories.CategoryService(db.Context);
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
 
         var category = await categories.CreateAsync(new CapybaraHome.Application.Categories.CategoryRequest("Garden"));
         var created = await service.CreateAsync(new CreateTaskRequest(
@@ -211,7 +211,7 @@ public class TaskServiceTests
     {
         await using var db = await TestDatabase.CreateAsync();
         var categories = new CapybaraHome.Application.Categories.CategoryService(db.Context);
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         var today = DateOnly.FromDateTime(db.Clock.GetUtcNow().UtcDateTime);
         var garden = await categories.CreateAsync(new CapybaraHome.Application.Categories.CategoryRequest("Garden"));
 
@@ -240,7 +240,7 @@ public class TaskServiceTests
     public async Task A_page_past_the_end_comes_back_empty()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
         await service.CreateAsync(new CreateTaskRequest("Only one"));
 
         Assert.Empty(await service.ListAsync(new TaskFilter(Limit: 10, Skip: 10)));
@@ -251,7 +251,7 @@ public class TaskServiceTests
     public async Task Skipping_narrows_the_same_filter_the_count_reports()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
 
         for (var i = 0; i < 12; i++)
         {
@@ -268,7 +268,7 @@ public class TaskServiceTests
     public async Task A_filter_on_several_statuses_keeps_every_one_of_them()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = new TaskService(db.Context, db.Clock);
+        var service = db.Tasks();
 
         foreach (var status in Enum.GetValues<TaskItemStatus>())
         {

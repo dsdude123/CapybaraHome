@@ -63,6 +63,25 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 t.CompletedAt, t.JiraKey, t.CreatedAt, t.UpdatedAt))
             .ToListAsync(cancellationToken);
 
+        var operationsByTask = (await context.TaskCloseOperations.AsNoTracking()
+            .OrderBy(o => o.SortOrder)
+            .ThenBy(o => o.Id)
+            .Select(o => new
+            {
+                o.TaskId,
+                Record = new TaskCloseOperationRecord(
+                    o.Kind, o.SortOrder, o.IsEnabled, o.WebhookUrl, o.WebhookMethod, o.FollowUpTitle,
+                    o.DueDateMode, o.DueDateValue, o.DueDateOn, o.CarryOperationsForward,
+                    o.DocumentTitle, o.DocumentBody),
+            })
+            .ToListAsync(cancellationToken))
+            .GroupBy(o => o.TaskId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskCloseOperationRecord>)g.Select(o => o.Record).ToList());
+
+        tasks = tasks
+            .Select(t => operationsByTask.TryGetValue(t.Id, out var operations) ? t with { CloseOperations = operations } : t)
+            .ToList();
+
         var tags = await context.MealTags.AsNoTracking()
             .OrderBy(t => t.Id)
             .Select(t => new MealTagRecord(t.Id, t.Name, t.Facet))
@@ -171,6 +190,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
 
         var tasksAdded = 0;
         var tasksUpdated = 0;
+        var operationWork = new List<(TaskItem Task, IReadOnlyList<TaskCloseOperationRecord> Records)>();
         var existingByJiraKey = await context.Tasks
             .Where(t => t.JiraKey != null)
             .ToDictionaryAsync(t => t.JiraKey!, t => t, cancellationToken);
@@ -189,6 +209,12 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 existing.Status = record.Status;
                 existing.DueDate = record.DueDate;
                 existing.CompletedAt = record.CompletedAt;
+
+                if (record.CloseOperations is { } existingOperations)
+                {
+                    operationWork.Add((existing, existingOperations));
+                }
+
                 tasksUpdated++;
                 continue;
             }
@@ -207,6 +233,11 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
             };
 
             context.Tasks.Add(task);
+            if (record.CloseOperations is { } operations)
+            {
+                operationWork.Add((task, operations));
+            }
+
             if (record.JiraKey is { Length: > 0 } newKey)
             {
                 existingByJiraKey[newKey] = task;
@@ -240,6 +271,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         }
 
         await context.SaveChangesAsync(cancellationToken);
+        await ImportCloseOperationsAsync(operationWork, cancellationToken);
 
         var (mealsAdded, mealsUpdated) = await ImportMealsAsync(document, cancellationToken);
         var (automationsAdded, automationsUpdated) = await ImportAutomationsAsync(document, categoryIdByExportedId, cancellationToken);
@@ -247,6 +279,55 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         return new ImportSummary(
             categoriesAdded, tasksAdded, tasksUpdated, cardsAdded,
             mealsAdded, mealsUpdated, automationsAdded, automationsUpdated);
+    }
+
+    /// <summary>
+    /// Loads each task's close operations, replacing whatever the task already had. An operation
+    /// has no name of its own to merge on, so the exported list is the whole list.
+    /// </summary>
+    private async Task ImportCloseOperationsAsync(
+        List<(TaskItem Task, IReadOnlyList<TaskCloseOperationRecord> Records)> work,
+        CancellationToken cancellationToken)
+    {
+        if (work.Count == 0)
+        {
+            return;
+        }
+
+        var taskIds = work.Select(w => w.Task.Id).ToList();
+        var existing = await context.TaskCloseOperations
+            .Where(o => taskIds.Contains(o.TaskId))
+            .ToListAsync(cancellationToken);
+
+        context.TaskCloseOperations.RemoveRange(existing);
+
+        var now = clock.GetUtcNow();
+        foreach (var (task, records) in work)
+        {
+            foreach (var record in records)
+            {
+                context.TaskCloseOperations.Add(new TaskCloseOperation
+                {
+                    TaskId = task.Id,
+                    Kind = record.Kind,
+                    SortOrder = record.SortOrder,
+                    IsEnabled = record.IsEnabled,
+                    WebhookUrl = record.WebhookUrl,
+                    WebhookMethod = record.WebhookMethod,
+                    FollowUpTitle = record.FollowUpTitle,
+                    DueDateMode = record.DueDateMode,
+                    DueDateValue = record.DueDateValue,
+                    DueDateOn = record.DueDateOn,
+                    CarryOperationsForward = record.CarryOperationsForward,
+                    DocumentTitle = record.DocumentTitle,
+                    DocumentBody = record.DocumentBody,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+            }
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

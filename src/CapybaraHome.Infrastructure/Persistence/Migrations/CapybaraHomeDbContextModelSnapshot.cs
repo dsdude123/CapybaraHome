@@ -341,6 +341,139 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("TaskAutomations");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskCloseOperation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CarryOperationsForward")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DocumentBody")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DocumentTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DueDateMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("DueDateOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DueDateValue")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FollowUpTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TaskId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WebhookMethod")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WebhookUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskId");
+
+                    b.ToTable("TaskCloseOperations");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskCloseOperationRun", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("CreatedTaskId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DocumentBody")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DocumentTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("OperationId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("TaskId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TaskTitle")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WebhookPayload")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("TaskId");
+
+                    b.ToTable("TaskCloseOperationRuns");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskItem", b =>
                 {
                     b.Property<int>("Id")
@@ -583,6 +716,34 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskCloseOperation", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Tasks.TaskItem", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskCloseOperationRun", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Tasks.TaskCloseOperation", "Operation")
+                        .WithMany()
+                        .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("CapybaraHome.Domain.Tasks.TaskItem", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Operation");
+
+                    b.Navigation("Task");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskItem", b =>

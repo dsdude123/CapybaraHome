@@ -1,3 +1,5 @@
+using System.Net;
+using CapybaraHome.Application.Tasks;
 using CapybaraHome.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +24,23 @@ public sealed class TestDatabase : IAsyncDisposable
 
     /// <summary>The clock the services read, fixed unless a test moves it.</summary>
     public FakeTimeProvider Clock { get; }
+
+    /// <summary>
+    /// A task service over this database. The close operations hang off a completion, so they are
+    /// wired in here as well; <paramref name="webhooks"/> replaces the sender when a test is about
+    /// the calls themselves.
+    /// </summary>
+    /// <param name="webhooks">Sender the webhook operations use, or null for one that answers 200.</param>
+    public TaskService Tasks(TaskWebhookSender? webhooks = null) => new(Context, CloseOperations(webhooks), Clock);
+
+    /// <summary>A close operation service over this database.</summary>
+    /// <param name="webhooks">Sender the webhook operations use, or null for one that answers 200.</param>
+    public TaskCloseOperationService CloseOperations(TaskWebhookSender? webhooks = null) =>
+        new(Context, webhooks ?? Sender(new FakeHttp().Reply("ok")), Clock);
+
+    /// <summary>Returns a sender that answers from <paramref name="http"/>.</summary>
+    /// <param name="http">The canned replies to answer with.</param>
+    public static TaskWebhookSender Sender(FakeHttp http) => new(http.Client());
 
     /// <summary>Opens a connection, runs the migrations and returns the ready database.</summary>
     public static async Task<TestDatabase> CreateAsync()

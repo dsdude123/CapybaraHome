@@ -18,6 +18,12 @@ public interface ICapybaraHomeDbContext
     /// <summary>Rules that create tasks on a timer.</summary>
     DbSet<TaskAutomation> TaskAutomations { get; }
 
+    /// <summary>Things that happen when a task is completed.</summary>
+    DbSet<TaskCloseOperation> TaskCloseOperations { get; }
+
+    /// <summary>What one completion asked of one of those operations.</summary>
+    DbSet<TaskCloseOperationRun> TaskCloseOperationRuns { get; }
+
     /// <summary>Meals.</summary>
     DbSet<Meal> Meals { get; }
 

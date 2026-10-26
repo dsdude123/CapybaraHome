@@ -65,6 +65,14 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   midnight. The editor previews the next five executions, and an automation can skip its run
   while a task with the same title is still open. Times are the server's own clock, so in a
   container they follow `TZ`. A run missed while the app was down happens once when it is back.
+- **Close operations** — on a task's own page, what happens when it is moved to done: call a
+  webhook, create another task, or produce a document. A task can carry as many as you like,
+  and they run in the order you add them. The created task's due date can be an exact date or
+  one worked out from the day you finished the task: in so many days, weeks, months or years,
+  the start of the next quarter, or the end of the quarter it was finished in. Unless you turn
+  it off, the created task carries the same operations, so closing it sets the next one again.
+- **Documents** (`/documents`) — the documents those operations produced, each on a page laid
+  out to print, with the recent operations and anything that failed listed underneath.
 - **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
@@ -114,13 +122,28 @@ stored, so the secret is shown once and cannot be recovered. The same token work
 the REST API under `/api`. A token is how the connector signs in; it does not use the sign-in
 cookie and is not affected by an authenticator.
 
+## Webhooks
+
+A webhook operation sends the completed task to a URL you type. A `POST` carries the title,
+notes, category, due date and completion time as JSON; a `GET` just fetches the URL. The call
+goes out within a few seconds of the task being closed rather than while the page is saving,
+and it is retried, further apart each time, until the target accepts it or five attempts have
+failed. What happened is on the task's own page and under Documents.
+
+Redirects are not followed, and a call is refused if the address is the server itself, a
+link-local address such as a cloud metadata service, or multicast; the address is checked again
+when the connection is made, so a host name cannot be re-pointed at one of those after it is
+saved. Addresses on your own network are allowed, which is the ordinary case here. There is no
+place to put a header or a token on a webhook, so put any secret the target needs in the URL.
+
 ## Export, import and backups
 
 - `GET /api/export` downloads the whole database as one JSON document. Settings has the same
   link, and a file picker to load one back in.
 - `POST /api/import?mode=Merge|Replace` reads a document back. A merge matches categories by
   name, tasks by JIRA key and automations by title, so re-importing an export of this
-  installation updates rather than duplicates.
+  installation updates rather than duplicates. A task's close operations come across with it;
+  the runs they have already had do not, being history rather than configuration.
 - **Import from JIRA** (`/settings/jira`) is a four-step wizard: the address of your JIRA
   Cloud site, the email address of your Atlassian account and an API token; then the project
   to copy, chosen from the ones that account can see; then a confirmation with the issue

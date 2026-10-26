@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace CapybaraHome.Application.Tasks;
 
 /// <summary>Reads and writes tasks. The only place task rules live.</summary>
-public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
+public class TaskService(ICapybaraHomeDbContext context, TaskCloseOperationService closeOperations, TimeProvider clock)
 {
     /// <summary>Returns the tasks matching <paramref name="filter"/> in the order <paramref name="sort"/> asks for.</summary>
     public async Task<IReadOnlyList<TaskView>> ListAsync(TaskFilter filter, TaskSort sort = TaskSort.DueDate, CancellationToken cancellationToken = default)
@@ -162,13 +162,23 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
             task.DueDate = request.DueDate;
         }
 
+        var completed = false;
         if (request.Status is { } status && status != task.Status)
         {
+            completed = status == TaskItemStatus.Done;
             task.Status = status;
-            task.CompletedAt = status == TaskItemStatus.Done ? clock.GetUtcNow() : null;
+            task.CompletedAt = completed ? clock.GetUtcNow() : null;
         }
 
         await context.SaveChangesAsync(cancellationToken);
+
+        // The completion is saved first, so an operation that throws cannot leave the task
+        // looking unfinished to the person who just closed it.
+        if (completed)
+        {
+            await closeOperations.RunForCompletionAsync(task, cancellationToken);
+        }
+
         return await GetAsync(id, cancellationToken);
     }
 

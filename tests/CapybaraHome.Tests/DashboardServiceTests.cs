@@ -148,7 +148,7 @@ public class DashboardServiceTests
 
     private static (TaskService Tasks, CategoryService Categories, DashboardService Dashboard) Services(TestDatabase db)
     {
-        var tasks = new TaskService(db.Context, db.Clock);
+        var tasks = db.Tasks();
         return (tasks, new CategoryService(db.Context), new DashboardService(db.Context, tasks));
     }
 }
