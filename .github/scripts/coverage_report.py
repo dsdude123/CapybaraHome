@@ -193,7 +193,7 @@ def credit(base_ref, base_sha):
     collected = "Collected with coverlet via `dotnet test`."
     if not base_ref or not base_sha:
         return collected
-    return f"{collected} Base is the merge base with `{base_ref}`, commit `{base_sha[:7]}`."
+    return f"{collected} Base is `{base_ref}` at `{base_sha[:7]}`, the commit this branch would merge into."
 
 
 def build(base, head, base_ref, base_sha):
