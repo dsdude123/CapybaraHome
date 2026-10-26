@@ -188,13 +188,21 @@ def short_name(filename):
     return filename
 
 
-def build(base, head, base_label):
+def credit(base_ref, base_sha):
+    """Names the commit the base figures were measured from."""
+    collected = "Collected with coverlet via `dotnet test`."
+    if not base_ref or not base_sha:
+        return collected
+    return f"{collected} Base is the merge base with `{base_ref}`, commit `{base_sha[:7]}`."
+
+
+def build(base, head, base_ref, base_sha):
     """Assembles the whole comment body."""
     parts = [MARKER, "### Test coverage", ""]
     if base is None:
         parts.append(
-            f"No coverage report was found for `{base_label}`, so this run has nothing to "
-            "compare against. The next push to that branch will record one."
+            "The base commit's coverage could not be measured, so there is nothing to "
+            "compare against. The run log for this check says why."
         )
         parts.append("")
     parts.append(overall_table(base, head))
@@ -215,10 +223,7 @@ def build(base, head, base_label):
         parts.append("")
         parts.append("</details>")
     parts.append("")
-    parts.append(
-        f"Collected with coverlet via `dotnet test`. Base is the latest successful "
-        f"`{base_label}` build."
-    )
+    parts.append(credit(base_ref, base_sha))
     return "\n".join(parts) + "\n"
 
 
@@ -227,7 +232,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--head", required=True)
     parser.add_argument("--base")
-    parser.add_argument("--base-label", default="main")
+    parser.add_argument("--base-ref")
+    parser.add_argument("--base-sha")
     parser.add_argument("--out", required=True)
     arguments = parser.parse_args()
 
@@ -240,7 +246,7 @@ def main():
         base = candidate if candidate["reports"] else None
 
     with open(arguments.out, "w", encoding="utf-8") as handle:
-        handle.write(build(base, head, arguments.base_label))
+        handle.write(build(base, head, arguments.base_ref, arguments.base_sha))
     rate = head["total"].line_rate
     print(f"line coverage {rate:.2f}%" if rate is not None else "line coverage n/a")
 
