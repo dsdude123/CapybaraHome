@@ -9,10 +9,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -28,51 +30,34 @@ jobs:
           --settings .github/coverage.runsettings
           --results-directory ${{ runner.temp }}/coverage
 
-      - name: Record this branch's coverage as the baseline
-        if: github.event_name == 'push'
-        env:
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          archive="${RUNNER_TEMP}/${BRANCH//\//-}.tar.gz"
-          tar -czf "$archive" -C "${RUNNER_TEMP}/coverage" \
-            $(cd "${RUNNER_TEMP}/coverage" && find . -name '*.cobertura.xml' -printf '%P\n')
-          work="${RUNNER_TEMP}/baseline"
-          mkdir -p "$work"
-          mv "$archive" "$work/"
-          git -C "$work" init -q -b coverage-baseline
-          git -C "$work" add -A
-          git -C "$work" \
-            -c user.name="github-actions[bot]" \
-            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -qm "Coverage baseline for ${GITHUB_SHA}"
-          git -C "$work" push -q --force \
-            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" \
-            coverage-baseline
-
-      - name: Fetch the base branch's coverage
+      - name: Measure the base branch's coverage
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          archive="${BASE_REF//\//-}.tar.gz"
-          target="${RUNNER_TEMP}/coverage-base"
-          mkdir -p "$target"
-          if git fetch --depth 1 origin coverage-baseline 2>/dev/null \
-            && git cat-file -e "FETCH_HEAD:${archive}" 2>/dev/null; then
-            git show "FETCH_HEAD:${archive}" | tar -xzf - -C "$target"
-            echo "Baseline taken from the coverage-baseline branch."
-          else
-            echo "No baseline recorded for ${BASE_REF} yet."
+          if ! git fetch -q --no-tags origin "$BASE_REF"; then
+            echo "Branch ${BASE_REF} is gone, so there is no base to measure."
+            exit 0
           fi
+          base=$(git rev-parse FETCH_HEAD)
+          echo "COVERAGE_BASE_SHA=${base}" >> "$GITHUB_ENV"
+          git worktree add -q --detach "${RUNNER_TEMP}/base-src" "$base"
+          dotnet test "${RUNNER_TEMP}/base-src" --configuration Release \
+            --settings "${GITHUB_WORKSPACE}/.github/coverage.runsettings" \
+            --results-directory "${RUNNER_TEMP}/coverage-base" \
+            || echo "The base commit's tests did not finish; the comment will say so."
 
       - name: Build the coverage report
         if: github.event_name == 'pull_request'
-        run: >
-          python3 .github/scripts/coverage_report.py
-          --head ${{ runner.temp }}/coverage
-          --base ${{ runner.temp }}/coverage-base
-          --base-label ${{ github.event.pull_request.base.ref }}
-          --out ${{ runner.temp }}/coverage.md
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          python3 .github/scripts/coverage_report.py \
+            --head "${RUNNER_TEMP}/coverage" \
+            --base "${RUNNER_TEMP}/coverage-base" \
+            --base-ref "$BASE_REF" \
+            --base-sha "${COVERAGE_BASE_SHA:-}" \
+            --out "${RUNNER_TEMP}/coverage.md"
 
       - name: Comment the coverage report on the pull request
         if: >

@@ -30,6 +30,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Versions of a meal that change its directions or its ingredients.</summary>
     public DbSet<MealVariant> MealVariants => Set<MealVariant>();
 
+    /// <summary>How many meals each slot aims for.</summary>
+    public DbSet<MealPlanTarget> MealPlanTargets => Set<MealPlanTarget>();
+
     /// <summary>Lines the variants add to their meals' ingredient lists.</summary>
     public DbSet<MealVariantIngredient> MealVariantIngredients => Set<MealVariantIngredient>();
 

@@ -615,13 +615,22 @@ public class StaticRenderingTests
             mealId = meal.Id;
         }
 
-        // The targets travel in the query string, so the page is free of any state of its own.
-        var page = await client.GetStringAsync("/meals/plan?breakfast=1&lunch=0&dinner=2");
+        var saved = await PostManyAsync(client, "/meals/plan", "plan-targets",
+        [
+            new("breakfast", "1"),
+            new("lunch", "0"),
+            new("dinner", "2"),
+            new("targets", "save"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+
+        var page = await client.GetStringAsync("/meals/plan");
         Assert.Contains("Breakfast 0 of 1", page);
         Assert.Contains("Dinner 0 of 2", page);
         Assert.Contains("A plain meal", page);
 
-        var planned = await PostManyAsync(client, "/meals/plan?dinner=2", $"search-{mealId}-base",
+        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}-base",
         [
             new("meal-id", mealId.ToString()),
             new("variant-id", string.Empty),
@@ -631,7 +640,7 @@ public class StaticRenderingTests
 
         Assert.Equal(HttpStatusCode.Redirect, planned.StatusCode);
 
-        var afterPlanning = await client.GetStringAsync("/meals/plan?dinner=2");
+        var afterPlanning = await client.GetStringAsync("/meals/plan");
         Assert.Contains("Dinner 1 of 2", afterPlanning);
         Assert.Contains("Planned shared", afterPlanning);
 
@@ -661,6 +670,53 @@ public class StaticRenderingTests
             Assert.Null(meal.PlannedSlot);
             Assert.NotNull(meal.LastCookedAt);
         }
+    }
+
+    [Fact]
+    public async Task The_meal_counts_are_still_there_after_leaving_the_planning_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostManyAsync(client, "/meals/plan", "plan-targets",
+        [
+            new("breakfast", "3"),
+            new("lunch", "5"),
+            new("dinner", "6"),
+            new("targets", "save"),
+        ]);
+
+        await client.GetStringAsync("/meals");
+
+        var returned = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Breakfast 0 of 3", returned);
+        Assert.Contains("Lunch 0 of 5", returned);
+        Assert.Contains("Dinner 0 of 6", returned);
+
+        await PostManyAsync(client, "/meals/plan", "plan-targets", [new("targets", "reset")]);
+
+        var afterReset = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Breakfast 0 of 4", afterReset);
+        Assert.Contains("Lunch 0 of 2", afterReset);
+        Assert.Contains("Dinner 0 of 7", afterReset);
+    }
+
+    [Fact]
+    public async Task The_meals_link_is_not_lit_while_the_planning_page_is_open()
+    {
+        const string Lit = "class=\"nav-link active\" href=\"meals\"";
+
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        Assert.Contains(Lit, await client.GetStringAsync("/meals"));
+
+        var plan = await client.GetStringAsync("/meals/plan");
+        Assert.DoesNotContain(Lit, plan);
+        Assert.Contains("Meal Plan", plan);
+
+        // A meal's own page still counts as the Meals section.
+        Assert.Contains(Lit, await client.GetStringAsync("/meals/new"));
     }
 
     [Theory]
