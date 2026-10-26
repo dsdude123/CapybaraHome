@@ -34,16 +34,12 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if ! git fetch -q --no-tags origin "$BASE_REF"; then
             echo "Branch ${BASE_REF} is gone, so there is no base to measure."
             exit 0
           fi
-          base=$(git merge-base "$HEAD_SHA" FETCH_HEAD) || {
-            echo "No merge base with ${BASE_REF}."
-            exit 0
-          }
+          base=$(git rev-parse FETCH_HEAD)
           echo "COVERAGE_BASE_SHA=${base}" >> "$GITHUB_ENV"
           git worktree add -q --detach "${RUNNER_TEMP}/base-src" "$base"
           dotnet test "${RUNNER_TEMP}/base-src" --configuration Release \
