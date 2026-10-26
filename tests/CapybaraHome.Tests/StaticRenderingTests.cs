@@ -915,6 +915,7 @@ public class StaticRenderingTests
             ["form.Frequency"] = nameof(TaskAutomationFrequency.BiWeekly),
             ["form.StartsOn"] = "2026-11-02",
             ["form.TimeOfDay"] = "07:30",
+            ["form.DueInDays"] = "3",
             ["form.CategoryId"] = string.Empty,
             ["form.SkipWhenOpenTaskExists"] = "true",
             ["form.IsEnabled"] = "true",
@@ -935,6 +936,7 @@ public class StaticRenderingTests
             Assert.Equal(TaskAutomationFrequency.BiWeekly, automation.Frequency);
             Assert.Equal(new DateOnly(2026, 11, 2), automation.StartsOn);
             Assert.Equal(new TimeOnly(7, 30), automation.TimeOfDay);
+            Assert.Equal(3, automation.DueInDays);
             Assert.True(automation.SkipWhenOpenTaskExists);
         }
 
@@ -942,6 +944,7 @@ public class StaticRenderingTests
         var list = await client.GetStringAsync("/automations");
         Assert.Contains("Take the bins out", list);
         Assert.Contains("Every two weeks", list);
+        Assert.Contains("Due 3 days after it is created", list);
         Assert.Contains("Never run", list);
 
         var edited = await PostAsync(client, editor, "automation-editor", new()
@@ -952,6 +955,7 @@ public class StaticRenderingTests
             ["form.Frequency"] = nameof(TaskAutomationFrequency.Monthly),
             ["form.StartsOn"] = "2026-12-01",
             ["form.TimeOfDay"] = "00:00",
+            ["form.DueInDays"] = string.Empty,
             ["form.CategoryId"] = string.Empty,
             ["form.IsEnabled"] = "true",
         });
@@ -966,6 +970,9 @@ public class StaticRenderingTests
             Assert.Equal("Take the bins out and rinse them", automation.Title);
             Assert.Null(automation.Notes);
             Assert.Equal(TaskAutomationFrequency.Monthly, automation.Frequency);
+
+            // An empty Due in box takes the due date off again rather than leaving the old one.
+            Assert.Null(automation.DueInDays);
 
             // An unticked checkbox posts nothing, which has to read as off rather than as unset.
             Assert.False(automation.SkipWhenOpenTaskExists);
@@ -1013,6 +1020,34 @@ public class StaticRenderingTests
 
         // The typed title comes back with the page, and nothing was saved.
         Assert.Contains("Still being set up", html);
+
+        using var scope = app.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+        Assert.Empty(context.TaskAutomations);
+    }
+
+    [Fact]
+    public async Task A_due_date_before_the_task_is_created_comes_back_as_an_error_on_the_editor()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = "Backwards",
+            ["form.Frequency"] = nameof(TaskAutomationFrequency.Weekly),
+            ["form.StartsOn"] = "2026-11-02",
+            ["form.TimeOfDay"] = "00:00",
+            ["form.DueInDays"] = "-1",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        var html = await posted.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("cannot be due before it is created", html);
 
         using var scope = app.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();

@@ -123,6 +123,7 @@ public record TaskRecord(
 /// <param name="Frequency">How often it runs.</param>
 /// <param name="StartsOn">Day the interval is counted from.</param>
 /// <param name="TimeOfDay">Time of day each run happens at.</param>
+/// <param name="DueInDays">How many days after it is created the task is due, or null.</param>
 /// <param name="SkipWhenOpenTaskExists">Whether a run does nothing when a task with the same title is already open.</param>
 /// <param name="IsEnabled">Whether it runs at all.</param>
 /// <param name="LastRunAt">When it last ran, or null.</param>
@@ -136,6 +137,7 @@ public record TaskAutomationRecord(
     TaskAutomationFrequency Frequency,
     DateOnly StartsOn,
     TimeOnly TimeOfDay,
+    int? DueInDays,
     bool SkipWhenOpenTaskExists,
     bool IsEnabled,
     DateTimeOffset? LastRunAt,

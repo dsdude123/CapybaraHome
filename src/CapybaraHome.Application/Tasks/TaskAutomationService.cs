@@ -45,6 +45,7 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             throw new ArgumentException("An automation needs a title.", nameof(request));
         }
 
+        EnsureDueInDaysIsSound(request.DueInDays);
         await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
 
         var now = clock.GetUtcNow();
@@ -56,6 +57,7 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             Frequency = request.Frequency,
             StartsOn = request.StartsOn == default ? Today() : request.StartsOn,
             TimeOfDay = request.TimeOfDay,
+            DueInDays = request.DueInDays,
             SkipWhenOpenTaskExists = request.SkipWhenOpenTaskExists,
             IsEnabled = request.IsEnabled,
             CreatedAt = now,
@@ -118,6 +120,16 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
         if (request.TimeOfDay is { } timeOfDay)
         {
             automation.TimeOfDay = timeOfDay;
+        }
+
+        if (request.ClearDueInDays)
+        {
+            automation.DueInDays = null;
+        }
+        else if (request.DueInDays is not null)
+        {
+            EnsureDueInDaysIsSound(request.DueInDays);
+            automation.DueInDays = request.DueInDays;
         }
 
         if (request.SkipWhenOpenTaskExists is { } skip)
@@ -200,7 +212,12 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             else
             {
                 await tasks.CreateAsync(
-                    new CreateTaskRequest(automation.Title, automation.Notes, TaskItemStatus.ToDo, automation.CategoryId),
+                    new CreateTaskRequest(
+                        automation.Title,
+                        automation.Notes,
+                        TaskItemStatus.ToDo,
+                        automation.CategoryId,
+                        DueDate(automation, now)),
                     cancellationToken);
 
                 automation.LastRunSkipped = false;
@@ -244,6 +261,22 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
         automation.LastRunAt ?? automation.CreatedAt,
         Zone);
 
+    /// <summary>
+    /// The due date to give a task created at <paramref name="createdAt"/>, counted in days from
+    /// the day it is created where the server is, or null when the automation sets no due date.
+    /// </summary>
+    private DateOnly? DueDate(TaskAutomation automation, DateTimeOffset createdAt) => automation.DueInDays is { } days
+        ? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(createdAt, Zone).DateTime).AddDays(days)
+        : null;
+
+    private static void EnsureDueInDaysIsSound(int? dueInDays)
+    {
+        if (dueInDays is < 0)
+        {
+            throw new ArgumentException("A task cannot be due before it is created.", nameof(dueInDays));
+        }
+    }
+
     private DateOnly Today() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), Zone).DateTime);
 
     private async Task EnsureCategoryExistsAsync(int? categoryId, CancellationToken cancellationToken)
@@ -271,6 +304,7 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
         automation.Frequency,
         automation.StartsOn,
         automation.TimeOfDay,
+        automation.DueInDays,
         automation.SkipWhenOpenTaskExists,
         automation.IsEnabled,
         automation.LastRunAt,

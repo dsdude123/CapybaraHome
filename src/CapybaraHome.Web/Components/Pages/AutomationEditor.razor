@@ -10,7 +10,8 @@
 
 <p class="muted">
     The task is created with this title, these notes and this category every time the automation
-    runs. Execution times are the server's own clock, @DateNames.ZoneLabel(Automations.Zone).
+    runs. Leave <strong>Due in</strong> empty for a task with no due date. Execution times are the
+    server's own clock, @DateNames.ZoneLabel(Automations.Zone).
 </p>
 
 <EditForm Model="form" FormName="automation-editor" OnValidSubmit="SubmitAsync">
@@ -44,6 +45,12 @@
         <div class="field">
             <label for="automation-time">At</label>
             <InputDate id="automation-time" Type="InputDateType.Time" @bind-Value="form.TimeOfDay" />
+        </div>
+
+        <div class="field">
+            <label for="automation-due">Due in</label>
+            <InputNumber id="automation-due" @bind-Value="form.DueInDays" placeholder="No due date" min="0" />
+            <span class="muted">days after the task is created</span>
         </div>
 
         <div class="field">
@@ -153,6 +160,7 @@
                 Frequency = automation.Frequency,
                 StartsOn = automation.StartsOn,
                 TimeOfDay = automation.TimeOfDay,
+                DueInDays = automation.DueInDays,
                 CategoryId = automation.CategoryId?.ToString() ?? string.Empty,
                 SkipWhenOpenTaskExists = automation.SkipWhenOpenTaskExists,
                 IsEnabled = automation.IsEnabled,
@@ -188,6 +196,7 @@
                     form.StartsOn,
                     form.TimeOfDay,
                     category,
+                    form.DueInDays,
                     form.SkipWhenOpenTaskExists,
                     form.IsEnabled));
 
@@ -203,6 +212,8 @@
                 TimeOfDay: form.TimeOfDay,
                 CategoryId: category,
                 ClearCategory: category is null,
+                DueInDays: form.DueInDays,
+                ClearDueInDays: form.DueInDays is null,
                 SkipWhenOpenTaskExists: form.SkipWhenOpenTaskExists,
                 IsEnabled: form.IsEnabled));
 
@@ -244,6 +255,9 @@
 
         /// <summary>Time of day each run happens at.</summary>
         public TimeOnly TimeOfDay { get; set; }
+
+        /// <summary>How many days after it is created the task is due, or null for no due date.</summary>
+        public int? DueInDays { get; set; }
 
         /// <summary>Id of the chosen category, or empty for none.</summary>
         public string? CategoryId { get; set; }

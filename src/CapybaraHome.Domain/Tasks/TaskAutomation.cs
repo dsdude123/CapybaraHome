@@ -30,6 +30,12 @@ public class TaskAutomation
     /// <summary>Time of day each run happens at, in the server's time zone. Midnight unless changed.</summary>
     public TimeOnly TimeOfDay { get; set; }
 
+    /// <summary>
+    /// How many days after it is created the task is due, or null to leave it with no due date.
+    /// Zero makes it due the day it is created.
+    /// </summary>
+    public int? DueInDays { get; set; }
+
     /// <summary>Whether a run does nothing when a task with the same title is already open.</summary>
     public bool SkipWhenOpenTaskExists { get; set; }
 

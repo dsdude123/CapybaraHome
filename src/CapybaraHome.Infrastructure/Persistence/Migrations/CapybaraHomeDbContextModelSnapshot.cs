@@ -298,6 +298,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("DueInDays")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Frequency")
                         .IsRequired()
                         .HasMaxLength(20)

@@ -90,7 +90,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         var automations = await context.TaskAutomations.AsNoTracking()
             .OrderBy(a => a.Id)
             .Select(a => new TaskAutomationRecord(
-                a.Title, a.Notes, a.CategoryId, a.Frequency, a.StartsOn, a.TimeOfDay,
+                a.Title, a.Notes, a.CategoryId, a.Frequency, a.StartsOn, a.TimeOfDay, a.DueInDays,
                 a.SkipWhenOpenTaskExists, a.IsEnabled, a.LastRunAt, a.LastRunSkipped,
                 a.CreatedAt, a.UpdatedAt))
             .ToListAsync(cancellationToken);
@@ -282,6 +282,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 existing.Frequency = record.Frequency;
                 existing.StartsOn = record.StartsOn;
                 existing.TimeOfDay = record.TimeOfDay;
+                existing.DueInDays = record.DueInDays;
                 existing.SkipWhenOpenTaskExists = record.SkipWhenOpenTaskExists;
                 existing.IsEnabled = record.IsEnabled;
                 existing.LastRunAt = record.LastRunAt;
@@ -299,6 +300,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 Frequency = record.Frequency,
                 StartsOn = record.StartsOn,
                 TimeOfDay = record.TimeOfDay,
+                DueInDays = record.DueInDays,
                 SkipWhenOpenTaskExists = record.SkipWhenOpenTaskExists,
                 IsEnabled = record.IsEnabled,
                 LastRunAt = record.LastRunAt,

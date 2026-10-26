@@ -74,6 +74,88 @@ public class TaskAutomationServiceTests
         Assert.Equal("The ones in the greenhouse", task.Notes);
         Assert.Equal(category.Id, task.CategoryId);
         Assert.Equal(TaskItemStatus.ToDo, task.Status);
+
+        // Nothing asked for a due date, so the task has none.
+        Assert.Null(task.DueDate);
+    }
+
+    [Theory]
+    [InlineData(0, "2026-10-19")]
+    [InlineData(1, "2026-10-20")]
+    [InlineData(14, "2026-11-02")]
+    public async Task A_due_date_is_counted_in_days_from_the_day_the_task_is_created(int dueInDays, string expected)
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = Service(db);
+
+        await service.CreateAsync(new CreateTaskAutomationRequest(
+            "Pay the thing",
+            Frequency: TaskAutomationFrequency.Daily,
+            StartsOn: new DateOnly(2026, 10, 18),
+            TimeOfDay: new TimeOnly(9, 0),
+            DueInDays: dueInDays));
+
+        // The run lands on the 19th at 09:00 Pacific, which is the day the due date counts from.
+        db.Clock.Advance(TimeSpan.FromHours(24));
+        Assert.Equal(new TaskAutomationRunSummary(1, 1, 0), await service.RunDueAsync());
+
+        Assert.Equal(DateOnly.Parse(expected), (await db.Context.Tasks.SingleAsync()).DueDate);
+    }
+
+    [Fact]
+    public async Task A_due_date_counts_from_the_catch_up_run_rather_than_from_the_execution_it_missed()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = Service(db);
+
+        await service.CreateAsync(new CreateTaskAutomationRequest(
+            "Daily thing",
+            Frequency: TaskAutomationFrequency.Daily,
+            StartsOn: new DateOnly(2026, 10, 18),
+            DueInDays: 3));
+
+        // A month of downtime: the task is made today, so it is due three days from today.
+        db.Clock.Advance(TimeSpan.FromDays(30));
+        await service.RunDueAsync();
+
+        Assert.Equal(new DateOnly(2026, 11, 20), (await db.Context.Tasks.SingleAsync()).DueDate);
+    }
+
+    [Fact]
+    public async Task A_due_date_before_the_task_is_created_is_refused()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = Service(db);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.CreateAsync(new CreateTaskAutomationRequest("Backwards", DueInDays: -1)));
+
+        var created = await service.CreateAsync(new CreateTaskAutomationRequest("Forwards", DueInDays: 2));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.UpdateAsync(created.Id, new UpdateTaskAutomationRequest(DueInDays: -1)));
+    }
+
+    [Fact]
+    public async Task A_due_date_is_added_and_taken_off_again()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = Service(db);
+        var created = await service.CreateAsync(new CreateTaskAutomationRequest(
+            "Changeable",
+            Frequency: TaskAutomationFrequency.Daily,
+            StartsOn: new DateOnly(2026, 10, 18)));
+
+        Assert.Null(created.DueInDays);
+
+        var dated = await service.UpdateAsync(created.Id, new UpdateTaskAutomationRequest(DueInDays: 7));
+        Assert.Equal(7, dated!.DueInDays);
+
+        var undated = await service.UpdateAsync(created.Id, new UpdateTaskAutomationRequest(ClearDueInDays: true));
+        Assert.Null(undated!.DueInDays);
+
+        db.Clock.Advance(TimeSpan.FromDays(1));
+        await service.RunDueAsync();
+        Assert.Null((await db.Context.Tasks.SingleAsync()).DueDate);
     }
 
     [Fact]

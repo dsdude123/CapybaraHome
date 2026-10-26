@@ -263,6 +263,7 @@ public class DataTransferServiceTests
             new DateOnly(2026, 11, 2),
             new TimeOnly(7, 30),
             category.Id,
+            DueInDays: 3,
             SkipWhenOpenTaskExists: true,
             IsEnabled: false));
 
@@ -282,6 +283,7 @@ public class DataTransferServiceTests
         Assert.Equal(TaskAutomationFrequency.BiWeekly, restored.Frequency);
         Assert.Equal(new DateOnly(2026, 11, 2), restored.StartsOn);
         Assert.Equal(new TimeOnly(7, 30), restored.TimeOfDay);
+        Assert.Equal(3, restored.DueInDays);
         Assert.True(restored.SkipWhenOpenTaskExists);
         Assert.False(restored.IsEnabled);
         Assert.Equal("Garden", restored.CategoryName);
