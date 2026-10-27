@@ -74,6 +74,11 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   executions, and an automation can skip its run while a task with the same title is still
   open. Times are the server's own clock, so in a container they follow `TZ`. A run missed
   while the app was down happens once when it is back.
+- **Morning report** (`/report`) — one page of the day: the forecast, the tasks due within a
+  week, what is planned to eat, the next thirty days of your calendar, the holidays, today's
+  game and the headlines. **Download PDF** is exactly the sheet that is printed, and **Print
+  now** sends it to the printer straight away. The same page prints itself once a day when
+  the report is turned on.
 - **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
@@ -147,6 +152,30 @@ Backups__Destination=/data/backups
 Backups__Interval=24:00:00
 Backups__Keep=14
 ```
+
+## The morning report
+
+The report is built from this app's own tasks and meals, plus a forecast service, an
+iCalendar feed of your own, the public holiday and baseball calendars, a local news page and
+a national wire. A source that cannot be read costs the report its own section and nothing
+else. It is laid out as a Letter-size PDF and sent to a printer over IPP.
+
+```
+DailyReport__Enabled=true
+DailyReport__TimeOfDay=08:00
+DailyReport__PrinterHost=printer.lan
+DailyReport__PrinterPort=631
+DailyReport__PrinterResource=/ipp/print
+DailyReport__WeatherUrl=http://weather.lan/forecast
+DailyReport__CalendarUrl=https://example.com/private/basic.ics
+```
+
+With `DailyReport__Enabled` unset the page and the download are still there; nothing is
+printed on a timer. With no printer host nothing is printed at all. The time of day is the
+server's own clock, so in a container it follows `TZ`, and a morning the app was down for is
+missed rather than printed late. The forecast service is the one that answers with
+`period1Name` through `period4WindDirection`; with no address set the report leaves the
+weather out, and the same goes for the calendar.
 
 ## Docker
 
