@@ -45,6 +45,8 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             throw new ArgumentException("An automation needs a title.", nameof(request));
         }
 
+        EnsureDueInDaysIsSound(request.DueInDays);
+        EnsureIntervalIsSound(request.IntervalCount);
         await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
 
         var now = clock.GetUtcNow();
@@ -53,9 +55,11 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             Title = title,
             Notes = Blank(request.Notes),
             CategoryId = request.CategoryId,
-            Frequency = request.Frequency,
+            IntervalUnit = request.IntervalUnit,
+            IntervalCount = request.IntervalCount,
             StartsOn = request.StartsOn == default ? Today() : request.StartsOn,
             TimeOfDay = request.TimeOfDay,
+            DueInDays = request.DueInDays,
             SkipWhenOpenTaskExists = request.SkipWhenOpenTaskExists,
             IsEnabled = request.IsEnabled,
             CreatedAt = now,
@@ -105,9 +109,15 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             automation.CategoryId = request.CategoryId;
         }
 
-        if (request.Frequency is { } frequency)
+        if (request.IntervalUnit is { } unit)
         {
-            automation.Frequency = frequency;
+            automation.IntervalUnit = unit;
+        }
+
+        if (request.IntervalCount is { } intervalCount)
+        {
+            EnsureIntervalIsSound(intervalCount);
+            automation.IntervalCount = intervalCount;
         }
 
         if (request.StartsOn is { } startsOn)
@@ -118,6 +128,16 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
         if (request.TimeOfDay is { } timeOfDay)
         {
             automation.TimeOfDay = timeOfDay;
+        }
+
+        if (request.ClearDueInDays)
+        {
+            automation.DueInDays = null;
+        }
+        else if (request.DueInDays is not null)
+        {
+            EnsureDueInDaysIsSound(request.DueInDays);
+            automation.DueInDays = request.DueInDays;
         }
 
         if (request.SkipWhenOpenTaskExists is { } skip)
@@ -153,17 +173,20 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
     /// Returns the next few executions a schedule would have, counted from now, which is what the
     /// editor shows before the automation is saved.
     /// </summary>
-    /// <param name="frequency">How often it would run.</param>
+    /// <param name="unit">Unit the interval would be counted in.</param>
+    /// <param name="count">How many of that unit there would be between runs.</param>
     /// <param name="startsOn">Day the interval would be counted from.</param>
     /// <param name="timeOfDay">Time of day it would run at.</param>
     /// <param name="after">Moment to count from, or null for now.</param>
     public IReadOnlyList<DateTimeOffset> Preview(
-        TaskAutomationFrequency frequency,
+        TaskIntervalUnit unit,
+        int count,
         DateOnly startsOn,
         TimeOnly timeOfDay,
         DateTimeOffset? after = null)
     {
-        return TaskAutomationSchedule.Upcoming(frequency, startsOn, timeOfDay, after ?? clock.GetUtcNow(), PreviewCount, Zone);
+        return TaskAutomationSchedule.Upcoming(
+            unit, count, startsOn, timeOfDay, after ?? clock.GetUtcNow(), PreviewCount, Zone);
     }
 
     /// <summary>
@@ -200,7 +223,12 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             else
             {
                 await tasks.CreateAsync(
-                    new CreateTaskRequest(automation.Title, automation.Notes, TaskItemStatus.ToDo, automation.CategoryId),
+                    new CreateTaskRequest(
+                        automation.Title,
+                        automation.Notes,
+                        TaskItemStatus.ToDo,
+                        automation.CategoryId,
+                        DueDate(automation, now)),
                     cancellationToken);
 
                 automation.LastRunSkipped = false;
@@ -238,11 +266,36 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
     /// in the past keeps the start date's phase without firing for every month it missed.
     /// </summary>
     private DateTimeOffset? NextRunAt(TaskAutomation automation) => TaskAutomationSchedule.NextAfter(
-        automation.Frequency,
+        automation.IntervalUnit,
+        automation.IntervalCount,
         automation.StartsOn,
         automation.TimeOfDay,
         automation.LastRunAt ?? automation.CreatedAt,
         Zone);
+
+    /// <summary>
+    /// The due date to give a task created at <paramref name="createdAt"/>, counted in days from
+    /// the day it is created where the server is, or null when the automation sets no due date.
+    /// </summary>
+    private DateOnly? DueDate(TaskAutomation automation, DateTimeOffset createdAt) => automation.DueInDays is { } days
+        ? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(createdAt, Zone).DateTime).AddDays(days)
+        : null;
+
+    private static void EnsureIntervalIsSound(int count)
+    {
+        if (count < TaskAutomationSchedule.MinimumIntervalCount)
+        {
+            throw new ArgumentException("An automation has to repeat at least every one unit.", nameof(count));
+        }
+    }
+
+    private static void EnsureDueInDaysIsSound(int? dueInDays)
+    {
+        if (dueInDays is < 0)
+        {
+            throw new ArgumentException("A task cannot be due before it is created.", nameof(dueInDays));
+        }
+    }
 
     private DateOnly Today() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), Zone).DateTime);
 
@@ -268,9 +321,11 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
         automation.Notes,
         automation.CategoryId,
         automation.Category?.Name,
-        automation.Frequency,
+        automation.IntervalUnit,
+        automation.IntervalCount,
         automation.StartsOn,
         automation.TimeOfDay,
+        automation.DueInDays,
         automation.SkipWhenOpenTaskExists,
         automation.IsEnabled,
         automation.LastRunAt,

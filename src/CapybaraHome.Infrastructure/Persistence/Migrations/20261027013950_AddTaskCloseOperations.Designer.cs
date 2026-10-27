@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CapybaraHome.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CapybaraHomeDbContext))]
-    [Migration("20261027010900_AddTaskCloseOperations")]
+    [Migration("20261027013950_AddTaskCloseOperations")]
     partial class AddTaskCloseOperations
     {
         /// <inheritdoc />
@@ -301,7 +301,13 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Frequency")
+                    b.Property<int?>("DueInDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IntervalCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("IntervalUnit")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");

@@ -27,7 +27,7 @@ else
                 <li>
                     <div class="task-line">
                         <a class="task-link" href="@($"automations/{automation.Id}")">@automation.Title</a>
-                        <span class="pill">@FrequencyNames.Label(automation.Frequency)</span>
+                        <span class="pill">@IntervalNames.Label(automation.IntervalUnit, automation.IntervalCount)</span>
                         @if (!automation.IsEnabled)
                         {
                             <span class="pill">Paused</span>
@@ -35,6 +35,7 @@ else
                     </div>
                     <div class="task-meta">
                         <span>@(automation.CategoryName ?? "Uncategorized")</span>
+                        <span>@DueLabel(automation)</span>
                         <span>@NextLabel(automation)</span>
                         <span>@LastLabel(automation)</span>
                     </div>
@@ -52,6 +53,15 @@ else
     {
         automations = await Automations.ListAsync();
     }
+
+    /// <summary>Returns what the line says about the due date the created tasks get.</summary>
+    private static string DueLabel(TaskAutomationView automation) => automation.DueInDays switch
+    {
+        null => "No due date",
+        0 => "Due the day it is created",
+        1 => "Due the day after it is created",
+        { } days => $"Due {days} days after it is created",
+    };
 
     /// <summary>Returns what the line says about the automation's next execution.</summary>
     private string NextLabel(TaskAutomationView automation)
