@@ -1,28 +1,16 @@
 using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Domain.Reports;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace CapybaraHome.Application.Reports;
 
 /// <summary>
-/// Reads and writes the one row that says how the report is built and printed. The row is created
-/// the first time it is asked for, out of whatever the host was configured with, so an
-/// installation that was set up through environment variables keeps printing the same report
-/// until somebody changes it on the settings page.
+/// Reads and writes the one row that says how the report is built and printed. A new installation
+/// starts with the schedule off and nothing filled in, and everything about the report is set on
+/// the settings page.
 /// </summary>
-public class DailyReportSettingsService(
-    ICapybaraHomeDbContext context,
-    IOptions<DailyReportOptions> options)
+public class DailyReportSettingsService(ICapybaraHomeDbContext context)
 {
-    /// <summary>Public holidays, as Google publishes them for the United States.</summary>
-    private const string HolidayCalendarUrl =
-        "https://calendar.google.com/calendar/ical/en.usa%23holiday%40group.v.calendar.google.com/public/basic.ics";
-
-    /// <summary>The baseball season, as Google publishes it.</summary>
-    private const string SportsCalendarUrl =
-        "https://calendar.google.com/calendar/ical/mlb_-m-06wpc_Seattle%2BMariners%23sports%40group.v.calendar.google.com/public/basic.ics";
-
     /// <summary>Longest a printer's host name or queue is allowed to be.</summary>
     private const int LongestName = 500;
 
@@ -61,15 +49,10 @@ public class DailyReportSettingsService(
             return settings;
         }
 
-        settings = Seed(options.Value);
+        settings = new DailyReportSettings();
         context.DailyReportSettings.Add(settings);
-
-        foreach (var calendar in SeedCalendars(options.Value))
-        {
-            context.ReportCalendars.Add(calendar);
-        }
-
         await context.SaveChangesAsync(cancellationToken);
+
         return settings;
     }
 
@@ -233,34 +216,6 @@ public class DailyReportSettingsService(
         {
             context.ReportCategories.Add(new ReportCategory { CategoryId = id });
         }
-    }
-
-    /// <summary>The row an installation starts with, taken from what the host was configured with.</summary>
-    private static DailyReportSettings Seed(DailyReportOptions configured) => new()
-    {
-        Id = DailyReportSettings.SingletonId,
-        IsEnabled = configured.Enabled,
-        TimeOfDay = configured.TimeOfDay,
-        PrinterHost = Blank(configured.PrinterHost),
-        PrinterPort = configured.PrinterPort is > 0 and <= 65535 ? configured.PrinterPort : 631,
-        PrinterQueue = Blank(configured.PrinterResource) ?? "/ipp/print",
-        PrintBothSides = true,
-        WeatherUrl = Blank(configured.WeatherUrl),
-    };
-
-    /// <summary>
-    /// The calendars an installation starts with: the two the report has always read, and the
-    /// one the host named, if it named one.
-    /// </summary>
-    private static IEnumerable<ReportCalendar> SeedCalendars(DailyReportOptions configured)
-    {
-        if (Blank(configured.CalendarUrl) is { } mine)
-        {
-            yield return new ReportCalendar { Name = "My calendar", Url = mine, Kind = ReportCalendarKind.Upcoming };
-        }
-
-        yield return new ReportCalendar { Name = "Holidays", Url = HolidayCalendarUrl, Kind = ReportCalendarKind.Holidays };
-        yield return new ReportCalendar { Name = "Mariners", Url = SportsCalendarUrl, Kind = ReportCalendarKind.Today };
     }
 
     private static string Name(string? value)

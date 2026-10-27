@@ -162,36 +162,22 @@ calendar feeds you name, a local news page and a national wire. A source that ca
 costs the report its own section and nothing else. It is laid out as a Letter-size PDF and
 sent to a printer over IPP.
 
-Everything about it is set on `/report/settings` and kept in the database: whether it prints
-on a schedule and at what time, the printer's host, port, queue and whether it uses both
-sides of the paper, the forecast address, the calendars, and the categories the task table is
-kept to. Ticking no category carries every category.
+Nothing about it is configured on the host. A new installation has the schedule off and
+nothing filled in: `/report/settings` is where you turn the daily printing on and set the
+time of day, the printer's host, port, queue and whether it uses both sides of the paper, the
+forecast address, the calendars, and the categories the task table is kept to. Ticking no
+category carries every category, including any added later.
 
 A calendar is read as one of three kinds: **Upcoming events** are listed with their dates and
 places for the next 30 days, **Holidays** by name and date over the same window, and
-**Today only** entries under a heading of the calendar's name. An installation starts with
-the public holiday and baseball calendars, and a calendar can be switched off without being
-deleted.
+**Today only** entries under a heading of the calendar's name. A calendar can be switched off
+without being deleted.
 
 The time of day is the server's own clock, so in a container it follows `TZ`, and a morning
 the app was down for is missed rather than printed late. The page and the download are there
 whether or not the schedule is on; with no printer host nothing is printed at all. The
 forecast service is the one that answers with `period1Name` through `period4WindDirection`;
 with no address set the report leaves the weather out.
-
-The settings below are read only when the database has no settings yet, so an installation
-that was configured this way keeps printing the same report until something is changed on the
-page. Setting them again afterwards has no effect.
-
-```
-DailyReport__Enabled=true
-DailyReport__TimeOfDay=08:00
-DailyReport__PrinterHost=printer.lan
-DailyReport__PrinterPort=631
-DailyReport__PrinterResource=/ipp/print
-DailyReport__WeatherUrl=http://weather.lan/forecast
-DailyReport__CalendarUrl=https://example.com/private/basic.ics
-```
 
 ## Docker
 

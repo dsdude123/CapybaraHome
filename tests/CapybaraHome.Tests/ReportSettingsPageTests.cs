@@ -10,32 +10,27 @@ namespace CapybaraHome.Tests;
 public class ReportSettingsPageTests
 {
     [Fact]
-    public async Task The_page_opens_on_what_the_host_was_configured_with()
+    public async Task The_page_opens_on_a_report_that_is_off_with_nothing_filled_in()
     {
-        await using var app = await AppFactory.CreateAsync(configureServices: services =>
-            services.Configure<DailyReportOptions>(options =>
-            {
-                options.TimeOfDay = new TimeOnly(6, 45);
-                options.PrinterHost = "printer.example";
-                options.WeatherUrl = "https://weather.example/forecast";
-                options.CalendarUrl = "https://calendar.example/mine.ics";
-            }));
+        await using var app = await AppFactory.CreateAsync();
 
         var html = await app.CreateClient().GetStringAsync("/report/settings");
 
-        Assert.Contains("value=\"06:45\"", html);
-        Assert.Contains("value=\"printer.example\"", html);
+        Assert.Contains("value=\"08:00\"", html);
         Assert.Contains("value=\"631\"", html);
         Assert.Contains("value=\"/ipp/print\"", html);
-        Assert.Contains("https://weather.example/forecast", html);
-        Assert.Contains("https://calendar.example/mine.ics", html);
-        Assert.Contains("My calendar", html);
-        Assert.Contains("Holidays", html);
         Assert.Contains("It has not printed on a schedule yet.", html);
         Assert.Contains("Every category is in the report.", html);
         Assert.Contains("There are no categories yet.", html);
+        Assert.Contains("No calendars yet", html);
 
-        // Every kind is offered, on the row of each calendar and on the add form.
+        var settings = await SettingsAsync(app);
+        Assert.False(settings.IsEnabled);
+        Assert.Null(settings.PrinterHost);
+        Assert.Null(settings.WeatherUrl);
+        Assert.Empty(settings.Calendars);
+
+        // Every kind is offered on the add form.
         foreach (var kind in CapybaraHome.Web.ReportCalendarKindNames.All)
         {
             Assert.Contains($"value=\"{kind}\"", html);
@@ -205,7 +200,7 @@ public class ReportSettingsPageTests
         await using var app = await AppFactory.CreateAsync();
         var client = FormPost.Client(app);
 
-        var holidays = Assert.Single((await SettingsAsync(app)).Calendars, c => c.Kind == ReportCalendarKind.Holidays);
+        var holidays = await AddAsync(app, "Holidays", "https://holidays.example/basic.ics", ReportCalendarKind.Holidays);
 
         var response = await FormPost.PostAsync(client, "/report/settings", $"calendar-{holidays.Id}", new()
         {
@@ -229,7 +224,7 @@ public class ReportSettingsPageTests
         await using var app = await AppFactory.CreateAsync();
         var client = FormPost.Client(app);
 
-        var holidays = Assert.Single((await SettingsAsync(app)).Calendars, c => c.Kind == ReportCalendarKind.Holidays);
+        var holidays = await AddAsync(app, "Holidays", "https://holidays.example/basic.ics", ReportCalendarKind.Holidays);
 
         var response = await FormPost.PostAsync(client, "/report/settings", $"calendar-{holidays.Id}", new()
         {
@@ -249,9 +244,10 @@ public class ReportSettingsPageTests
         await using var app = await AppFactory.CreateAsync();
         var client = FormPost.Client(app);
 
-        var calendars = (await SettingsAsync(app)).Calendars;
+        await AddAsync(app, "Mine", "https://mine.example/basic.ics", ReportCalendarKind.Upcoming);
+        await AddAsync(app, "Games", "https://games.example/basic.ics", ReportCalendarKind.Today);
 
-        foreach (var calendar in calendars)
+        foreach (var calendar in (await SettingsAsync(app)).Calendars)
         {
             await FormPost.PostAsync(client, "/report/settings", $"delete-calendar-{calendar.Id}");
         }
@@ -286,6 +282,13 @@ public class ReportSettingsPageTests
     {
         using var scope = app.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<CategoryService>().CreateAsync(new CategoryRequest(name));
+    }
+
+    private static async Task<ReportCalendarView> AddAsync(AppFactory app, string name, string url, ReportCalendarKind kind)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<DailyReportSettingsService>()
+            .AddCalendarAsync(new ReportCalendarInput(name, url, kind));
     }
 
     private static async Task<DailyReportSettingsView> SettingsAsync(AppFactory app)

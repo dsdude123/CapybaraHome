@@ -35,7 +35,6 @@ builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(Backu
 builder.Services.AddHostedService<ScheduledBackupService>();
 builder.Services.AddHostedService<TaskAutomationRunner>();
 
-builder.Services.Configure<DailyReportOptions>(builder.Configuration.GetSection(DailyReportOptions.SectionName));
 builder.Services.AddScoped<DailyReportPrinting>();
 builder.Services.AddHttpClient<IppPrinter>(client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHostedService<DailyReportRunner>();

@@ -6,7 +6,6 @@ using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Reports;
 using CapybaraHome.Domain.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 namespace CapybaraHome.Tests;
@@ -75,7 +74,7 @@ public class DailyReportServiceTests
         await using var db = await TestDatabase.CreateAsync();
         var http = new FakeHttp().ReplyTo("calendar.google.com", EmptyCalendar);
 
-        var report = await Build(db, http, new DailyReportOptions());
+        var report = await Build(db, http, new DailyReportSettingsService(db.Context));
 
         Assert.Empty(report.Weather);
         Assert.Empty(report.Events);
@@ -88,7 +87,7 @@ public class DailyReportServiceTests
         await using var db = await TestDatabase.CreateAsync();
         var categories = new CategoryService(db.Context);
         var tasks = new TaskService(db.Context, db.Clock);
-        var settings = new DailyReportSettingsService(db.Context, Options.Create(new DailyReportOptions()));
+        var settings = new DailyReportSettingsService(db.Context);
         var today = Today(db.Clock);
 
         var house = await categories.CreateAsync(new CategoryRequest("House"));
@@ -114,12 +113,7 @@ public class DailyReportServiceTests
     public async Task Each_calendar_feeds_the_section_its_kind_names()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var settings = new DailyReportSettingsService(db.Context, Options.Create(new DailyReportOptions()));
-
-        foreach (var seeded in await settings.ReadCalendarsAsync())
-        {
-            await settings.DeleteCalendarAsync(seeded.Id);
-        }
+        var settings = new DailyReportSettingsService(db.Context);
 
         await settings.AddCalendarAsync(new ReportCalendarInput("Mine", "https://mine.example/feed.ics"));
         await settings.AddCalendarAsync(new ReportCalendarInput("Days off", "https://days.example/feed.ics", ReportCalendarKind.Holidays));
@@ -171,11 +165,11 @@ public class DailyReportServiceTests
         // The calendars, the wire and the news page all refuse; only the forecast answers.
         var http = new FakeHttp().ReplyTo("weather.example", Forecast);
 
-        var report = await Build(db, http, new DailyReportOptions
-        {
-            WeatherUrl = "https://weather.example/forecast",
-            CalendarUrl = "https://calendar.example/feed.ics",
-        });
+        var settings = new DailyReportSettingsService(db.Context);
+        await settings.SaveAsync(Pointed("https://weather.example/forecast"));
+        await settings.AddCalendarAsync(new ReportCalendarInput("Mine", "https://calendar.example/feed.ics"));
+
+        var report = await Build(db, http, settings);
 
         Assert.Equal("Today", report.Weather[0].Name);
         Assert.Equal("Still printed", Assert.Single(report.Tasks).Title);
@@ -199,14 +193,15 @@ public class DailyReportServiceTests
         Assert.Equal(new DateOnly(2026, 10, 27), report.Date);
     }
 
+    /// <summary>A save that only points the report at a forecast service.</summary>
+    private static UpdateDailyReportSettingsRequest Pointed(string weatherUrl) =>
+        new(IsEnabled: false, TimeOfDay: new TimeOnly(8, 0), WeatherUrl: weatherUrl);
+
     private static DateOnly Today(FakeTimeProvider clock) =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), clock.LocalTimeZone).DateTime);
 
     private static Task<DailyReport> Build(TestDatabase db) =>
-        Build(db, new FakeHttp(), new DailyReportOptions());
-
-    private static Task<DailyReport> Build(TestDatabase db, FakeHttp http, DailyReportOptions options) =>
-        Build(db, http, new DailyReportSettingsService(db.Context, Options.Create(options)));
+        Build(db, new FakeHttp(), new DailyReportSettingsService(db.Context));
 
     private static Task<DailyReport> Build(TestDatabase db, FakeHttp http, DailyReportSettingsService settings)
     {

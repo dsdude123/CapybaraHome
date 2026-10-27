@@ -1,7 +1,6 @@
 using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Reports;
 using CapybaraHome.Domain.Reports;
-using Microsoft.Extensions.Options;
 
 namespace CapybaraHome.Tests;
 
@@ -9,56 +8,23 @@ namespace CapybaraHome.Tests;
 public class DailyReportSettingsServiceTests
 {
     [Fact]
-    public async Task The_first_read_takes_the_settings_from_what_the_host_was_configured_with()
-    {
-        await using var db = await TestDatabase.CreateAsync();
-        var service = Service(db, new DailyReportOptions
-        {
-            Enabled = true,
-            TimeOfDay = new TimeOnly(6, 45),
-            PrinterHost = "printer.lan",
-            PrinterPort = 6310,
-            PrinterResource = "/queue",
-            WeatherUrl = "https://weather.example/forecast",
-            CalendarUrl = "https://calendar.example/mine.ics",
-        });
-
-        var settings = await service.GetAsync();
-
-        Assert.True(settings.IsEnabled);
-        Assert.Equal(new TimeOnly(6, 45), settings.TimeOfDay);
-        Assert.Equal("printer.lan", settings.PrinterHost);
-        Assert.Equal(6310, settings.PrinterPort);
-        Assert.Equal("/queue", settings.PrinterQueue);
-        Assert.True(settings.PrintBothSides);
-        Assert.Equal("https://weather.example/forecast", settings.WeatherUrl);
-        Assert.Empty(settings.CategoryIds);
-        Assert.Null(settings.LastRunAt);
-        Assert.Null(settings.LastRunError);
-
-        Assert.Equal(
-            [
-                (ReportCalendarKind.Upcoming, "https://calendar.example/mine.ics"),
-                (ReportCalendarKind.Holidays, null),
-                (ReportCalendarKind.Today, null),
-            ],
-            settings.Calendars.Select(c => (c.Kind, c.Url == "https://calendar.example/mine.ics" ? c.Url : null)));
-        Assert.All(settings.Calendars, c => Assert.True(c.IsEnabled));
-    }
-
-    [Fact]
-    public async Task A_host_that_named_no_calendar_of_its_own_still_gets_the_holidays_and_the_games()
+    public async Task A_new_installation_starts_with_the_schedule_off_and_nothing_filled_in()
     {
         await using var db = await TestDatabase.CreateAsync();
 
         var settings = await Service(db).GetAsync();
 
-        Assert.Equal(
-            [ReportCalendarKind.Holidays, ReportCalendarKind.Today],
-            settings.Calendars.Select(c => c.Kind));
+        Assert.False(settings.IsEnabled);
+        Assert.Equal(new TimeOnly(8, 0), settings.TimeOfDay);
         Assert.Null(settings.PrinterHost);
         Assert.Equal(631, settings.PrinterPort);
         Assert.Equal("/ipp/print", settings.PrinterQueue);
+        Assert.True(settings.PrintBothSides);
+        Assert.Null(settings.WeatherUrl);
+        Assert.Empty(settings.CategoryIds);
+        Assert.Empty(settings.Calendars);
+        Assert.Null(settings.LastRunAt);
+        Assert.Null(settings.LastRunError);
     }
 
     [Fact]
@@ -96,7 +62,8 @@ public class DailyReportSettingsServiceTests
     public async Task Clearing_the_printer_and_the_forecast_leaves_the_report_with_neither()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var service = Service(db, new DailyReportOptions { PrinterHost = "printer.lan", WeatherUrl = "https://weather.example/f" });
+        var service = Service(db);
+        await service.SaveAsync(Request() with { PrinterHost = "printer.lan", WeatherUrl = "https://weather.example/f" });
 
         var saved = await service.SaveAsync(Request() with { PrinterHost = "   ", WeatherUrl = "" });
 
@@ -203,12 +170,10 @@ public class DailyReportSettingsServiceTests
 
         Assert.Equal(0, first.SortOrder);
         Assert.Equal(1, second.SortOrder);
-        Assert.Equal(1, other.SortOrder);
+        Assert.Equal(0, other.SortOrder);
 
         var calendars = await service.ReadCalendarsAsync();
-        Assert.Equal(
-            ["Mine", "Ours", "Holidays", "Mariners", "Games"],
-            calendars.Select(c => c.Name));
+        Assert.Equal(["Mine", "Ours", "Games"], calendars.Select(c => c.Name));
     }
 
     [Theory]
@@ -310,12 +275,11 @@ public class DailyReportSettingsServiceTests
         await service.SaveAsync(Request());
         await service.SaveAsync(Request() with { IsEnabled = true });
 
-        Assert.Equal(2, (await service.GetAsync()).Calendars.Count);
+        Assert.Empty((await service.GetAsync()).Calendars);
         Assert.Single(db.Context.DailyReportSettings);
     }
 
-    private static DailyReportSettingsService Service(TestDatabase db, DailyReportOptions? options = null) =>
-        new(db.Context, Options.Create(options ?? new DailyReportOptions()));
+    private static DailyReportSettingsService Service(TestDatabase db) => new(db.Context);
 
     private static UpdateDailyReportSettingsRequest Request() =>
         new(IsEnabled: false, TimeOfDay: new TimeOnly(8, 0));

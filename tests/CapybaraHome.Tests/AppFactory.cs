@@ -73,7 +73,6 @@ public class AppFactory : WebApplicationFactory<Program>
         builder.UseEnvironment(Environments.Production);
         builder.UseSetting("ConnectionStrings:CapybaraHome", $"Data Source={databasePath}");
         builder.UseSetting("Backups:Enabled", "false");
-        builder.UseSetting("DailyReport:Enabled", "false");
 
         // The report reads the open web. Here every one of its sources answers from inside the
         // process, so a test is neither slow nor at the mercy of a news site, and a test that

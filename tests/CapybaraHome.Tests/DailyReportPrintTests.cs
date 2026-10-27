@@ -9,7 +9,6 @@ using CapybaraHome.Infrastructure.Persistence;
 using CapybaraHome.Web.Reports;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 namespace CapybaraHome.Tests;
@@ -112,7 +111,12 @@ public class DailyReportPrintTests
         At(db, "2026-10-27T15:01:00Z");
 
         var ipp = new FakeHttp().Reply(Accepted);
-        await using var services = Host(db, ipp, new DailyReportOptions { Enabled = false, PrinterHost = "printer.example" });
+        await Settings(db).SaveAsync(new UpdateDailyReportSettingsRequest(
+            IsEnabled: false,
+            TimeOfDay: new TimeOnly(8, 0),
+            PrinterHost: "printer.example"));
+
+        await using var services = Host(db, ipp);
 
         await SweepAsync(services, db);
 
@@ -129,7 +133,8 @@ public class DailyReportPrintTests
         await tasks.CreateAsync(new CreateTaskRequest("Printed at eight", DueDate: new DateOnly(2026, 10, 27)));
 
         var ipp = new FakeHttp().Reply(Accepted);
-        await using var services = Host(db, ipp, Scheduled());
+        await Scheduled(db);
+        await using var services = Host(db, ipp);
 
         // A minute before, nothing.
         await SweepAsync(services, db);
@@ -159,7 +164,8 @@ public class DailyReportPrintTests
         At(db, "2026-10-27T17:00:00Z");
 
         var ipp = new FakeHttp().Reply(Accepted);
-        await using var services = Host(db, ipp, Scheduled());
+        await Scheduled(db);
+        await using var services = Host(db, ipp);
 
         await SweepAsync(services, db);
 
@@ -173,7 +179,8 @@ public class DailyReportPrintTests
         At(db, "2026-10-27T15:01:00Z");
 
         var ipp = new FakeHttp().Reply(string.Empty, HttpStatusCode.ServiceUnavailable);
-        await using var services = Host(db, ipp, Scheduled());
+        await Scheduled(db);
+        await using var services = Host(db, ipp);
 
         await SweepAsync(services, db);
 
@@ -189,7 +196,8 @@ public class DailyReportPrintTests
         At(db, "2026-10-27T15:01:00Z");
 
         var ipp = new FakeHttp().Reply(Accepted);
-        await using var services = Host(db, ipp, Scheduled());
+        await Scheduled(db);
+        await using var services = Host(db, ipp);
         var runner = Runner(services, db);
 
         await runner.StartAsync(CancellationToken.None);
@@ -214,13 +222,14 @@ public class DailyReportPrintTests
         services.GetRequiredService<ILogger<DailyReportRunner>>(),
         db.Clock);
 
-    /// <summary>The settings a scheduled installation starts with: eight in the morning, a printer.</summary>
-    private static DailyReportOptions Scheduled() => new()
-    {
-        Enabled = true,
-        TimeOfDay = new TimeOnly(8, 0),
-        PrinterHost = "printer.example",
-    };
+    /// <summary>Turns the schedule on for eight in the morning, with a printer to send it to.</summary>
+    private static Task Scheduled(TestDatabase db) =>
+        Settings(db).SaveAsync(new UpdateDailyReportSettingsRequest(
+            IsEnabled: true,
+            TimeOfDay: new TimeOnly(8, 0),
+            PrinterHost: "printer.example"));
+
+    private static DailyReportSettingsService Settings(TestDatabase db) => new(db.Context);
 
     private static void At(TestDatabase db, string instant)
     {
@@ -255,13 +264,12 @@ public class DailyReportPrintTests
     }
 
     /// <summary>Builds just enough of the app for the runner to resolve what it prints.</summary>
-    private static ServiceProvider Host(TestDatabase db, FakeHttp ipp, DailyReportOptions options)
+    private static ServiceProvider Host(TestDatabase db, FakeHttp ipp)
     {
         var services = new ServiceCollection();
 
         services.AddLogging();
         services.AddSingleton<TimeProvider>(db.Clock);
-        services.AddSingleton(Options.Create(options));
 
         // Registered as an instance the test owns: a scope the runner opens and closes must not
         // take the shared context down with it.
@@ -276,7 +284,7 @@ public class DailyReportPrintTests
         services.AddScoped(provider =>
         {
             provider.GetRequiredService<SweepWatch>().Done = true;
-            return new DailyReportSettingsService(db.Context, provider.GetRequiredService<IOptions<DailyReportOptions>>());
+            return new DailyReportSettingsService(db.Context);
         });
         services.AddScoped<DailyReportPrinting>();
         services.AddSingleton<SweepWatch>();

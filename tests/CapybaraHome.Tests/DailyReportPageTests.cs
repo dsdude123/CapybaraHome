@@ -1,6 +1,7 @@
 using System.Net;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Reports;
+using CapybaraHome.Domain.Reports;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Web.Reports;
@@ -24,11 +25,9 @@ public class DailyReportPageTests
         var feeds = new FakeHttp().ReplyTo("weather.example", Forecast);
 
         await using var app = await AppFactory.CreateAsync(configureServices: services =>
-        {
-            services.Configure<DailyReportOptions>(options => options.WeatherUrl = "https://weather.example/forecast");
-            services.AddHttpClient<WeatherFeed>().ConfigurePrimaryHttpMessageHandler(feeds.Handler);
-        });
+            services.AddHttpClient<WeatherFeed>().ConfigurePrimaryHttpMessageHandler(feeds.Handler));
 
+        await PointAsync(app, weatherUrl: "https://weather.example/forecast");
         await SeedAsync(app);
         var html = await app.CreateClient().GetStringAsync("/report");
 
@@ -117,10 +116,13 @@ public class DailyReportPageTests
 
         await using var app = await AppFactory.CreateAsync(configureServices: services =>
         {
-            services.Configure<DailyReportOptions>(options => options.CalendarUrl = "https://calendar.example/feed.ics");
             services.AddHttpClient<CalendarFeed>().ConfigurePrimaryHttpMessageHandler(feeds.Handler);
             services.AddHttpClient<NewsFeed>().ConfigurePrimaryHttpMessageHandler(feeds.Handler);
         });
+
+        await CalendarAsync(app, "Mine", "https://calendar.example/feed.ics", ReportCalendarKind.Upcoming);
+        await CalendarAsync(app, "Holidays", "https://en.usa.example/holidays.ics", ReportCalendarKind.Holidays);
+        await CalendarAsync(app, "Mariners", "https://mlb_.example/games.ics", ReportCalendarKind.Today);
 
         using (var scope = app.Services.CreateScope())
         {
@@ -165,11 +167,9 @@ public class DailyReportPageTests
         var ipp = new FakeHttp().Reply(Accepted);
 
         await using var app = await AppFactory.CreateAsync(configureServices: services =>
-        {
-            services.Configure<DailyReportOptions>(options => options.PrinterHost = "printer.example");
-            services.AddHttpClient<IppPrinter>().ConfigurePrimaryHttpMessageHandler(ipp.Handler);
-        });
+            services.AddHttpClient<IppPrinter>().ConfigurePrimaryHttpMessageHandler(ipp.Handler));
 
+        await PointAsync(app, printerHost: "printer.example");
         await SeedAsync(app);
         var client = FormPost.Client(app);
 
@@ -187,17 +187,35 @@ public class DailyReportPageTests
         var ipp = new FakeHttp().Reply(string.Empty, HttpStatusCode.ServiceUnavailable);
 
         await using var app = await AppFactory.CreateAsync(configureServices: services =>
-        {
-            services.Configure<DailyReportOptions>(options => options.PrinterHost = "printer.example");
-            services.AddHttpClient<IppPrinter>().ConfigurePrimaryHttpMessageHandler(ipp.Handler);
-        });
+            services.AddHttpClient<IppPrinter>().ConfigurePrimaryHttpMessageHandler(ipp.Handler));
 
+        await PointAsync(app, printerHost: "printer.example");
         var client = FormPost.Client(app);
 
         var printed = await FormPost.PostAsync(client, "/report", "print-report");
         var html = await printed.Content.ReadAsStringAsync();
 
         Assert.Contains("The printer answered 503", html);
+    }
+
+    /// <summary>Points the report at a forecast service, a printer, or neither.</summary>
+    private static async Task PointAsync(AppFactory app, string? weatherUrl = null, string? printerHost = null)
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<DailyReportSettingsService>().SaveAsync(
+            new UpdateDailyReportSettingsRequest(
+                IsEnabled: false,
+                TimeOfDay: new TimeOnly(8, 0),
+                PrinterHost: printerHost,
+                WeatherUrl: weatherUrl));
+    }
+
+    /// <summary>Gives the report one calendar to read.</summary>
+    private static async Task CalendarAsync(AppFactory app, string name, string url, ReportCalendarKind kind)
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<DailyReportSettingsService>()
+            .AddCalendarAsync(new ReportCalendarInput(name, url, kind));
     }
 
     private static async Task SeedAsync(AppFactory app)
