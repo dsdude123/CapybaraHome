@@ -286,6 +286,67 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("Categories");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskAutomation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("CategoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DueInDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IntervalCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("IntervalUnit")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("LastRunAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("LastRunSkipped")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("SkipWhenOpenTaskExists")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly>("StartsOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<TimeOnly>("TimeOfDay")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("IsEnabled");
+
+                    b.ToTable("TaskAutomations");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskItem", b =>
                 {
                     b.Property<int>("Id")
@@ -518,6 +579,16 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Ingredient");
 
                     b.Navigation("Variant");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskAutomation", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Tasks.Category", "Category")
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Category");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskItem", b =>

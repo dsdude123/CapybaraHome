@@ -18,6 +18,7 @@ public static class DependencyInjection
         services.TryAddTimeProvider();
 
         services.AddScoped<TaskService>();
+        services.AddScoped<TaskAutomationService>();
         services.AddScoped<CategoryService>();
         services.AddScoped<MealService>();
         services.AddScoped<MealTagService>();

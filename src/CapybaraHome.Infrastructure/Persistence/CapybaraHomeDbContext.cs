@@ -17,6 +17,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Tasks.</summary>
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
 
+    /// <summary>Rules that create tasks on a timer.</summary>
+    public DbSet<TaskAutomation> TaskAutomations => Set<TaskAutomation>();
+
     /// <summary>Meals.</summary>
     public DbSet<Meal> Meals => Set<Meal>();
 

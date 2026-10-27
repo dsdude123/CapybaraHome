@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CapybaraHome.Application.Abstractions;
+using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Dashboards;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
@@ -14,7 +15,7 @@ public enum ImportMode
     /// <summary>Add and update by JIRA key, category name and tag name, leaving anything else in place.</summary>
     Merge,
 
-    /// <summary>Delete every task, category, card and meal first, then load the document.</summary>
+    /// <summary>Delete every task, automation, category, card and meal first, then load the document.</summary>
     Replace,
 }
 
@@ -25,13 +26,17 @@ public enum ImportMode
 /// <param name="CardsAdded">Dashboard cards created.</param>
 /// <param name="MealsAdded">Meals created.</param>
 /// <param name="MealsUpdated">Meals matched by JIRA key and overwritten.</param>
+/// <param name="AutomationsAdded">Task automations created.</param>
+/// <param name="AutomationsUpdated">Task automations matched by title and overwritten.</param>
 public record ImportSummary(
     int CategoriesAdded,
     int TasksAdded,
     int TasksUpdated,
     int CardsAdded,
     int MealsAdded = 0,
-    int MealsUpdated = 0);
+    int MealsUpdated = 0,
+    int AutomationsAdded = 0,
+    int AutomationsUpdated = 0);
 
 /// <summary>Exports the whole database to one JSON document and reads it back.</summary>
 public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider clock)
@@ -83,12 +88,21 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 m.CreatedAt, m.UpdatedAt))
             .ToListAsync(cancellationToken);
 
+        var automations = await context.TaskAutomations.AsNoTracking()
+            .OrderBy(a => a.Id)
+            .Select(a => new TaskAutomationRecord(
+                a.Title, a.Notes, a.CategoryId, a.IntervalUnit, a.IntervalCount, a.StartsOn, a.TimeOfDay, a.DueInDays,
+                a.SkipWhenOpenTaskExists, a.IsEnabled, a.LastRunAt, a.LastRunSkipped,
+                a.CreatedAt, a.UpdatedAt))
+            .ToListAsync(cancellationToken);
+
         var cards = await context.DashboardCards.AsNoTracking()
             .OrderBy(c => c.SortOrder)
             .Select(c => new DashboardCardRecord(c.Title, c.Kind, c.CategoryId, c.Status, c.DueWithinDays, c.SortOrder))
             .ToListAsync(cancellationToken);
 
-        return new BackupDocument(BackupDocument.CurrentFormatVersion, clock.GetUtcNow(), categories, tasks, cards, meals, tags);
+        return new BackupDocument(
+            BackupDocument.CurrentFormatVersion, clock.GetUtcNow(), categories, tasks, cards, meals, tags, automations);
     }
 
     /// <summary>Serializes an export to JSON.</summary>
@@ -125,6 +139,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         if (mode == ImportMode.Replace)
         {
             context.DashboardCards.RemoveRange(await context.DashboardCards.ToListAsync(cancellationToken));
+            context.TaskAutomations.RemoveRange(await context.TaskAutomations.ToListAsync(cancellationToken));
             context.Meals.RemoveRange(await context.Meals.Include(m => m.Tags).ToListAsync(cancellationToken));
             context.MealTags.RemoveRange(await context.MealTags.ToListAsync(cancellationToken));
             context.Tasks.RemoveRange(await context.Tasks.ToListAsync(cancellationToken));
@@ -228,7 +243,82 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         await context.SaveChangesAsync(cancellationToken);
 
         var (mealsAdded, mealsUpdated) = await ImportMealsAsync(document, cancellationToken);
-        return new ImportSummary(categoriesAdded, tasksAdded, tasksUpdated, cardsAdded, mealsAdded, mealsUpdated);
+        var (automationsAdded, automationsUpdated) = await ImportAutomationsAsync(document, categoryIdByExportedId, cancellationToken);
+
+        return new ImportSummary(
+            categoriesAdded, tasksAdded, tasksUpdated, cardsAdded,
+            mealsAdded, mealsUpdated, automationsAdded, automationsUpdated);
+    }
+
+    /// <summary>
+    /// Loads the automations in <paramref name="document"/>. An automation has no imported key, so
+    /// a merge matches on the title it gives its tasks, which is the one field that has to be
+    /// unique in practice for the skip option to mean anything.
+    /// </summary>
+    private async Task<(int Added, int Updated)> ImportAutomationsAsync(
+        BackupDocument document,
+        Dictionary<int, int> categoryIdByExportedId,
+        CancellationToken cancellationToken)
+    {
+        if (document.TaskAutomations is not { Count: > 0 } records)
+        {
+            return (0, 0);
+        }
+
+        var added = 0;
+        var updated = 0;
+        var existingByTitle = await context.TaskAutomations
+            .ToDictionaryAsync(a => a.Title, a => a, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        foreach (var record in records)
+        {
+            var categoryId = record.CategoryId is { } exportedId && categoryIdByExportedId.TryGetValue(exportedId, out var mapped)
+                ? mapped
+                : (int?)null;
+
+            if (existingByTitle.TryGetValue(record.Title, out var existing))
+            {
+                existing.Notes = record.Notes;
+                existing.CategoryId = categoryId;
+                existing.IntervalUnit = record.IntervalUnit;
+                existing.IntervalCount = Math.Max(TaskAutomationSchedule.MinimumIntervalCount, record.IntervalCount);
+                existing.StartsOn = record.StartsOn;
+                existing.TimeOfDay = record.TimeOfDay;
+                existing.DueInDays = record.DueInDays;
+                existing.SkipWhenOpenTaskExists = record.SkipWhenOpenTaskExists;
+                existing.IsEnabled = record.IsEnabled;
+                existing.LastRunAt = record.LastRunAt;
+                existing.LastRunSkipped = record.LastRunSkipped;
+                existing.UpdatedAt = record.UpdatedAt;
+                updated++;
+                continue;
+            }
+
+            var automation = new TaskAutomation
+            {
+                Title = record.Title,
+                Notes = record.Notes,
+                CategoryId = categoryId,
+                IntervalUnit = record.IntervalUnit,
+                IntervalCount = Math.Max(TaskAutomationSchedule.MinimumIntervalCount, record.IntervalCount),
+                StartsOn = record.StartsOn,
+                TimeOfDay = record.TimeOfDay,
+                DueInDays = record.DueInDays,
+                SkipWhenOpenTaskExists = record.SkipWhenOpenTaskExists,
+                IsEnabled = record.IsEnabled,
+                LastRunAt = record.LastRunAt,
+                LastRunSkipped = record.LastRunSkipped,
+                CreatedAt = record.CreatedAt,
+                UpdatedAt = record.UpdatedAt,
+            };
+
+            context.TaskAutomations.Add(automation);
+            existingByTitle[record.Title] = automation;
+            added++;
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+        return (added, updated);
     }
 
     /// <summary>

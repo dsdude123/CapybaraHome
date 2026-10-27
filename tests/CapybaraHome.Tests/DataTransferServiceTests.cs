@@ -246,4 +246,54 @@ public class DataTransferServiceTests
         Assert.Equal("an extra", Assert.Single(variant.AddedIngredients).Item);
         Assert.Equal(loaded.Ingredients.Single(i => i.Item == "second").Id, Assert.Single(variant.RemovedIngredientIds));
     }
+
+    [Fact]
+    public async Task An_export_carries_the_automations_across_and_a_second_merge_does_not_double_them()
+    {
+        await using var source = await TestDatabase.CreateAsync();
+        var categories = new CategoryService(source.Context);
+        var category = await categories.CreateAsync(new CategoryRequest("Garden"));
+        var automations = new TaskAutomationService(
+            source.Context, new TaskService(source.Context, source.Clock), source.Clock);
+
+        await automations.CreateAsync(new CreateTaskAutomationRequest(
+            "Water the tomatoes",
+            "The ones in the greenhouse",
+            TaskIntervalUnit.Days,
+            13,
+            new DateOnly(2026, 11, 2),
+            new TimeOnly(7, 30),
+            category.Id,
+            DueInDays: 3,
+            SkipWhenOpenTaskExists: true,
+            IsEnabled: false));
+
+        var json = await new DataTransferService(source.Context, source.Clock).ExportToJsonAsync();
+
+        await using var target = await TestDatabase.CreateAsync();
+        var into = new DataTransferService(target.Context, target.Clock);
+
+        var first = await into.ImportFromJsonAsync(json, ImportMode.Merge);
+        Assert.Equal(1, first.AutomationsAdded);
+
+        var restored = Assert.Single(await new TaskAutomationService(
+            target.Context, new TaskService(target.Context, target.Clock), target.Clock).ListAsync());
+
+        Assert.Equal("Water the tomatoes", restored.Title);
+        Assert.Equal("The ones in the greenhouse", restored.Notes);
+        Assert.Equal(TaskIntervalUnit.Days, restored.IntervalUnit);
+        Assert.Equal(13, restored.IntervalCount);
+        Assert.Equal(new DateOnly(2026, 11, 2), restored.StartsOn);
+        Assert.Equal(new TimeOnly(7, 30), restored.TimeOfDay);
+        Assert.Equal(3, restored.DueInDays);
+        Assert.True(restored.SkipWhenOpenTaskExists);
+        Assert.False(restored.IsEnabled);
+        Assert.Equal("Garden", restored.CategoryName);
+
+        var second = await into.ImportFromJsonAsync(json, ImportMode.Merge);
+        Assert.Equal(0, second.AutomationsAdded);
+        Assert.Equal(1, second.AutomationsUpdated);
+        Assert.Single(target.Context.TaskAutomations);
+    }
+
 }

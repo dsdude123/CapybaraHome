@@ -1,0 +1,285 @@
+@page "/automations/new"
+@page "/automations/{Id:int}"
+@inject TaskAutomationService Automations
+@inject CategoryService Categories
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "Create an automation" : "Edit an automation")</PageTitle>
+
+<h1>@(Id is null ? "Create an automation" : "Edit an automation")</h1>
+
+<p class="muted">
+    The task is created with this title, these notes and this category every time the automation
+    runs. Leave <strong>Due in</strong> empty for a task with no due date. Execution times are the
+    server's own clock, @DateNames.ZoneLabel(Automations.Zone).
+</p>
+
+<EditForm Model="form" FormName="automation-editor" OnValidSubmit="SubmitAsync">
+
+    <div class="field">
+        <label for="automation-title">Task title</label>
+        <InputText id="automation-title" type="text" @bind-Value="form.Title" />
+    </div>
+
+    <div class="field">
+        <label for="automation-notes">Description</label>
+        <InputTextArea id="automation-notes" @bind-Value="form.Notes" />
+    </div>
+
+    <div class="filters">
+        <div class="field">
+            <label for="automation-count">Repeats every</label>
+            <InputNumber id="automation-count" @bind-Value="form.IntervalCount" min="1" />
+        </div>
+
+        <div class="field">
+            <label for="automation-unit">&nbsp;</label>
+            <InputSelect id="automation-unit" @bind-Value="form.IntervalUnit">
+                @foreach (var value in IntervalNames.All)
+                {
+                    <option value="@value">@IntervalNames.UnitLabel(value)</option>
+                }
+            </InputSelect>
+        </div>
+
+        <div class="field">
+            <label for="automation-starts">Starts on</label>
+            <InputDate id="automation-starts" @bind-Value="form.StartsOn" />
+        </div>
+
+        <div class="field">
+            <label for="automation-time">At</label>
+            <InputDate id="automation-time" Type="InputDateType.Time" @bind-Value="form.TimeOfDay" />
+        </div>
+
+        <div class="field">
+            <label for="automation-due">Due in</label>
+            <InputNumber id="automation-due" @bind-Value="form.DueInDays" placeholder="No due date" min="0" />
+            <span class="muted">days after the task is created</span>
+        </div>
+
+        <div class="field">
+            <label for="automation-category">Category</label>
+            <InputSelect id="automation-category" @bind-Value="form.CategoryId">
+                <option value="">Uncategorized</option>
+                @foreach (var category in categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </InputSelect>
+        </div>
+    </div>
+
+    <fieldset class="check-list">
+        <legend>Options</legend>
+        <label for="automation-skip">
+            <InputCheckbox id="automation-skip" @bind-Value="form.SkipWhenOpenTaskExists" />
+            Skip the run when a task with this title is already open
+        </label>
+        <label for="automation-enabled">
+            <InputCheckbox id="automation-enabled" @bind-Value="form.IsEnabled" />
+            Run on this schedule
+        </label>
+    </fieldset>
+
+    <div class="card" style="margin:0.75rem 0">
+        <div class="card-head">
+            <h2 class="card-title">Next executions</h2>
+        </div>
+        @if (preview.Count == 0)
+        {
+            <p class="muted">This schedule has no upcoming execution.</p>
+        }
+        else
+        {
+            <ul class="task-list">
+                @foreach (var moment in preview)
+                {
+                    <li>@DateNames.LongWithTime(moment, Automations.Zone)</li>
+                }
+            </ul>
+        }
+        <p class="muted">Counted from the start date. Change the dates above and update the preview to check them.</p>
+    </div>
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+
+    <div class="row">
+        <button class="btn btn-primary" type="submit" name="form.Action" value="save">Save</button>
+        <button class="btn" type="submit" name="form.Action" value="preview">Update preview</button>
+        <a class="btn" href="automations">Cancel</a>
+    </div>
+</EditForm>
+
+@if (Id is not null)
+{
+    <form method="post" @formname="automation-delete" @onsubmit="DeleteAsync" style="margin-top:0.75rem">
+        <AntiforgeryToken />
+        <button class="btn btn-danger" type="submit">Delete</button>
+    </form>
+}
+
+@code {
+    /// <summary>Id of the automation being edited, or null when creating one.</summary>
+    [Parameter]
+    public int? Id { get; set; }
+
+    [SupplyParameterFromForm(Name = "form")]
+    private AutomationForm? postedForm { get; set; }
+
+    private AutomationForm form = new();
+    private IReadOnlyList<CategoryView> categories = [];
+    private IReadOnlyList<DateTimeOffset> preview = [];
+    private string? error;
+
+    /// <summary>Loads the categories, fills the form, and works out the preview the form asks for.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        categories = await Categories.ListAsync();
+
+        // A post carries the edited values; anything else means the form is being opened fresh.
+        if (postedForm is not null)
+        {
+            form = postedForm;
+        }
+        else if (Id is null)
+        {
+            form = new AutomationForm { StartsOn = Today() };
+        }
+        else
+        {
+            var automation = await Automations.GetAsync(Id.Value);
+            if (automation is null)
+            {
+                Navigation.NavigateTo("automations");
+                return;
+            }
+
+            form = new AutomationForm
+            {
+                Title = automation.Title,
+                Notes = automation.Notes ?? string.Empty,
+                IntervalUnit = automation.IntervalUnit,
+                IntervalCount = automation.IntervalCount,
+                StartsOn = automation.StartsOn,
+                TimeOfDay = automation.TimeOfDay,
+                DueInDays = automation.DueInDays,
+                CategoryId = automation.CategoryId?.ToString() ?? string.Empty,
+                SkipWhenOpenTaskExists = automation.SkipWhenOpenTaskExists,
+                IsEnabled = automation.IsEnabled,
+            };
+        }
+
+        preview = Automations.Preview(form.IntervalUnit, form.IntervalCount, form.StartsOn, form.TimeOfDay);
+    }
+
+    /// <summary>
+    /// Saves, or re-renders with the preview the posted dates give. Both buttons post the same
+    /// form, because the preview is of the values in it, so which one was pressed arrives as a
+    /// field of the form rather than as a handler of its own.
+    /// </summary>
+    private async Task SubmitAsync()
+    {
+        if (string.Equals(form.Action, "preview", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        error = null;
+        var category = int.TryParse(form.CategoryId, out var parsed) ? parsed : (int?)null;
+
+        try
+        {
+            if (Id is null)
+            {
+                var created = await Automations.CreateAsync(new CreateTaskAutomationRequest(
+                    form.Title ?? string.Empty,
+                    form.Notes,
+                    form.IntervalUnit,
+                    form.IntervalCount,
+                    form.StartsOn,
+                    form.TimeOfDay,
+                    category,
+                    form.DueInDays,
+                    form.SkipWhenOpenTaskExists,
+                    form.IsEnabled));
+
+                Navigation.NavigateTo($"automations/{created.Id}");
+                return;
+            }
+
+            await Automations.UpdateAsync(Id.Value, new UpdateTaskAutomationRequest(
+                Title: form.Title,
+                Notes: form.Notes,
+                IntervalUnit: form.IntervalUnit,
+                IntervalCount: form.IntervalCount,
+                StartsOn: form.StartsOn,
+                TimeOfDay: form.TimeOfDay,
+                CategoryId: category,
+                ClearCategory: category is null,
+                DueInDays: form.DueInDays,
+                ClearDueInDays: form.DueInDays is null,
+                SkipWhenOpenTaskExists: form.SkipWhenOpenTaskExists,
+                IsEnabled: form.IsEnabled));
+
+            Navigation.NavigateTo("automations");
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Id is not null)
+        {
+            await Automations.DeleteAsync(Id.Value);
+        }
+
+        Navigation.NavigateTo("automations");
+    }
+
+    private DateOnly Today() =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, Automations.Zone).DateTime);
+
+    /// <summary>What the editor posts back.</summary>
+    private class AutomationForm
+    {
+        /// <summary>Title to give the tasks the automation creates.</summary>
+        public string? Title { get; set; }
+
+        /// <summary>Notes to copy onto those tasks.</summary>
+        public string? Notes { get; set; }
+
+        /// <summary>Unit the repeat interval is counted in.</summary>
+        public TaskIntervalUnit IntervalUnit { get; set; } = TaskIntervalUnit.Weeks;
+
+        /// <summary>How many of that unit there are between runs.</summary>
+        public int IntervalCount { get; set; } = 1;
+
+        /// <summary>Day the interval is counted from.</summary>
+        public DateOnly StartsOn { get; set; }
+
+        /// <summary>Time of day each run happens at.</summary>
+        public TimeOnly TimeOfDay { get; set; }
+
+        /// <summary>How many days after it is created the task is due, or null for no due date.</summary>
+        public int? DueInDays { get; set; }
+
+        /// <summary>Id of the chosen category, or empty for none.</summary>
+        public string? CategoryId { get; set; }
+
+        /// <summary>Whether a run does nothing when a task with the same title is already open.</summary>
+        public bool SkipWhenOpenTaskExists { get; set; }
+
+        /// <summary>Whether the automation runs at all.</summary>
+        public bool IsEnabled { get; set; } = true;
+
+        /// <summary>Which button was pressed: <c>save</c>, or <c>preview</c> to re-render only.</summary>
+        public string? Action { get; set; }
+    }
+}
