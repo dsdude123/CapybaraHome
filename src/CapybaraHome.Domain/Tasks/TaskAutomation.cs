@@ -1,8 +1,9 @@
 namespace CapybaraHome.Domain.Tasks;
 
 /// <summary>
-/// A rule that creates a task on a timed basis. The start date is what the interval is counted
-/// from, and the time of day is when the run happens on each of those days.
+/// A rule that creates a task on a timed basis. The interval is any number of days, weeks, months
+/// or years; the start date is what it is counted from, and the time of day is when the run
+/// happens on each of those days.
 /// </summary>
 public class TaskAutomation
 {
@@ -21,14 +22,23 @@ public class TaskAutomation
     /// <summary>Navigation to <see cref="CategoryId"/>.</summary>
     public Category? Category { get; set; }
 
-    /// <summary>How often the automation runs.</summary>
-    public TaskAutomationFrequency Frequency { get; set; } = TaskAutomationFrequency.Weekly;
+    /// <summary>The unit the repeat interval is counted in.</summary>
+    public TaskIntervalUnit IntervalUnit { get; set; } = TaskIntervalUnit.Weeks;
+
+    /// <summary>How many of <see cref="IntervalUnit"/> there are between runs. At least one.</summary>
+    public int IntervalCount { get; set; } = 1;
 
     /// <summary>Day the interval is counted from. The first run is on this day.</summary>
     public DateOnly StartsOn { get; set; }
 
     /// <summary>Time of day each run happens at, in the server's time zone. Midnight unless changed.</summary>
     public TimeOnly TimeOfDay { get; set; }
+
+    /// <summary>
+    /// How many days after it is created the task is due, or null to leave it with no due date.
+    /// Zero makes it due the day it is created.
+    /// </summary>
+    public int? DueInDays { get; set; }
 
     /// <summary>Whether a run does nothing when a task with the same title is already open.</summary>
     public bool SkipWhenOpenTaskExists { get; set; }

@@ -67,11 +67,13 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   date, or overdue only.
 - **Create** — the button in the header goes to `/tasks/new`; the same page edits an existing
   task at `/tasks/{id}`.
-- **Automations** (`/automations`) — tasks created on a timer: every day, week, two weeks,
-  month, three months or year, counted from a start date, at a time of day that defaults to
-  midnight. The editor previews the next five executions, and an automation can skip its run
-  while a task with the same title is still open. Times are the server's own clock, so in a
-  container they follow `TZ`. A run missed while the app was down happens once when it is back.
+- **Automations** (`/automations`) — tasks created on a timer, repeating every *N* days, weeks,
+  months or years for any *N*, counted from a start date, at a time of day that defaults to
+  midnight. **Due in** optionally dates each created task a number of days from the day it is
+  created; leave it empty for a task with no due date. The editor previews the next five
+  executions, and an automation can skip its run while a task with the same title is still
+  open. Times are the server's own clock, so in a container they follow `TZ`. A run missed
+  while the app was down happens once when it is back.
 - **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.

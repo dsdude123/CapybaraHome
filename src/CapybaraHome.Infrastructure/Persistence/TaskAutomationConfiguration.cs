@@ -11,7 +11,7 @@ public class TaskAutomationConfiguration : IEntityTypeConfiguration<TaskAutomati
     public void Configure(EntityTypeBuilder<TaskAutomation> builder)
     {
         builder.Property(a => a.Title).IsRequired().HasMaxLength(500);
-        builder.Property(a => a.Frequency).HasConversion<string>().HasMaxLength(20);
+        builder.Property(a => a.IntervalUnit).HasConversion<string>().HasMaxLength(20);
 
         builder.HasIndex(a => a.IsEnabled);
 

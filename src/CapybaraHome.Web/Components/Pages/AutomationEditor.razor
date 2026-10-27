@@ -10,7 +10,8 @@
 
 <p class="muted">
     The task is created with this title, these notes and this category every time the automation
-    runs. Execution times are the server's own clock, @DateNames.ZoneLabel(Automations.Zone).
+    runs. Leave <strong>Due in</strong> empty for a task with no due date. Execution times are the
+    server's own clock, @DateNames.ZoneLabel(Automations.Zone).
 </p>
 
 <EditForm Model="form" FormName="automation-editor" OnValidSubmit="SubmitAsync">
@@ -27,11 +28,16 @@
 
     <div class="filters">
         <div class="field">
-            <label for="automation-frequency">Repeats</label>
-            <InputSelect id="automation-frequency" @bind-Value="form.Frequency">
-                @foreach (var value in FrequencyNames.All)
+            <label for="automation-count">Repeats every</label>
+            <InputNumber id="automation-count" @bind-Value="form.IntervalCount" min="1" />
+        </div>
+
+        <div class="field">
+            <label for="automation-unit">&nbsp;</label>
+            <InputSelect id="automation-unit" @bind-Value="form.IntervalUnit">
+                @foreach (var value in IntervalNames.All)
                 {
-                    <option value="@value">@FrequencyNames.Label(value)</option>
+                    <option value="@value">@IntervalNames.UnitLabel(value)</option>
                 }
             </InputSelect>
         </div>
@@ -44,6 +50,12 @@
         <div class="field">
             <label for="automation-time">At</label>
             <InputDate id="automation-time" Type="InputDateType.Time" @bind-Value="form.TimeOfDay" />
+        </div>
+
+        <div class="field">
+            <label for="automation-due">Due in</label>
+            <InputNumber id="automation-due" @bind-Value="form.DueInDays" placeholder="No due date" min="0" />
+            <span class="muted">days after the task is created</span>
         </div>
 
         <div class="field">
@@ -150,16 +162,18 @@
             {
                 Title = automation.Title,
                 Notes = automation.Notes ?? string.Empty,
-                Frequency = automation.Frequency,
+                IntervalUnit = automation.IntervalUnit,
+                IntervalCount = automation.IntervalCount,
                 StartsOn = automation.StartsOn,
                 TimeOfDay = automation.TimeOfDay,
+                DueInDays = automation.DueInDays,
                 CategoryId = automation.CategoryId?.ToString() ?? string.Empty,
                 SkipWhenOpenTaskExists = automation.SkipWhenOpenTaskExists,
                 IsEnabled = automation.IsEnabled,
             };
         }
 
-        preview = Automations.Preview(form.Frequency, form.StartsOn, form.TimeOfDay);
+        preview = Automations.Preview(form.IntervalUnit, form.IntervalCount, form.StartsOn, form.TimeOfDay);
     }
 
     /// <summary>
@@ -184,10 +198,12 @@
                 var created = await Automations.CreateAsync(new CreateTaskAutomationRequest(
                     form.Title ?? string.Empty,
                     form.Notes,
-                    form.Frequency,
+                    form.IntervalUnit,
+                    form.IntervalCount,
                     form.StartsOn,
                     form.TimeOfDay,
                     category,
+                    form.DueInDays,
                     form.SkipWhenOpenTaskExists,
                     form.IsEnabled));
 
@@ -198,11 +214,14 @@
             await Automations.UpdateAsync(Id.Value, new UpdateTaskAutomationRequest(
                 Title: form.Title,
                 Notes: form.Notes,
-                Frequency: form.Frequency,
+                IntervalUnit: form.IntervalUnit,
+                IntervalCount: form.IntervalCount,
                 StartsOn: form.StartsOn,
                 TimeOfDay: form.TimeOfDay,
                 CategoryId: category,
                 ClearCategory: category is null,
+                DueInDays: form.DueInDays,
+                ClearDueInDays: form.DueInDays is null,
                 SkipWhenOpenTaskExists: form.SkipWhenOpenTaskExists,
                 IsEnabled: form.IsEnabled));
 
@@ -236,14 +255,20 @@
         /// <summary>Notes to copy onto those tasks.</summary>
         public string? Notes { get; set; }
 
-        /// <summary>How often it runs.</summary>
-        public TaskAutomationFrequency Frequency { get; set; } = TaskAutomationFrequency.Weekly;
+        /// <summary>Unit the repeat interval is counted in.</summary>
+        public TaskIntervalUnit IntervalUnit { get; set; } = TaskIntervalUnit.Weeks;
+
+        /// <summary>How many of that unit there are between runs.</summary>
+        public int IntervalCount { get; set; } = 1;
 
         /// <summary>Day the interval is counted from.</summary>
         public DateOnly StartsOn { get; set; }
 
         /// <summary>Time of day each run happens at.</summary>
         public TimeOnly TimeOfDay { get; set; }
+
+        /// <summary>How many days after it is created the task is due, or null for no due date.</summary>
+        public int? DueInDays { get; set; }
 
         /// <summary>Id of the chosen category, or empty for none.</summary>
         public string? CategoryId { get; set; }

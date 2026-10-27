@@ -912,9 +912,11 @@ public class StaticRenderingTests
             ["form.Action"] = "save",
             ["form.Title"] = "Take the bins out",
             ["form.Notes"] = "Green bin this week",
-            ["form.Frequency"] = nameof(TaskAutomationFrequency.BiWeekly),
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "2",
             ["form.StartsOn"] = "2026-11-02",
             ["form.TimeOfDay"] = "07:30",
+            ["form.DueInDays"] = "3",
             ["form.CategoryId"] = string.Empty,
             ["form.SkipWhenOpenTaskExists"] = "true",
             ["form.IsEnabled"] = "true",
@@ -932,16 +934,19 @@ public class StaticRenderingTests
 
             Assert.Equal("Take the bins out", automation.Title);
             Assert.Equal("Green bin this week", automation.Notes);
-            Assert.Equal(TaskAutomationFrequency.BiWeekly, automation.Frequency);
+            Assert.Equal(TaskIntervalUnit.Weeks, automation.IntervalUnit);
+            Assert.Equal(2, automation.IntervalCount);
             Assert.Equal(new DateOnly(2026, 11, 2), automation.StartsOn);
             Assert.Equal(new TimeOnly(7, 30), automation.TimeOfDay);
+            Assert.Equal(3, automation.DueInDays);
             Assert.True(automation.SkipWhenOpenTaskExists);
         }
 
         // The list shows it with the interval it keeps and the execution it is waiting for.
         var list = await client.GetStringAsync("/automations");
         Assert.Contains("Take the bins out", list);
-        Assert.Contains("Every two weeks", list);
+        Assert.Contains("Every 2 weeks", list);
+        Assert.Contains("Due 3 days after it is created", list);
         Assert.Contains("Never run", list);
 
         var edited = await PostAsync(client, editor, "automation-editor", new()
@@ -949,9 +954,11 @@ public class StaticRenderingTests
             ["form.Action"] = "save",
             ["form.Title"] = "Take the bins out and rinse them",
             ["form.Notes"] = string.Empty,
-            ["form.Frequency"] = nameof(TaskAutomationFrequency.Monthly),
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Months),
+            ["form.IntervalCount"] = "9",
             ["form.StartsOn"] = "2026-12-01",
             ["form.TimeOfDay"] = "00:00",
+            ["form.DueInDays"] = string.Empty,
             ["form.CategoryId"] = string.Empty,
             ["form.IsEnabled"] = "true",
         });
@@ -965,7 +972,11 @@ public class StaticRenderingTests
 
             Assert.Equal("Take the bins out and rinse them", automation.Title);
             Assert.Null(automation.Notes);
-            Assert.Equal(TaskAutomationFrequency.Monthly, automation.Frequency);
+            Assert.Equal(TaskIntervalUnit.Months, automation.IntervalUnit);
+            Assert.Equal(9, automation.IntervalCount);
+
+            // An empty Due in box takes the due date off again rather than leaving the old one.
+            Assert.Null(automation.DueInDays);
 
             // An unticked checkbox posts nothing, which has to read as off rather than as unset.
             Assert.False(automation.SkipWhenOpenTaskExists);
@@ -983,13 +994,15 @@ public class StaticRenderingTests
     }
 
     [Theory]
-    [InlineData(TaskAutomationFrequency.Daily)]
-    [InlineData(TaskAutomationFrequency.Weekly)]
-    [InlineData(TaskAutomationFrequency.BiWeekly)]
-    [InlineData(TaskAutomationFrequency.Monthly)]
-    [InlineData(TaskAutomationFrequency.Quarterly)]
-    [InlineData(TaskAutomationFrequency.Yearly)]
-    public async Task The_preview_button_shows_every_frequencys_executions_without_saving(TaskAutomationFrequency frequency)
+    [InlineData(TaskIntervalUnit.Days, 1)]
+    [InlineData(TaskIntervalUnit.Days, 13)]
+    [InlineData(TaskIntervalUnit.Weeks, 1)]
+    [InlineData(TaskIntervalUnit.Weeks, 2)]
+    [InlineData(TaskIntervalUnit.Months, 1)]
+    [InlineData(TaskIntervalUnit.Months, 9)]
+    [InlineData(TaskIntervalUnit.Years, 1)]
+    [InlineData(TaskIntervalUnit.Years, 3)]
+    public async Task The_preview_button_shows_every_intervals_executions_without_saving(TaskIntervalUnit unit, int count)
     {
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
@@ -998,7 +1011,8 @@ public class StaticRenderingTests
         {
             ["form.Action"] = "preview",
             ["form.Title"] = "Still being set up",
-            ["form.Frequency"] = frequency.ToString(),
+            ["form.IntervalUnit"] = unit.ToString(),
+            ["form.IntervalCount"] = count.ToString(),
             ["form.StartsOn"] = "2026-11-02",
             ["form.TimeOfDay"] = "06:00",
             ["form.CategoryId"] = string.Empty,
@@ -1020,6 +1034,108 @@ public class StaticRenderingTests
     }
 
     [Fact]
+    public async Task The_automation_list_says_its_piece_for_every_state_a_row_can_be_in()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        // Seeded through the context rather than the service, because the stamps a row's labels
+        // read — when it was created, when it last ran — are not things a caller gets to set.
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var longAgo = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+            context.TaskAutomations.AddRange(
+                Row("No offset", longAgo, dueInDays: null),
+                Row("Same day", longAgo, dueInDays: 0),
+                Row("Next day", longAgo, dueInDays: 1),
+                Row("A fortnight", longAgo, dueInDays: 14),
+                Row("Paused one", longAgo, isEnabled: false),
+                Row("Ran cleanly", longAgo, lastRunAt: longAgo.AddDays(1)),
+                Row("Stood down", longAgo, lastRunAt: longAgo.AddDays(1), lastRunSkipped: true),
+                // Counted yearly from the last day the calendar has, so there is no next one.
+                Row("Off the end", new DateTimeOffset(9999, 12, 31, 23, 59, 0, TimeSpan.Zero),
+                    startsOn: DateOnly.MaxValue),
+                Row("Still to come", DateTimeOffset.UtcNow, startsOn: DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1)));
+
+            await context.SaveChangesAsync();
+        }
+
+        var html = await client.GetStringAsync("/automations");
+
+        // Every arm of the due-date label.
+        Assert.Contains("No due date", html);
+        Assert.Contains("Due the day it is created", html);
+        Assert.Contains("Due the day after it is created", html);
+        Assert.Contains("Due 14 days after it is created", html);
+
+        // Paused shows both as a pill on the title line and as the row's next execution.
+        Assert.Contains(">Paused</span>", html);
+        Assert.Contains("Paused, nothing scheduled", html);
+
+        // A schedule with nothing left, one that is overdue, and one still waiting.
+        Assert.Contains("No further executions", html);
+        Assert.Contains("Due, runs at the next check", html);
+        Assert.Contains("Next ", html);
+
+        // Never run, run, and run but stood down.
+        Assert.Contains("Never run", html);
+        Assert.Contains("Last run ", html);
+        Assert.Contains(", skipped", html);
+    }
+
+    private static Domain.Tasks.TaskAutomation Row(
+        string title,
+        DateTimeOffset createdAt,
+        DateOnly startsOn = default,
+        int? dueInDays = null,
+        bool isEnabled = true,
+        DateTimeOffset? lastRunAt = null,
+        bool lastRunSkipped = false) => new()
+        {
+            Title = title,
+            IntervalUnit = startsOn == DateOnly.MaxValue ? TaskIntervalUnit.Years : TaskIntervalUnit.Days,
+            IntervalCount = 1,
+            StartsOn = startsOn == default ? DateOnly.FromDateTime(createdAt.UtcDateTime) : startsOn,
+            DueInDays = dueInDays,
+            IsEnabled = isEnabled,
+            LastRunAt = lastRunAt,
+            LastRunSkipped = lastRunSkipped,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+        };
+
+    [Fact]
+    public async Task A_due_date_before_the_task_is_created_comes_back_as_an_error_on_the_editor()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = "Backwards",
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "1",
+            ["form.StartsOn"] = "2026-11-02",
+            ["form.TimeOfDay"] = "00:00",
+            ["form.DueInDays"] = "-1",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        var html = await posted.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("cannot be due before it is created", html);
+
+        using var scope = app.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+        Assert.Empty(context.TaskAutomations);
+    }
+
+    [Fact]
     public async Task A_blank_title_comes_back_as_an_error_on_the_editor()
     {
         await using var app = await AppFactory.CreateAsync();
@@ -1029,7 +1145,8 @@ public class StaticRenderingTests
         {
             ["form.Action"] = "save",
             ["form.Title"] = "   ",
-            ["form.Frequency"] = nameof(TaskAutomationFrequency.Weekly),
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "1",
             ["form.StartsOn"] = "2026-11-02",
             ["form.TimeOfDay"] = "00:00",
             ["form.CategoryId"] = string.Empty,
