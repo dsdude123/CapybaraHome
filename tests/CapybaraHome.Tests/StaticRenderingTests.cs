@@ -47,7 +47,6 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
-    [InlineData("/documents")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -72,7 +71,6 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
-    [InlineData("/documents")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -1080,21 +1078,10 @@ public class StaticRenderingTests
 
         Assert.Equal(HttpStatusCode.Redirect, webhook.StatusCode);
 
-        var document = await PostAsync(client, $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.PrintDocument}", "operation-editor", new()
-        {
-            ["form.DocumentTitle"] = "Pool closing checklist",
-            ["form.DocumentBody"] = "Cover on, pump off",
-            ["form.IsEnabled"] = "true",
-            ["form.Action"] = "save",
-        });
-
-        Assert.Equal(HttpStatusCode.Redirect, document.StatusCode);
-
         var editor = await client.GetStringAsync($"/tasks/{taskId}");
         Assert.Contains("Open the pool", editor);
         Assert.Contains("due 7 months after it is completed", editor);
         Assert.Contains("POST https://hooks.example.com/pool", editor);
-        Assert.Contains("Pool closing checklist", editor);
 
         // Each one opens again on its own fields rather than on the chooser.
         foreach (var operation in await OperationsAsync(app, taskId))
@@ -1169,7 +1156,7 @@ public class StaticRenderingTests
     }
 
     [Fact]
-    public async Task Completing_a_task_on_the_board_runs_its_operations_and_the_document_prints()
+    public async Task Completing_a_task_on_the_board_runs_its_operations()
     {
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
@@ -1184,10 +1171,10 @@ public class StaticRenderingTests
             ["form.Action"] = "save",
         });
 
-        await PostAsync(client, $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.PrintDocument}", "operation-editor", new()
+        await PostAsync(client, $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.Webhook}", "operation-editor", new()
         {
-            ["form.DocumentTitle"] = "Bike service record",
-            ["form.DocumentBody"] = "Chain, brakes, tyres",
+            ["form.WebhookUrl"] = "https://hooks.example.com/bike",
+            ["form.WebhookMethod"] = nameof(TaskWebhookMethod.Post),
             ["form.IsEnabled"] = "true",
             ["form.Action"] = "save",
         });
@@ -1198,29 +1185,27 @@ public class StaticRenderingTests
         var board = await client.GetStringAsync("/board");
         Assert.Contains("Service the bike", board);
 
-        var documents = await client.GetStringAsync("/documents");
-        Assert.Contains("Bike service record", documents);
-        Assert.Contains(CloseOperationNames.Label(TaskCloseRunStatus.Succeeded), documents);
-
-        int documentId;
         using (var scope = app.Services.CreateScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
-            documentId = (await context.TaskCloseOperationRuns
-                .SingleAsync(r => r.Kind == TaskCloseOperationKind.PrintDocument)).Id;
 
-            // The follow-up task is there, due the twelve weeks out the rule asked for.
+            // The follow-up task is there, due the twelve weeks out the rule asked for, and the
+            // webhook call is queued rather than sent while the move was being saved.
             var followUp = await context.Tasks.SingleAsync(t => t.Id != taskId);
             Assert.Equal("Service the bike", followUp.Title);
             Assert.Equal(TaskItemStatus.ToDo, followUp.Status);
             Assert.NotNull(followUp.DueDate);
             Assert.Equal(2, await context.TaskCloseOperations.CountAsync(o => o.TaskId == followUp.Id));
+
+            var queued = await context.TaskCloseOperationRuns
+                .SingleAsync(r => r.Kind == TaskCloseOperationKind.Webhook);
+            Assert.Equal(TaskCloseRunStatus.Pending, queued.Status);
         }
 
-        var page = await client.GetStringAsync($"/documents/{documentId}");
-        Assert.Contains("Bike service record", page);
-        Assert.Contains("Chain, brakes, tyres", page);
-        Assert.DoesNotContain("<!--Blazor:", page);
+        // The run and what it did show on the task that was closed.
+        var closed = await client.GetStringAsync($"/tasks/{taskId}");
+        Assert.Contains("Last run done", closed);
+        Assert.Contains(CloseOperationNames.Label(TaskCloseRunStatus.Pending).ToLowerInvariant(), closed);
     }
 
     private static async Task<int> CreateTaskAsync(HttpClient client, string title)

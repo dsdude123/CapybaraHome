@@ -73,13 +73,12 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   while a task with the same title is still open. Times are the server's own clock, so in a
   container they follow `TZ`. A run missed while the app was down happens once when it is back.
 - **Close operations** — on a task's own page, what happens when it is moved to done: call a
-  webhook, create another task, or produce a document. A task can carry as many as you like,
-  and they run in the order you add them. The created task's due date can be an exact date or
-  one worked out from the day you finished the task: in so many days, weeks, months or years,
-  the start of the next quarter, or the end of the quarter it was finished in. Unless you turn
-  it off, the created task carries the same operations, so closing it sets the next one again.
-- **Documents** (`/documents`) — the documents those operations produced, each on a page laid
-  out to print, with the recent operations and anything that failed listed underneath.
+  webhook or create another task. A task can carry as many as you like, and they run in the
+  order you add them, with what each one last did shown beside it. The created task's due date
+  can be an exact date or one worked out from the day you finished the task: in so many days,
+  weeks, months or years, the start of the next quarter, or the end of the quarter it was
+  finished in. Unless you turn it off, the created task carries the same operations, so closing
+  it sets the next one again.
 - **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
@@ -135,7 +134,7 @@ A webhook operation sends the completed task to a URL you type. A `POST` carries
 notes, category, due date and completion time as JSON; a `GET` just fetches the URL. The call
 goes out within a few seconds of the task being closed rather than while the page is saving,
 and it is retried, further apart each time, until the target accepts it or five attempts have
-failed. What happened is on the task's own page and under Documents.
+failed. What happened is on the task's own page.
 
 Redirects are not followed, and a call is refused if the address is the server itself, a
 link-local address such as a cloud metadata service, or multicast; the address is checked again

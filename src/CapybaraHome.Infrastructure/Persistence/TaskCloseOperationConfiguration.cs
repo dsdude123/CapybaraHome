@@ -15,7 +15,6 @@ public class TaskCloseOperationConfiguration : IEntityTypeConfiguration<TaskClos
         builder.Property(o => o.DueDateMode).HasConversion<string>().HasMaxLength(20);
         builder.Property(o => o.WebhookUrl).HasMaxLength(2000);
         builder.Property(o => o.FollowUpTitle).HasMaxLength(500);
-        builder.Property(o => o.DocumentTitle).HasMaxLength(500);
 
         builder.HasIndex(o => o.TaskId);
 

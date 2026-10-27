@@ -132,8 +132,6 @@ public record TaskRecord(
 /// <param name="DueDateValue">How many days, weeks, months or years later it is due.</param>
 /// <param name="DueDateOn">Day it is due when that is picked by hand.</param>
 /// <param name="CarryOperationsForward">Whether the created task gets a copy of these operations.</param>
-/// <param name="DocumentTitle">Heading given to the produced document, or null.</param>
-/// <param name="DocumentBody">Body of the produced document, or null.</param>
 public record TaskCloseOperationRecord(
     TaskCloseOperationKind Kind,
     int SortOrder,
@@ -144,9 +142,7 @@ public record TaskCloseOperationRecord(
     TaskDueDateMode DueDateMode,
     int? DueDateValue,
     DateOnly? DueDateOn,
-    bool CarryOperationsForward,
-    string? DocumentTitle,
-    string? DocumentBody);
+    bool CarryOperationsForward);
 
 /// <summary>A task automation in an export.</summary>
 /// <param name="Title">Title it gives the tasks it creates.</param>

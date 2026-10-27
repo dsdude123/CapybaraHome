@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CapybaraHome.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CapybaraHomeDbContext))]
-    [Migration("20261026055114_AddTaskCloseOperations")]
+    [Migration("20261027010900_AddTaskCloseOperations")]
     partial class AddTaskCloseOperations
     {
         /// <inheritdoc />
@@ -356,13 +356,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("DocumentBody")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DocumentTitle")
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("DueDateMode")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -430,13 +423,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Detail")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DocumentBody")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DocumentTitle")
-                        .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Kind")

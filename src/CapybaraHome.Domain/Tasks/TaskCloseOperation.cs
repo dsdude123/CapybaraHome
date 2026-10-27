@@ -45,12 +45,6 @@ public class TaskCloseOperation
     /// <summary>Whether the created task gets a copy of the completed task's operations.</summary>
     public bool CarryOperationsForward { get; set; } = true;
 
-    /// <summary>Heading the produced document is given, or null to reuse the task's title.</summary>
-    public string? DocumentTitle { get; set; }
-
-    /// <summary>Body of the produced document, or null to reuse the task's notes.</summary>
-    public string? DocumentBody { get; set; }
-
     /// <summary>When the row was created, in UTC.</summary>
     public DateTimeOffset CreatedAt { get; set; }
 

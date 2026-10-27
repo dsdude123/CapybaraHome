@@ -568,32 +568,3 @@ code.secret {
 .inline-form {
     margin-inline-start: auto;
 }
-
-.document {
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    margin-block: 0.75rem;
-    padding: 1.5rem;
-}
-
-.document-meta {
-    color: var(--text-muted);
-    font-size: 0.85rem;
-}
-
-.document-body {
-    white-space: pre-wrap;
-}
-
-@media print {
-    .no-print {
-        display: none;
-    }
-
-    .document {
-        background: none;
-        border: none;
-        padding: 0;
-    }
-}

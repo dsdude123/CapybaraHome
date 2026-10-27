@@ -7,9 +7,9 @@ namespace CapybaraHome.Application.Tasks;
 
 /// <summary>
 /// Reads and writes the operations a task runs when it is completed, and runs them. Creating a
-/// task and producing a document happen while the completion is being saved, so they are there
-/// the moment the page comes back; a webhook is left for <see cref="SendPendingWebhooksAsync"/>
-/// so a target that is slow or down cannot hold up the click that closed the task.
+/// task happens while the completion is being saved, so it is there the moment the page comes
+/// back; a webhook is left for <see cref="SendPendingWebhooksAsync"/> so a target that is slow
+/// or down cannot hold up the click that closed the task.
 /// </summary>
 public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebhookSender webhooks, TimeProvider clock)
 {
@@ -92,8 +92,6 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
             DueDateValue = request.DueDateValue,
             DueDateOn = request.DueDateOn,
             CarryOperationsForward = request.CarryOperationsForward,
-            DocumentTitle = Blank(request.DocumentTitle),
-            DocumentBody = Blank(request.DocumentBody),
             SortOrder = await NextSortOrderAsync(taskId, cancellationToken),
             CreatedAt = clock.GetUtcNow(),
             UpdatedAt = clock.GetUtcNow(),
@@ -164,16 +162,6 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
             operation.CarryOperationsForward = carry;
         }
 
-        if (request.DocumentTitle is not null)
-        {
-            operation.DocumentTitle = Blank(request.DocumentTitle);
-        }
-
-        if (request.DocumentBody is not null)
-        {
-            operation.DocumentBody = Blank(request.DocumentBody);
-        }
-
         if (request.IsEnabled is { } enabled)
         {
             operation.IsEnabled = enabled;
@@ -215,20 +203,6 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
         return rows.Select(RunView).ToList();
     }
 
-    /// <summary>Returns the runs that produced a document, newest first.</summary>
-    /// <param name="limit">How many documents to return.</param>
-    /// <param name="cancellationToken">Token that cancels the read.</param>
-    public async Task<IReadOnlyList<TaskCloseRunView>> ListDocumentsAsync(int limit = 50, CancellationToken cancellationToken = default)
-    {
-        var rows = await context.TaskCloseOperationRuns.AsNoTracking()
-            .Where(r => r.Kind == TaskCloseOperationKind.PrintDocument)
-            .OrderByDescending(r => r.Id)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
-
-        return rows.Select(RunView).ToList();
-    }
-
     /// <summary>Returns one run, or null when none has that id.</summary>
     /// <param name="id">Run to read.</param>
     /// <param name="cancellationToken">Token that cancels the read.</param>
@@ -256,7 +230,7 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
 
         if (operations.Count == 0)
         {
-            return new TaskCloseRunSummary(0, 0, 0, 0);
+            return new TaskCloseRunSummary(0, 0, 0);
         }
 
         var now = task.CompletedAt ?? clock.GetUtcNow();
@@ -266,7 +240,6 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
             : null;
 
         var created = 0;
-        var documents = 0;
         var pending = 0;
 
         foreach (var operation in operations)
@@ -295,16 +268,6 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
                     created++;
                     break;
 
-                case TaskCloseOperationKind.PrintDocument:
-                    run.DocumentTitle = operation.DocumentTitle ?? task.Title;
-                    run.DocumentBody = operation.DocumentBody ?? task.Notes;
-                    run.Status = TaskCloseRunStatus.Succeeded;
-                    run.Attempts = 1;
-                    run.LastAttemptAt = now;
-                    run.Detail = "The document is ready to print.";
-                    documents++;
-                    break;
-
                 default:
                     run.WebhookPayload = JsonSerializer.Serialize(
                         new WebhookPayload("task.completed", task.Id, task.Title, task.Notes, categoryName, task.DueDate, now),
@@ -318,7 +281,7 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
             await context.SaveChangesAsync(cancellationToken);
         }
 
-        return new TaskCloseRunSummary(operations.Count, created, documents, pending);
+        return new TaskCloseRunSummary(operations.Count, created, pending);
     }
 
     /// <summary>
@@ -444,8 +407,6 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
                 DueDateValue = source.DueDateValue,
                 DueDateOn = source.DueDateOn,
                 CarryOperationsForward = source.CarryOperationsForward,
-                DocumentTitle = source.DocumentTitle,
-                DocumentBody = source.DocumentBody,
                 CreatedAt = now,
                 UpdatedAt = now,
             });
@@ -500,8 +461,6 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
         operation.DueDateValue,
         operation.DueDateOn,
         operation.CarryOperationsForward,
-        operation.DocumentTitle,
-        operation.DocumentBody,
         lastRun,
         operation.CreatedAt,
         operation.UpdatedAt);
@@ -517,8 +476,6 @@ public class TaskCloseOperationService(ICapybaraHomeDbContext context, TaskWebho
         run.LastAttemptAt,
         run.Detail,
         run.CreatedTaskId,
-        run.DocumentTitle,
-        run.DocumentBody,
         run.CompletedAt,
         run.CreatedAt);
 }

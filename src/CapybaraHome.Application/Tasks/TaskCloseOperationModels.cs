@@ -15,8 +15,6 @@ namespace CapybaraHome.Application.Tasks;
 /// <param name="DueDateValue">How many days, weeks, months or years later it is due.</param>
 /// <param name="DueDateOn">Day it is due when that is picked by hand.</param>
 /// <param name="CarryOperationsForward">Whether the created task gets a copy of these operations.</param>
-/// <param name="DocumentTitle">Heading the produced document is given, or null to reuse the task's title.</param>
-/// <param name="DocumentBody">Body of the produced document, or null to reuse the task's notes.</param>
 /// <param name="LastRun">The most recent run of this operation, or null while it has never run.</param>
 /// <param name="CreatedAt">When it was created.</param>
 /// <param name="UpdatedAt">When it last changed.</param>
@@ -33,8 +31,6 @@ public record TaskCloseOperationView(
     int? DueDateValue,
     DateOnly? DueDateOn,
     bool CarryOperationsForward,
-    string? DocumentTitle,
-    string? DocumentBody,
     TaskCloseRunView? LastRun,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -50,8 +46,6 @@ public record TaskCloseOperationView(
 /// <param name="LastAttemptAt">When it was last attempted, or null.</param>
 /// <param name="Detail">What happened.</param>
 /// <param name="CreatedTaskId">Task it created, or null.</param>
-/// <param name="DocumentTitle">Heading of the document it produced, or null.</param>
-/// <param name="DocumentBody">Body of that document, or null.</param>
 /// <param name="CompletedAt">When the task was completed.</param>
 /// <param name="CreatedAt">When the run was queued.</param>
 public record TaskCloseRunView(
@@ -65,8 +59,6 @@ public record TaskCloseRunView(
     DateTimeOffset? LastAttemptAt,
     string? Detail,
     int? CreatedTaskId,
-    string? DocumentTitle,
-    string? DocumentBody,
     DateTimeOffset CompletedAt,
     DateTimeOffset CreatedAt);
 
@@ -79,8 +71,6 @@ public record TaskCloseRunView(
 /// <param name="DueDateValue">How many days, weeks, months or years later it is due.</param>
 /// <param name="DueDateOn">Day it is due when that is picked by hand.</param>
 /// <param name="CarryOperationsForward">Whether the created task gets a copy of these operations.</param>
-/// <param name="DocumentTitle">Heading to give the produced document, or null to reuse the task's title.</param>
-/// <param name="DocumentBody">Body of the produced document, or null to reuse the task's notes.</param>
 /// <param name="IsEnabled">Whether it runs at all; true when left out.</param>
 public record CreateTaskCloseOperationRequest(
     TaskCloseOperationKind Kind,
@@ -91,8 +81,6 @@ public record CreateTaskCloseOperationRequest(
     int? DueDateValue = null,
     DateOnly? DueDateOn = null,
     bool CarryOperationsForward = true,
-    string? DocumentTitle = null,
-    string? DocumentBody = null,
     bool IsEnabled = true);
 
 /// <summary>Fields accepted when changing an operation. A null member leaves that field alone.</summary>
@@ -104,8 +92,6 @@ public record CreateTaskCloseOperationRequest(
 /// <param name="DueDateValue">New number of days, weeks, months or years.</param>
 /// <param name="DueDateOn">New day picked by hand.</param>
 /// <param name="CarryOperationsForward">New setting for copying the operations forward.</param>
-/// <param name="DocumentTitle">New document heading; pass an empty string to reuse the task's title.</param>
-/// <param name="DocumentBody">New document body; pass an empty string to reuse the task's notes.</param>
 /// <param name="IsEnabled">New setting for whether it runs.</param>
 public record UpdateTaskCloseOperationRequest(
     TaskCloseOperationKind? Kind = null,
@@ -116,16 +102,13 @@ public record UpdateTaskCloseOperationRequest(
     int? DueDateValue = null,
     DateOnly? DueDateOn = null,
     bool? CarryOperationsForward = null,
-    string? DocumentTitle = null,
-    string? DocumentBody = null,
     bool? IsEnabled = null);
 
 /// <summary>What queueing one completion's operations did.</summary>
 /// <param name="Queued">Operations that were queued.</param>
 /// <param name="TasksCreated">Tasks created straight away.</param>
-/// <param name="DocumentsProduced">Documents produced straight away.</param>
 /// <param name="WebhooksPending">Webhook calls left for the sweep to send.</param>
-public record TaskCloseRunSummary(int Queued, int TasksCreated, int DocumentsProduced, int WebhooksPending);
+public record TaskCloseRunSummary(int Queued, int TasksCreated, int WebhooksPending);
 
 /// <summary>What one sweep of the pending webhook calls did.</summary>
 /// <param name="Attempted">Calls that were tried.</param>

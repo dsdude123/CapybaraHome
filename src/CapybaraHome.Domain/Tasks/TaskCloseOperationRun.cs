@@ -1,9 +1,9 @@
 namespace CapybaraHome.Domain.Tasks;
 
 /// <summary>
-/// What one completion asked one operation to do, and how it went. The title, the kind and a
-/// produced document are copied onto the run so the record still reads after the task or the
-/// operation behind it is deleted.
+/// What one completion asked one operation to do, and how it went. The title and the kind are
+/// copied onto the run so the record still reads after the task or the operation behind it is
+/// deleted.
 /// </summary>
 public class TaskCloseOperationRun
 {
@@ -45,12 +45,6 @@ public class TaskCloseOperationRun
 
     /// <summary>Task this run created, or null when it created none.</summary>
     public int? CreatedTaskId { get; set; }
-
-    /// <summary>Heading of the document this run produced, or null when it produced none.</summary>
-    public string? DocumentTitle { get; set; }
-
-    /// <summary>Body of the document this run produced, or null when it produced none.</summary>
-    public string? DocumentBody { get; set; }
 
     /// <summary>When the task was completed, in UTC.</summary>
     public DateTimeOffset CompletedAt { get; set; }

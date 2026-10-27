@@ -8,7 +8,4 @@ public enum TaskCloseOperationKind
 
     /// <summary>Creates another task.</summary>
     CreateTask,
-
-    /// <summary>Produces a document to print.</summary>
-    PrintDocument,
 }

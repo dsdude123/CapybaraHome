@@ -193,9 +193,6 @@ public static class ApiEndpoints
 
             return await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound();
         });
-
-        api.MapGet("/documents", async (TaskCloseOperationService service, int? limit, CancellationToken cancellationToken) =>
-            Results.Ok(await service.ListDocumentsAsync(limit ?? 50, cancellationToken)));
     }
 
     private static void MapMeals(IEndpointRouteBuilder api)

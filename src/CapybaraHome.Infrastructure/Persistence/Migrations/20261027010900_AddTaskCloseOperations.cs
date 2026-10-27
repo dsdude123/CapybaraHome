@@ -28,8 +28,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     DueDateValue = table.Column<int>(type: "INTEGER", nullable: true),
                     DueDateOn = table.Column<DateOnly>(type: "TEXT", nullable: true),
                     CarryOperationsForward = table.Column<bool>(type: "INTEGER", nullable: false),
-                    DocumentTitle = table.Column<string>(type: "TEXT", maxLength: 500, nullable: true),
-                    DocumentBody = table.Column<string>(type: "TEXT", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)
                 },
@@ -60,8 +58,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     Detail = table.Column<string>(type: "TEXT", nullable: true),
                     WebhookPayload = table.Column<string>(type: "TEXT", nullable: true),
                     CreatedTaskId = table.Column<int>(type: "INTEGER", nullable: true),
-                    DocumentTitle = table.Column<string>(type: "TEXT", maxLength: 500, nullable: true),
-                    DocumentBody = table.Column<string>(type: "TEXT", nullable: true),
                     CompletedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)
                 },

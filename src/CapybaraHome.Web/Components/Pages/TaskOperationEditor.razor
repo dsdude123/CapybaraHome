@@ -116,24 +116,6 @@ else
             <p class="muted">@Preview()</p>
         }
 
-        @if (kind == TaskCloseOperationKind.PrintDocument)
-        {
-            <div class="field">
-                <label for="operation-document-title">Heading</label>
-                <InputText id="operation-document-title" type="text" @bind-Value="form.DocumentTitle" placeholder="@task.Title" />
-            </div>
-
-            <div class="field">
-                <label for="operation-document-body">Body</label>
-                <InputTextArea id="operation-document-body" @bind-Value="form.DocumentBody" placeholder="The task's description" />
-            </div>
-
-            <p class="muted">
-                The document is listed under Documents, where it opens on a page laid out to print.
-                CapybaraHome has no printer of its own, so printing is your browser's print dialog.
-            </p>
-        }
-
         <fieldset class="check-list">
             <legend>Runs</legend>
             <label for="operation-enabled">
@@ -226,8 +208,6 @@ else
             DueDateValue = operation.DueDateValue,
             DueDateOn = operation.DueDateOn?.ToDateTime(TimeOnly.MinValue),
             CarryOperationsForward = operation.CarryOperationsForward,
-            DocumentTitle = operation.DocumentTitle ?? string.Empty,
-            DocumentBody = operation.DocumentBody ?? string.Empty,
             IsEnabled = operation.IsEnabled,
         };
     }
@@ -271,8 +251,6 @@ else
                     form.DueDateValue,
                     DueOn(),
                     form.CarryOperationsForward,
-                    form.DocumentTitle,
-                    form.DocumentBody,
                     form.IsEnabled));
             }
             else
@@ -285,8 +263,6 @@ else
                     DueDateValue: form.DueDateValue,
                     DueDateOn: DueOn(),
                     CarryOperationsForward: form.CarryOperationsForward,
-                    DocumentTitle: form.DocumentTitle ?? string.Empty,
-                    DocumentBody: form.DocumentBody ?? string.Empty,
                     IsEnabled: form.IsEnabled));
             }
 
@@ -323,12 +299,6 @@ else
 
         /// <summary>Whether the created task gets the same operations.</summary>
         public bool CarryOperationsForward { get; set; } = true;
-
-        /// <summary>Heading to give the produced document, or empty to reuse the task's title.</summary>
-        public string? DocumentTitle { get; set; }
-
-        /// <summary>Body of the produced document, or empty to reuse the task's notes.</summary>
-        public string? DocumentBody { get; set; }
 
         /// <summary>Whether the operation runs at all.</summary>
         public bool IsEnabled { get; set; } = true;

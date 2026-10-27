@@ -202,9 +202,8 @@
     {
         TaskCloseOperationKind.Webhook =>
             $"{operation.WebhookMethod.ToString().ToUpperInvariant()} {operation.WebhookUrl}",
-        TaskCloseOperationKind.CreateTask =>
+        _ =>
             $"Creates \u201c{operation.FollowUpTitle ?? form.Title}\u201d, {CloseOperationNames.DueDateSummary(operation.DueDateMode, operation.DueDateValue, operation.DueDateOn)}",
-        _ => $"Document \u201c{operation.DocumentTitle ?? form.Title}\u201d",
     };
 
     private async Task RemoveOperationAsync(int operationId)

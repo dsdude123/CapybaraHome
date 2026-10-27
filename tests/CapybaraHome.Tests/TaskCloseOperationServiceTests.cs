@@ -105,29 +105,6 @@ public class TaskCloseOperationServiceTests
     }
 
     [Fact]
-    public async Task A_document_operation_produces_the_task_title_and_notes_unless_it_was_given_its_own()
-    {
-        await using var db = await TestDatabase.CreateAsync();
-        var tasks = db.Tasks();
-        var operations = db.CloseOperations();
-        var task = await tasks.CreateAsync(new CreateTaskRequest("Read the meter", "Cupboard under the stairs"));
-
-        await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(TaskCloseOperationKind.PrintDocument));
-        await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(
-            TaskCloseOperationKind.PrintDocument,
-            DocumentTitle: "Meter reading slip",
-            DocumentBody: "Reading: ____________"));
-
-        await tasks.UpdateAsync(task.Id, new UpdateTaskRequest(Status: TaskItemStatus.Done));
-
-        var documents = await operations.ListDocumentsAsync();
-        Assert.Equal(2, documents.Count);
-        Assert.Contains(documents, d => d.DocumentTitle == "Read the meter" && d.DocumentBody == "Cupboard under the stairs");
-        Assert.Contains(documents, d => d.DocumentTitle == "Meter reading slip" && d.DocumentBody == "Reading: ____________");
-        Assert.All(documents, d => Assert.Equal(TaskCloseRunStatus.Succeeded, d.Status));
-    }
-
-    [Fact]
     public async Task A_webhook_is_queued_and_sent_by_the_sweep_with_the_task_in_its_body()
     {
         await using var db = await TestDatabase.CreateAsync();
@@ -248,7 +225,7 @@ public class TaskCloseOperationServiceTests
         var task = await tasks.CreateAsync(new CreateTaskRequest("Sweep the path"));
 
         await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(
-            TaskCloseOperationKind.PrintDocument,
+            TaskCloseOperationKind.CreateTask,
             IsEnabled: false));
 
         await tasks.UpdateAsync(task.Id, new UpdateTaskRequest(Status: TaskItemStatus.InProgress));
@@ -308,34 +285,7 @@ public class TaskCloseOperationServiceTests
 
         await Assert.ThrowsAsync<ArgumentException>(() => db.CloseOperations().CreateAsync(
             404,
-            new CreateTaskCloseOperationRequest(TaskCloseOperationKind.PrintDocument)));
-    }
-
-    [Fact]
-    public async Task A_produced_document_outlives_the_operation_and_the_task_it_came_from()
-    {
-        await using var db = await TestDatabase.CreateAsync();
-        var tasks = db.Tasks();
-        var operations = db.CloseOperations();
-        var task = await tasks.CreateAsync(new CreateTaskRequest("Log the boiler service"));
-
-        var operation = await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(
-            TaskCloseOperationKind.PrintDocument,
-            DocumentTitle: "Boiler service record"));
-
-        await tasks.UpdateAsync(task.Id, new UpdateTaskRequest(Status: TaskItemStatus.Done));
-        var document = Assert.Single(await operations.ListDocumentsAsync());
-
-        await operations.DeleteAsync(operation.Id);
-        await tasks.DeleteAsync(task.Id);
-        db.Context.ChangeTracker.Clear();
-
-        var kept = await operations.GetRunAsync(document.Id);
-        Assert.NotNull(kept);
-        Assert.Equal("Boiler service record", kept!.DocumentTitle);
-        Assert.Equal("Log the boiler service", kept.TaskTitle);
-        Assert.Null(kept.TaskId);
-        Assert.Null(kept.OperationId);
+            new CreateTaskCloseOperationRequest(TaskCloseOperationKind.CreateTask)));
     }
 
     [Fact]
@@ -353,6 +303,7 @@ public class TaskCloseOperationServiceTests
 
         await tasks.UpdateAsync(task.Id, new UpdateTaskRequest(Status: TaskItemStatus.Done));
         await operations.DeleteAsync(operation.Id);
+        await tasks.DeleteAsync(task.Id);
         db.Context.ChangeTracker.Clear();
 
         var sweep = await operations.SendPendingWebhooksAsync();
@@ -360,7 +311,13 @@ public class TaskCloseOperationServiceTests
         Assert.Equal(0, sweep.Attempted);
         Assert.Equal(1, sweep.Failed);
         Assert.Empty(http.Requests);
-        Assert.Equal(TaskCloseRunStatus.Failed, Assert.Single(await operations.ListRunsAsync()).Status);
+
+        // The run outlives both: what happened is still readable off the title it kept.
+        var run = Assert.Single(await operations.ListRunsAsync());
+        Assert.Equal(TaskCloseRunStatus.Failed, run.Status);
+        Assert.Equal("Shout at the cloud", run.TaskTitle);
+        Assert.Null(run.OperationId);
+        Assert.Null(run.TaskId);
     }
 
     [Fact]
@@ -371,10 +328,10 @@ public class TaskCloseOperationServiceTests
         var operations = db.CloseOperations();
         var task = await tasks.CreateAsync(new CreateTaskRequest("Close the season"));
 
-        await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(TaskCloseOperationKind.PrintDocument));
         await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(
             TaskCloseOperationKind.CreateTask,
-            DueDateMode: TaskDueDateMode.NextQuarter));
+            DueDateMode: TaskDueDateMode.NextQuarter,
+            CarryOperationsForward: false));
         await operations.CreateAsync(task.Id, new CreateTaskCloseOperationRequest(
             TaskCloseOperationKind.Webhook,
             WebhookUrl: "https://hooks.example.com/season"));
@@ -383,7 +340,7 @@ public class TaskCloseOperationServiceTests
 
         var runs = await db.Context.TaskCloseOperationRuns.OrderBy(r => r.Id).ToListAsync();
         Assert.Equal(
-            [TaskCloseOperationKind.PrintDocument, TaskCloseOperationKind.CreateTask, TaskCloseOperationKind.Webhook],
+            [TaskCloseOperationKind.CreateTask, TaskCloseOperationKind.Webhook],
             runs.Select(r => r.Kind));
     }
 }

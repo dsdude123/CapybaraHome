@@ -73,9 +73,3 @@
 .nav-actions form {
     margin: 0;
 }
-
-@media print {
-    .nav-bar {
-        display: none;
-    }
-}

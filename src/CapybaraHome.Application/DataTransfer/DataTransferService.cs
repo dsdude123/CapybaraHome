@@ -71,8 +71,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 o.TaskId,
                 Record = new TaskCloseOperationRecord(
                     o.Kind, o.SortOrder, o.IsEnabled, o.WebhookUrl, o.WebhookMethod, o.FollowUpTitle,
-                    o.DueDateMode, o.DueDateValue, o.DueDateOn, o.CarryOperationsForward,
-                    o.DocumentTitle, o.DocumentBody),
+                    o.DueDateMode, o.DueDateValue, o.DueDateOn, o.CarryOperationsForward),
             })
             .ToListAsync(cancellationToken))
             .GroupBy(o => o.TaskId)
@@ -319,8 +318,6 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                     DueDateValue = record.DueDateValue,
                     DueDateOn = record.DueDateOn,
                     CarryOperationsForward = record.CarryOperationsForward,
-                    DocumentTitle = record.DocumentTitle,
-                    DocumentBody = record.DocumentBody,
                     CreatedAt = now,
                     UpdatedAt = now,
                 });

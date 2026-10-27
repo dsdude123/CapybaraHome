@@ -10,7 +10,6 @@ public static class CloseOperationNames
     [
         TaskCloseOperationKind.CreateTask,
         TaskCloseOperationKind.Webhook,
-        TaskCloseOperationKind.PrintDocument,
     ];
 
     /// <summary>Every way a due date can be worked out, in the order the picker offers them.</summary>
@@ -35,7 +34,6 @@ public static class CloseOperationNames
     {
         TaskCloseOperationKind.Webhook => "Call a webhook",
         TaskCloseOperationKind.CreateTask => "Create another task",
-        TaskCloseOperationKind.PrintDocument => "Produce a document to print",
         _ => kind.ToString(),
     };
 
@@ -45,7 +43,6 @@ public static class CloseOperationNames
     {
         TaskCloseOperationKind.Webhook => "Sends the completed task to a URL on your network or on the web.",
         TaskCloseOperationKind.CreateTask => "Adds the task again with a due date worked out from the day you finished it.",
-        TaskCloseOperationKind.PrintDocument => "Writes a document you can open and print from the browser.",
         _ => string.Empty,
     };
 

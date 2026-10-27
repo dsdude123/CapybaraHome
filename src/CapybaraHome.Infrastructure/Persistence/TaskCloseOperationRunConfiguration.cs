@@ -13,12 +13,11 @@ public class TaskCloseOperationRunConfiguration : IEntityTypeConfiguration<TaskC
         builder.Property(r => r.TaskTitle).IsRequired().HasMaxLength(500);
         builder.Property(r => r.Kind).HasConversion<string>().HasMaxLength(20);
         builder.Property(r => r.Status).HasConversion<string>().HasMaxLength(20);
-        builder.Property(r => r.DocumentTitle).HasMaxLength(500);
 
         builder.HasIndex(r => r.Status);
 
-        // A run outlives the operation and the task it came from: the printed document and the
-        // record of a failed call are the point of the row, so neither deletion takes it away.
+        // A run outlives the operation and the task it came from: the record of what happened,
+        // a failed call above all, is the point of the row, so neither deletion takes it away.
         builder.HasOne(r => r.Operation)
             .WithMany()
             .HasForeignKey(r => r.OperationId)
