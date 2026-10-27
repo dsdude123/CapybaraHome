@@ -89,83 +89,143 @@ public class DailyReportPrintTests
     }
 
     [Theory]
-    // Before the time of day, so today's printing is the next one.
-    [InlineData("2026-10-27T14:00:00Z", 8, 0, "2026-10-27T15:00:00Z")]
-    // After it, so the next one is tomorrow's.
-    [InlineData("2026-10-27T16:00:00Z", 8, 0, "2026-10-28T15:00:00Z")]
-    // On it to the second, which counts as gone.
-    [InlineData("2026-10-27T15:00:00Z", 8, 0, "2026-10-28T15:00:00Z")]
+    // An ordinary morning.
+    [InlineData("2026-10-27", 8, 0, "2026-10-27T15:00:00Z")]
     // Winter, when the same wall clock time is an hour later in UTC.
-    [InlineData("2026-12-01T10:00:00Z", 8, 0, "2026-12-01T16:00:00Z")]
+    [InlineData("2026-12-01", 8, 0, "2026-12-01T16:00:00Z")]
     // A time of day the clocks going forward skip, which moves to the first minute that exists.
-    [InlineData("2027-03-14T08:30:00Z", 2, 30, "2027-03-14T10:00:00Z")]
-    public void The_next_printing_is_the_next_time_that_hour_comes_round(string after, int hour, int minute, string expected)
+    [InlineData("2027-03-14", 2, 30, "2027-03-14T10:00:00Z")]
+    public void The_printing_time_is_read_in_the_servers_own_zone(string day, int hour, int minute, string expected)
     {
-        var next = DailyReportRunner.NextRun(
-            DateTimeOffset.Parse(after, System.Globalization.CultureInfo.InvariantCulture),
+        var instant = DailyReportRunner.Instant(
+            DateOnly.Parse(day, System.Globalization.CultureInfo.InvariantCulture),
             new TimeOnly(hour, minute),
             Pacific);
 
-        Assert.Equal(DateTimeOffset.Parse(expected, System.Globalization.CultureInfo.InvariantCulture), next);
+        Assert.Equal(DateTimeOffset.Parse(expected, System.Globalization.CultureInfo.InvariantCulture), instant);
     }
 
     [Fact]
     public async Task With_the_schedule_off_nothing_is_printed()
     {
         await using var db = await TestDatabase.CreateAsync();
+        At(db, "2026-10-27T15:01:00Z");
+
         var ipp = new FakeHttp().Reply(Accepted);
         await using var services = Host(db, ipp, new DailyReportOptions { Enabled = false, PrinterHost = "printer.example" });
 
-        var runner = new DailyReportRunner(
-            services.GetRequiredService<IServiceScopeFactory>(),
-            services.GetRequiredService<IOptions<DailyReportOptions>>(),
-            services.GetRequiredService<ILogger<DailyReportRunner>>(),
-            db.Clock);
-
-        await runner.StartAsync(CancellationToken.None);
-        db.Clock.Advance(TimeSpan.FromDays(2));
-        await runner.StopAsync(CancellationToken.None);
+        await SweepAsync(services, db);
 
         Assert.Empty(ipp.Requests);
     }
 
     [Fact]
-    public async Task The_report_is_printed_once_the_time_of_day_comes_round()
+    public async Task The_report_is_printed_once_the_time_of_day_comes_round_and_not_again_that_day()
     {
         await using var db = await TestDatabase.CreateAsync();
-        db.Clock.SetLocalTimeZone(Pacific);
-        db.Clock.SetUtcNow(new DateTimeOffset(2026, 10, 27, 14, 0, 0, TimeSpan.Zero));
+        At(db, "2026-10-27T14:59:00Z");
 
         var tasks = new TaskService(db.Context, db.Clock);
         await tasks.CreateAsync(new CreateTaskRequest("Printed at eight", DueDate: new DateOnly(2026, 10, 27)));
 
         var ipp = new FakeHttp().Reply(Accepted);
-        await using var services = Host(db, ipp, new DailyReportOptions
-        {
-            Enabled = true,
-            TimeOfDay = new TimeOnly(8, 0),
-            PrinterHost = "printer.example",
-        });
+        await using var services = Host(db, ipp, Scheduled());
 
-        var runner = new DailyReportRunner(
-            services.GetRequiredService<IServiceScopeFactory>(),
-            services.GetRequiredService<IOptions<DailyReportOptions>>(),
-            services.GetRequiredService<ILogger<DailyReportRunner>>(),
-            db.Clock);
+        // A minute before, nothing.
+        await SweepAsync(services, db);
+        Assert.Empty(ipp.Requests);
+
+        db.Clock.Advance(TimeSpan.FromMinutes(2));
+        await SweepAsync(services, db);
+
+        Assert.Single(ipp.Requests);
+        Assert.Contains("%PDF", Encoding.ASCII.GetString(ipp.Bodies[0]));
+
+        // The sweep runs every minute; the report is not printed again on the next one.
+        db.Clock.Advance(TimeSpan.FromMinutes(1));
+        await SweepAsync(services, db);
+        Assert.Single(ipp.Requests);
+
+        var settings = services.GetRequiredService<DailyReportSettingsService>();
+        var saved = await settings.GetAsync();
+        Assert.NotNull(saved.LastRunAt);
+        Assert.Null(saved.LastRunError);
+    }
+
+    [Fact]
+    public async Task A_morning_the_app_was_down_for_is_missed_rather_than_printed_late()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        At(db, "2026-10-27T17:00:00Z");
+
+        var ipp = new FakeHttp().Reply(Accepted);
+        await using var services = Host(db, ipp, Scheduled());
+
+        await SweepAsync(services, db);
+
+        Assert.Empty(ipp.Requests);
+    }
+
+    [Fact]
+    public async Task A_printer_that_refuses_the_job_leaves_the_reason_on_the_settings()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        At(db, "2026-10-27T15:01:00Z");
+
+        var ipp = new FakeHttp().Reply(string.Empty, HttpStatusCode.ServiceUnavailable);
+        await using var services = Host(db, ipp, Scheduled());
+
+        await SweepAsync(services, db);
+
+        var saved = await services.GetRequiredService<DailyReportSettingsService>().GetAsync();
+        Assert.NotNull(saved.LastRunAt);
+        Assert.Contains("503", saved.LastRunError);
+    }
+
+    [Fact]
+    public async Task The_hosted_runner_sweeps_as_soon_as_it_starts()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        At(db, "2026-10-27T15:01:00Z");
+
+        var ipp = new FakeHttp().Reply(Accepted);
+        await using var services = Host(db, ipp, Scheduled());
+        var runner = Runner(services, db);
 
         await runner.StartAsync(CancellationToken.None);
 
-        // The clock is walked forward a minute at a time until the wait the runner set has elapsed.
         for (var step = 0; step < 200 && ipp.Requests.Count == 0; step++)
         {
-            db.Clock.Advance(TimeSpan.FromMinutes(1));
             await Task.Delay(10);
         }
 
         await runner.StopAsync(CancellationToken.None);
 
-        Assert.NotEmpty(ipp.Requests);
-        Assert.Contains("%PDF", Encoding.ASCII.GetString(ipp.Bodies[0]));
+        Assert.Single(ipp.Requests);
+        Assert.True(services.GetRequiredService<SweepWatch>().Done);
+    }
+
+    /// <summary>Runs one sweep against the services a test built.</summary>
+    private static Task SweepAsync(ServiceProvider services, TestDatabase db) =>
+        Runner(services, db).SweepAsync();
+
+    private static DailyReportRunner Runner(ServiceProvider services, TestDatabase db) => new(
+        services.GetRequiredService<IServiceScopeFactory>(),
+        services.GetRequiredService<ILogger<DailyReportRunner>>(),
+        db.Clock);
+
+    /// <summary>The settings a scheduled installation starts with: eight in the morning, a printer.</summary>
+    private static DailyReportOptions Scheduled() => new()
+    {
+        Enabled = true,
+        TimeOfDay = new TimeOnly(8, 0),
+        PrinterHost = "printer.example",
+    };
+
+    private static void At(TestDatabase db, string instant)
+    {
+        db.Clock.SetLocalTimeZone(Pacific);
+        db.Clock.SetUtcNow(DateTimeOffset.Parse(instant, System.Globalization.CultureInfo.InvariantCulture));
     }
 
     /// <summary>A report with something in every section, so the layout is exercised whole.</summary>
@@ -184,9 +244,15 @@ public class DailyReportPrintTests
             new ReportEvent("A whole day", new DateOnly(2026, 10, 30), null, string.Empty),
         ],
         [new ReportHoliday("A holiday", new DateOnly(2026, 11, 11))],
-        [new ReportEvent("A game", new DateOnly(2026, 10, 27), new TimeOnly(13, 0), "The park")],
+        [new ReportTodaySection("Mariners Game", [new ReportEvent("A game", new DateOnly(2026, 10, 27), new TimeOnly(13, 0), "The park")])],
         [new NewsHeadline("A local story", "https://news.example/1")],
         [new NewsHeadline("A national story", "https://news.example/2")]);
+
+    /// <summary>Set once the runner has opened a scope, which is how a test knows a sweep has run.</summary>
+    private sealed class SweepWatch
+    {
+        public bool Done { get; set; }
+    }
 
     /// <summary>Builds just enough of the app for the runner to resolve what it prints.</summary>
     private static ServiceProvider Host(TestDatabase db, FakeHttp ipp, DailyReportOptions options)
@@ -196,7 +262,10 @@ public class DailyReportPrintTests
         services.AddLogging();
         services.AddSingleton<TimeProvider>(db.Clock);
         services.AddSingleton(Options.Create(options));
-        services.AddScoped<ICapybaraHomeDbContext>(_ => db.Context);
+
+        // Registered as an instance the test owns: a scope the runner opens and closes must not
+        // take the shared context down with it.
+        services.AddSingleton<ICapybaraHomeDbContext>(db.Context);
         services.AddScoped<TaskService>();
         services.AddScoped<MealService>();
         services.AddScoped(_ => new WeatherFeed(new FakeHttp().Client()));
@@ -204,7 +273,13 @@ public class DailyReportPrintTests
         services.AddScoped(_ => new NewsFeed(new FakeHttp().Client()));
         services.AddScoped<DailyReportService>();
         services.AddScoped(_ => new IppPrinter(ipp.Client()));
+        services.AddScoped(provider =>
+        {
+            provider.GetRequiredService<SweepWatch>().Done = true;
+            return new DailyReportSettingsService(db.Context, provider.GetRequiredService<IOptions<DailyReportOptions>>());
+        });
         services.AddScoped<DailyReportPrinting>();
+        services.AddSingleton<SweepWatch>();
 
         return services.BuildServiceProvider();
     }

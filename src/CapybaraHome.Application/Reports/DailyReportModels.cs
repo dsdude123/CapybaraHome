@@ -42,7 +42,7 @@ public record NewsHeadline(string Title, string Link);
 /// <param name="Meals">Planned meals, by name.</param>
 /// <param name="Events">Calendar entries for the next 30 days, earliest first.</param>
 /// <param name="Holidays">Public holidays in the next 30 days, earliest first.</param>
-/// <param name="Games">Today's games from the sports calendar.</param>
+/// <param name="Today">The calendars that show only today, each under its own heading.</param>
 /// <param name="LocalNews">Local headlines.</param>
 /// <param name="NationalNews">National headlines.</param>
 public record DailyReport(
@@ -52,9 +52,14 @@ public record DailyReport(
     IReadOnlyList<ReportMeal> Meals,
     IReadOnlyList<ReportEvent> Events,
     IReadOnlyList<ReportHoliday> Holidays,
-    IReadOnlyList<ReportEvent> Games,
+    IReadOnlyList<ReportTodaySection> Today,
     IReadOnlyList<NewsHeadline> LocalNews,
     IReadOnlyList<NewsHeadline> NationalNews);
+
+/// <summary>One calendar's entries for today, as its own short section.</summary>
+/// <param name="Name">What the calendar is called, which the heading is built from.</param>
+/// <param name="Entries">What it has on today.</param>
+public record ReportTodaySection(string Name, IReadOnlyList<ReportEvent> Entries);
 
 /// <summary>A public holiday the report lists.</summary>
 /// <param name="Name">What the holiday is called.</param>

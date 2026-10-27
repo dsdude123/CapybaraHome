@@ -8,10 +8,11 @@
 <div class="page-head">
     <h1>Morning Report</h1>
     <div class="row">
+        <a class="btn btn-small" href="report/settings">Settings</a>
         <a class="btn btn-small" href="report/pdf">Download PDF</a>
         <form method="post" @formname="print-report" @onsubmit="PrintAsync">
             <AntiforgeryToken />
-            <button class="btn btn-primary btn-small" type="submit" disabled="@(!Printing.HasPrinter)">Print now</button>
+            <button class="btn btn-primary btn-small" type="submit" disabled="@(settings.PrinterHost is null)">Print now</button>
         </form>
     </div>
 </div>
@@ -26,9 +27,12 @@
 {
     <p class="error">@printError</p>
 }
-@if (!Printing.HasPrinter)
+@if (settings.PrinterHost is null)
 {
-    <p class="muted">No printer is configured, so the report can only be read here or downloaded.</p>
+    <p class="muted">
+        No printer is configured, so the report can only be read here or downloaded.
+        <a href="report/settings">Set one up</a>.
+    </p>
 }
 
 <section class="card stack" style="margin-bottom:1rem">
@@ -153,13 +157,13 @@
     }
 </section>
 
-@if (report.Games.Count > 0)
+@foreach (var today in report.Today)
 {
     <section class="card stack" style="margin-bottom:1rem">
-        <h2 class="card-title">Mariners Game Today</h2>
-        @foreach (var game in report.Games)
+        <h2 class="card-title">@DailyReportText.TodayHeading(today)</h2>
+        @foreach (var entry in today.Entries)
         {
-            <p>@DailyReportText.Game(game)</p>
+            <p>@DailyReportText.Game(entry)</p>
         }
     </section>
 }
@@ -200,13 +204,15 @@
 
 @code {
     private DailyReport report = Empty();
+    private DailyReportSettingsView settings = NotLoaded();
     private string? printed;
     private string? printError;
 
-    /// <summary>Gathers today's report.</summary>
+    /// <summary>Gathers today's report and the settings the page reads for the printer.</summary>
     protected override async Task OnParametersSetAsync()
     {
         report = await Printing.BuildAsync();
+        settings = await Printing.SettingsAsync();
     }
 
     /// <summary>Sends the report that is on screen to the printer.</summary>
@@ -218,7 +224,7 @@
         try
         {
             await Printing.PrintAsync(report);
-            printed = $"Sent to {Printing.PrinterHost}.";
+            printed = $"Sent to {settings.PrinterHost}.";
         }
         catch (Exception ex)
         {
@@ -237,4 +243,8 @@
     /// <summary>A report with nothing in it, held until the real one has been gathered.</summary>
     private static DailyReport Empty() =>
         new(DateOnly.MinValue, [], [], [], [], [], [], [], []);
+
+    /// <summary>Settings with no printer, held until the real ones have been read.</summary>
+    private static DailyReportSettingsView NotLoaded() =>
+        new(false, new TimeOnly(8, 0), null, 631, "/ipp/print", true, null, [], [], null, null);
 }

@@ -135,7 +135,7 @@ public class DailyReportPageTests
         Assert.Contains("A dentist appointment", html);
         Assert.Contains("The surgery", html);
         Assert.Contains("A public holiday", html);
-        Assert.Contains("Mariners Game Today", html);
+        Assert.Contains("Mariners Today", html);
         Assert.Contains("A game at home", html);
         Assert.Contains("A story from the local station", html);
         Assert.Contains("A story from the wire", html);

@@ -29,6 +29,9 @@ public static class DailyReportText
     public static string Holiday(ReportHoliday holiday) =>
         $"{holiday.Date.ToString("MMM d", CultureInfo.InvariantCulture)} — {holiday.Name}";
 
+    /// <summary>Returns what a calendar's own section for today is headed with.</summary>
+    public static string TodayHeading(ReportTodaySection section) => $"{section.Name} Today";
+
     /// <summary>Returns a game as the one-line section writes it, leaving out what the calendar did not say.</summary>
     public static string Game(ReportEvent game)
     {

@@ -75,10 +75,12 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   open. Times are the server's own clock, so in a container they follow `TZ`. A run missed
   while the app was down happens once when it is back.
 - **Morning report** (`/report`) — one page of the day: the forecast, the tasks due within a
-  week, what is planned to eat, the next thirty days of your calendar, the holidays, today's
-  game and the headlines. **Download PDF** is exactly the sheet that is printed, and **Print
-  now** sends it to the printer straight away. The same page prints itself once a day when
-  the report is turned on.
+  week, what is planned to eat, the next thirty days of your calendars, the holidays, today's
+  fixtures and the headlines. **Download PDF** is exactly the sheet that is printed, and
+  **Print now** sends it to the printer straight away. **Report settings**
+  (`/report/settings`) turns the daily printing on and off, sets the time of day, names the
+  printer, the forecast service and the calendars to read, and keeps the task table to the
+  categories you tick.
 - **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
@@ -155,10 +157,31 @@ Backups__Keep=14
 
 ## The morning report
 
-The report is built from this app's own tasks and meals, plus a forecast service, an
-iCalendar feed of your own, the public holiday and baseball calendars, a local news page and
-a national wire. A source that cannot be read costs the report its own section and nothing
-else. It is laid out as a Letter-size PDF and sent to a printer over IPP.
+The report is built from this app's own tasks and meals, plus a forecast service, the
+calendar feeds you name, a local news page and a national wire. A source that cannot be read
+costs the report its own section and nothing else. It is laid out as a Letter-size PDF and
+sent to a printer over IPP.
+
+Everything about it is set on `/report/settings` and kept in the database: whether it prints
+on a schedule and at what time, the printer's host, port, queue and whether it uses both
+sides of the paper, the forecast address, the calendars, and the categories the task table is
+kept to. Ticking no category carries every category.
+
+A calendar is read as one of three kinds: **Upcoming events** are listed with their dates and
+places for the next 30 days, **Holidays** by name and date over the same window, and
+**Today only** entries under a heading of the calendar's name. An installation starts with
+the public holiday and baseball calendars, and a calendar can be switched off without being
+deleted.
+
+The time of day is the server's own clock, so in a container it follows `TZ`, and a morning
+the app was down for is missed rather than printed late. The page and the download are there
+whether or not the schedule is on; with no printer host nothing is printed at all. The
+forecast service is the one that answers with `period1Name` through `period4WindDirection`;
+with no address set the report leaves the weather out.
+
+The settings below are read only when the database has no settings yet, so an installation
+that was configured this way keeps printing the same report until something is changed on the
+page. Setting them again afterwards has no effect.
 
 ```
 DailyReport__Enabled=true
@@ -169,13 +192,6 @@ DailyReport__PrinterResource=/ipp/print
 DailyReport__WeatherUrl=http://weather.lan/forecast
 DailyReport__CalendarUrl=https://example.com/private/basic.ics
 ```
-
-With `DailyReport__Enabled` unset the page and the download are still there; nothing is
-printed on a timer. With no printer host nothing is printed at all. The time of day is the
-server's own clock, so in a container it follows `TZ`, and a morning the app was down for is
-missed rather than printed late. The forecast service is the one that answers with
-`period1Name` through `period4WindDirection`; with no address set the report leaves the
-weather out, and the same goes for the calendar.
 
 ## Docker
 

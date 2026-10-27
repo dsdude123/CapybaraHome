@@ -1,7 +1,9 @@
+using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Reports;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Meals;
+using CapybaraHome.Domain.Reports;
 using CapybaraHome.Domain.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -81,6 +83,83 @@ public class DailyReportServiceTests
     }
 
     [Fact]
+    public async Task The_task_table_is_kept_to_the_categories_the_settings_name()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var categories = new CategoryService(db.Context);
+        var tasks = new TaskService(db.Context, db.Clock);
+        var settings = new DailyReportSettingsService(db.Context, Options.Create(new DailyReportOptions()));
+        var today = Today(db.Clock);
+
+        var house = await categories.CreateAsync(new CategoryRequest("House"));
+        var garden = await categories.CreateAsync(new CategoryRequest("Garden"));
+
+        await tasks.CreateAsync(new CreateTaskRequest("Inside", DueDate: today, CategoryId: house.Id));
+        await tasks.CreateAsync(new CreateTaskRequest("Outside", DueDate: today, CategoryId: garden.Id));
+        await tasks.CreateAsync(new CreateTaskRequest("Unfiled", DueDate: today));
+
+        var everything = await Build(db, new FakeHttp(), settings);
+        Assert.Equal(["Inside", "Outside", "Unfiled"], everything.Tasks.Select(t => t.Title).Order());
+
+        await settings.SaveAsync(new UpdateDailyReportSettingsRequest(
+            IsEnabled: false,
+            TimeOfDay: new TimeOnly(8, 0),
+            CategoryIds: [house.Id]));
+
+        var narrowed = await Build(db, new FakeHttp(), settings);
+        Assert.Equal("Inside", Assert.Single(narrowed.Tasks).Title);
+    }
+
+    [Fact]
+    public async Task Each_calendar_feeds_the_section_its_kind_names()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var settings = new DailyReportSettingsService(db.Context, Options.Create(new DailyReportOptions()));
+
+        foreach (var seeded in await settings.ReadCalendarsAsync())
+        {
+            await settings.DeleteCalendarAsync(seeded.Id);
+        }
+
+        await settings.AddCalendarAsync(new ReportCalendarInput("Mine", "https://mine.example/feed.ics"));
+        await settings.AddCalendarAsync(new ReportCalendarInput("Days off", "https://days.example/feed.ics", ReportCalendarKind.Holidays));
+        await settings.AddCalendarAsync(new ReportCalendarInput("The team", "https://team.example/feed.ics", ReportCalendarKind.Today));
+        await settings.AddCalendarAsync(new ReportCalendarInput("Off", "https://off.example/feed.ics", ReportCalendarKind.Upcoming, IsEnabled: false));
+
+        var http = new FakeHttp()
+            .ReplyTo("mine.example", Daily("A rehearsal"))
+            .ReplyTo("days.example", Daily("A day off"))
+            .ReplyTo("team.example", Daily("A fixture"))
+            .ReplyTo("off.example", Daily("Not read"));
+
+        var report = await Build(db, http, settings);
+
+        Assert.Contains(report.Events, e => e.Summary == "A rehearsal");
+        Assert.DoesNotContain(report.Events, e => e.Summary == "Not read");
+        Assert.Equal("A day off", report.Holidays[0].Name);
+
+        var today = Assert.Single(report.Today);
+        Assert.Equal("The team", today.Name);
+        Assert.Equal("A fixture", today.Entries[0].Summary);
+        Assert.DoesNotContain(http.Requests, r => r.RequestUri!.Host == "off.example");
+    }
+
+    /// <summary>A calendar holding one entry that recurs every day, so it lands in any window.</summary>
+    private static string Daily(string summary) => $"""
+        BEGIN:VCALENDAR
+        VERSION:2.0
+        PRODID:-//tests//EN
+        BEGIN:VEVENT
+        UID:{summary}
+        SUMMARY:{summary}
+        DTSTART:20200101T170000Z
+        DTEND:20200101T180000Z
+        RRULE:FREQ=DAILY
+        END:VEVENT
+        END:VCALENDAR
+        """;
+
+    [Fact]
     public async Task A_source_that_fails_costs_the_report_its_own_section_and_nothing_else()
     {
         const string Forecast = """{ "period1Name": "Today", "period1Condition": "Rain", "period1Temp": 12 }""";
@@ -102,7 +181,7 @@ public class DailyReportServiceTests
         Assert.Equal("Still printed", Assert.Single(report.Tasks).Title);
         Assert.Empty(report.Events);
         Assert.Empty(report.Holidays);
-        Assert.Empty(report.Games);
+        Assert.Empty(report.Today);
         Assert.Empty(report.LocalNews);
         Assert.Empty(report.NationalNews);
     }
@@ -126,7 +205,10 @@ public class DailyReportServiceTests
     private static Task<DailyReport> Build(TestDatabase db) =>
         Build(db, new FakeHttp(), new DailyReportOptions());
 
-    private static Task<DailyReport> Build(TestDatabase db, FakeHttp http, DailyReportOptions options)
+    private static Task<DailyReport> Build(TestDatabase db, FakeHttp http, DailyReportOptions options) =>
+        Build(db, http, new DailyReportSettingsService(db.Context, Options.Create(options)));
+
+    private static Task<DailyReport> Build(TestDatabase db, FakeHttp http, DailyReportSettingsService settings)
     {
         var service = new DailyReportService(
             new TaskService(db.Context, db.Clock),
@@ -134,7 +216,7 @@ public class DailyReportServiceTests
             new WeatherFeed(http.Client()),
             new CalendarFeed(http.Client(), db.Clock),
             new NewsFeed(http.Client()),
-            Options.Create(options),
+            settings,
             db.Clock,
             NullLogger<DailyReportService>.Instance);
 

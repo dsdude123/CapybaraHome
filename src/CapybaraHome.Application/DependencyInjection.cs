@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ApiTokenService>();
         services.AddScoped<DataTransferService>();
         services.AddScoped<DailyReportService>();
+        services.AddScoped<DailyReportSettingsService>();
         services.AddScoped<BackupWriter>();
         services.AddScoped<JiraImportService>();
         services.AddScoped<JiraMealImportService>();

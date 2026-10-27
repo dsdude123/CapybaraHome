@@ -51,10 +51,10 @@ public static class DailyReportPdf
                 Section(column, "Upcoming Events (30 days)", body => Events(body, report));
                 Section(column, "Upcoming Holidays (Next 30 Days)", body => Holidays(body, report));
 
-                if (report.Games.Count > 0)
+                foreach (var today in report.Today)
                 {
-                    Section(column, "Mariners Game Today", body => body
-                        .Text(string.Join("\n", report.Games.Select(DailyReportText.Game))));
+                    Section(column, DailyReportText.TodayHeading(today), body => body
+                        .Text(string.Join("\n", today.Entries.Select(DailyReportText.Game))));
                 }
 
                 Section(column, "Local News (KING 5)", body => Headlines(body, report.LocalNews));

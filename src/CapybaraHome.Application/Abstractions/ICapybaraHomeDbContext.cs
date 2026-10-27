@@ -1,5 +1,6 @@
 using CapybaraHome.Domain.Dashboards;
 using CapybaraHome.Domain.Meals;
+using CapybaraHome.Domain.Reports;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Domain.Users;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +39,15 @@ public interface ICapybaraHomeDbContext
 
     /// <summary>How many meals each slot aims for.</summary>
     DbSet<MealPlanTarget> MealPlanTargets { get; }
+
+    /// <summary>The one row that says how the morning report is built and printed.</summary>
+    DbSet<DailyReportSettings> DailyReportSettings { get; }
+
+    /// <summary>Calendar feeds the morning report reads.</summary>
+    DbSet<ReportCalendar> ReportCalendars { get; }
+
+    /// <summary>Categories the morning report's task table is kept to.</summary>
+    DbSet<ReportCategory> ReportCategories { get; }
 
     /// <summary>Dashboard cards.</summary>
     DbSet<DashboardCard> DashboardCards { get; }

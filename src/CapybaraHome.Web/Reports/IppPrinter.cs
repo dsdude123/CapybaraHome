@@ -31,6 +31,7 @@ public class IppPrinter(HttpClient client)
     /// <param name="resource">Path its queue lives at.</param>
     /// <param name="document">The PDF to print.</param>
     /// <param name="jobName">What the job is called in the printer's queue.</param>
+    /// <param name="bothSides">Whether the job asks for both sides of the paper.</param>
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <exception cref="InvalidOperationException">No printer was named, or the printer refused the job.</exception>
     public async Task PrintAsync(
@@ -39,6 +40,7 @@ public class IppPrinter(HttpClient client)
         string resource,
         byte[] document,
         string jobName,
+        bool bothSides = true,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(host))
@@ -47,7 +49,7 @@ public class IppPrinter(HttpClient client)
         }
 
         var path = resource.StartsWith('/') ? resource : "/" + resource;
-        var body = Request(host, port, path, document, jobName);
+        var body = Request(host, port, path, document, jobName, bothSides);
 
         using var content = new ByteArrayContent(body);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/ipp");
@@ -76,7 +78,7 @@ public class IppPrinter(HttpClient client)
     }
 
     /// <summary>Builds the Print-Job request, document and all.</summary>
-    private static byte[] Request(string host, int port, string resource, byte[] document, string jobName)
+    private static byte[] Request(string host, int port, string resource, byte[] document, string jobName, bool bothSides)
     {
         var body = new List<byte>(document.Length + 256)
         {
@@ -94,7 +96,7 @@ public class IppPrinter(HttpClient client)
         Attribute(body, MimeMediaType, "document-format", "application/pdf");
 
         body.Add(JobAttributes);
-        Attribute(body, Keyword, "sides", "two-sided-long-edge");
+        Attribute(body, Keyword, "sides", bothSides ? "two-sided-long-edge" : "one-sided");
 
         body.Add(EndOfAttributes);
         body.AddRange(document);

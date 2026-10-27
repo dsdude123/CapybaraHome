@@ -1,16 +1,16 @@
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Meals;
+using CapybaraHome.Domain.Reports;
 using CapybaraHome.Domain.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace CapybaraHome.Application.Reports;
 
 /// <summary>
-/// Gathers one morning's report. Every source is read on its own and a source that fails leaves
-/// its own section empty rather than losing the report, because a printed page that is short one
-/// table is still worth having at breakfast.
+/// Gathers one morning's report, as the settings page says it should be built. Every source is
+/// read on its own and a source that fails leaves its own section empty rather than losing the
+/// report, because a printed page that is short one table is still worth having at breakfast.
 /// </summary>
 public class DailyReportService(
     TaskService tasks,
@@ -18,18 +18,10 @@ public class DailyReportService(
     WeatherFeed weather,
     CalendarFeed calendars,
     NewsFeed news,
-    IOptions<DailyReportOptions> options,
+    DailyReportSettingsService settings,
     TimeProvider clock,
     ILogger<DailyReportService> logger)
 {
-    /// <summary>Public holidays, as Google publishes them for the United States.</summary>
-    private const string HolidayCalendarUrl =
-        "https://calendar.google.com/calendar/ical/en.usa%23holiday%40group.v.calendar.google.com/public/basic.ics";
-
-    /// <summary>The baseball season, as Google publishes it.</summary>
-    private const string SportsCalendarUrl =
-        "https://calendar.google.com/calendar/ical/mlb_-m-06wpc_Seattle%2BMariners%23sports%40group.v.calendar.google.com/public/basic.ics";
-
     /// <summary>The national wire.</summary>
     private const string NationalNewsUrl = "https://feedx.net/rss/ap.xml";
 
@@ -52,16 +44,18 @@ public class DailyReportService(
     public async Task<DailyReport> BuildAsync(CancellationToken cancellationToken = default)
     {
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), Zone).DateTime);
-        var settings = options.Value;
+        var configured = await settings.LoadAsync(cancellationToken);
+        var feeds = await settings.ReadCalendarsAsync(cancellationToken);
+        var tracked = await settings.TrackedCategoryIdsAsync(cancellationToken);
 
         return new DailyReport(
             today,
-            await ReadAsync("weather", () => ReadWeatherAsync(settings, cancellationToken)),
-            await ReadAsync("tasks", () => ReadTasksAsync(today, cancellationToken)),
+            await ReadAsync("weather", () => ReadWeatherAsync(configured, cancellationToken)),
+            await ReadAsync("tasks", () => ReadTasksAsync(today, tracked, cancellationToken)),
             await ReadAsync("meals", () => ReadMealsAsync(cancellationToken)),
-            await ReadAsync("calendar", () => ReadEventsAsync(settings, today, cancellationToken)),
-            await ReadAsync("holidays", () => ReadHolidaysAsync(today, cancellationToken)),
-            await ReadAsync("games", () => calendars.ReadDayAsync(SportsCalendarUrl, today, cancellationToken)),
+            await ReadEventsAsync(feeds, today, cancellationToken),
+            await ReadHolidaysAsync(feeds, today, cancellationToken),
+            await ReadTodayAsync(feeds, today, cancellationToken),
             await ReadAsync("local news", () => news.ReadPageAsync(LocalNewsUrl, HeadlineCount, cancellationToken)),
             await ReadAsync("national news", () => news.ReadFeedAsync(NationalNewsUrl, HeadlineCount, cancellationToken)));
     }
@@ -80,17 +74,25 @@ public class DailyReportService(
         }
     }
 
-    private async Task<IReadOnlyList<WeatherPeriod>> ReadWeatherAsync(DailyReportOptions settings, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<WeatherPeriod>> ReadWeatherAsync(DailyReportSettings configured, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(settings.WeatherUrl))
+        if (string.IsNullOrWhiteSpace(configured.WeatherUrl))
         {
             return [];
         }
 
-        return await weather.ReadAsync(settings.WeatherUrl, cancellationToken);
+        return await weather.ReadAsync(configured.WeatherUrl, cancellationToken);
     }
 
-    private async Task<IReadOnlyList<ReportTask>> ReadTasksAsync(DateOnly today, CancellationToken cancellationToken)
+    /// <summary>
+    /// Reads the open tasks due within the week. The tracked categories are applied here rather
+    /// than in the query because the listing is a week long at most, and narrowing it afterwards
+    /// leaves the task filters as they are for every other screen.
+    /// </summary>
+    private async Task<IReadOnlyList<ReportTask>> ReadTasksAsync(
+        DateOnly today,
+        IReadOnlyList<int> tracked,
+        CancellationToken cancellationToken)
     {
         var open = await tasks.ListAsync(
             new TaskFilter(
@@ -98,6 +100,11 @@ public class DailyReportService(
                 DueWithinDays: TaskWindowDays),
             TaskSort.DueDate,
             cancellationToken);
+
+        if (tracked.Count > 0)
+        {
+            open = [.. open.Where(task => task.CategoryId is { } id && tracked.Contains(id))];
+        }
 
         return [.. open.Select(task => new ReportTask(
             task.Id,
@@ -120,19 +127,68 @@ public class DailyReportService(
             meal.Status))];
     }
 
-    private async Task<IReadOnlyList<ReportEvent>> ReadEventsAsync(DailyReportOptions settings, DateOnly today, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<ReportEvent>> ReadEventsAsync(
+        IReadOnlyList<ReportCalendarView> feeds,
+        DateOnly today,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(settings.CalendarUrl))
+        var entries = new List<ReportEvent>();
+
+        foreach (var feed in Enabled(feeds, ReportCalendarKind.Upcoming))
         {
-            return [];
+            entries.AddRange(await ReadAsync(
+                feed.Name,
+                () => calendars.ReadAsync(feed.Url, today, today.AddDays(CalendarWindowDays), cancellationToken)));
         }
 
-        return await calendars.ReadAsync(settings.CalendarUrl, today, today.AddDays(CalendarWindowDays), cancellationToken);
+        return Ordered(entries);
     }
 
-    private async Task<IReadOnlyList<ReportHoliday>> ReadHolidaysAsync(DateOnly today, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<ReportHoliday>> ReadHolidaysAsync(
+        IReadOnlyList<ReportCalendarView> feeds,
+        DateOnly today,
+        CancellationToken cancellationToken)
     {
-        var entries = await calendars.ReadAsync(HolidayCalendarUrl, today, today.AddDays(CalendarWindowDays), cancellationToken);
-        return [.. entries.Select(entry => new ReportHoliday(entry.Summary, entry.Date))];
+        var entries = new List<ReportEvent>();
+
+        foreach (var feed in Enabled(feeds, ReportCalendarKind.Holidays))
+        {
+            entries.AddRange(await ReadAsync(
+                feed.Name,
+                () => calendars.ReadAsync(feed.Url, today, today.AddDays(CalendarWindowDays), cancellationToken)));
+        }
+
+        return [.. Ordered(entries).Select(entry => new ReportHoliday(entry.Summary, entry.Date))];
     }
+
+    private async Task<IReadOnlyList<ReportTodaySection>> ReadTodayAsync(
+        IReadOnlyList<ReportCalendarView> feeds,
+        DateOnly today,
+        CancellationToken cancellationToken)
+    {
+        var sections = new List<ReportTodaySection>();
+
+        foreach (var feed in Enabled(feeds, ReportCalendarKind.Today))
+        {
+            var entries = await ReadAsync(
+                feed.Name,
+                () => calendars.ReadDayAsync(feed.Url, today, cancellationToken));
+
+            if (entries.Count > 0)
+            {
+                sections.Add(new ReportTodaySection(feed.Name, entries));
+            }
+        }
+
+        return sections;
+    }
+
+    private static IEnumerable<ReportCalendarView> Enabled(IReadOnlyList<ReportCalendarView> feeds, ReportCalendarKind kind) =>
+        feeds.Where(feed => feed.IsEnabled && feed.Kind == kind);
+
+    private static IReadOnlyList<ReportEvent> Ordered(List<ReportEvent> entries) =>
+        [.. entries
+            .OrderBy(e => e.Date)
+            .ThenBy(e => e.Time ?? TimeOnly.MinValue)
+            .ThenBy(e => e.Summary, StringComparer.Ordinal)];
 }

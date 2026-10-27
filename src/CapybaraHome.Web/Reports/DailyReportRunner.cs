@@ -1,55 +1,36 @@
 using CapybaraHome.Application.Reports;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CapybaraHome.Web.Reports;
 
 /// <summary>
-/// Prints the report once a day while the app runs. The wait is to the next time of day rather
-/// than a poll, so a day whose printing time passed while the app was down is simply missed, the
-/// way a morning paper is: tomorrow's report is the one worth having.
+/// Prints the report once a day while the app runs. The settings are read on every sweep rather
+/// than held, so a time of day changed on the settings page takes effect the same morning, and
+/// the sweep is a minute apart because the time is only ever picked to the minute.
 /// </summary>
 public class DailyReportRunner(
     IServiceScopeFactory scopes,
-    IOptions<DailyReportOptions> options,
     ILogger<DailyReportRunner> logger,
     TimeProvider clock) : BackgroundService
 {
-    /// <summary>Loops until shutdown, printing the report at the configured time of day.</summary>
+    private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// How long after the chosen time the report may still be printed. Past that the morning is
+    /// missed rather than printed late, which is what the script this came from did.
+    /// </summary>
+    private static readonly TimeSpan Grace = TimeSpan.FromMinutes(5);
+
+    /// <summary>Loops until shutdown, printing the report when its time of day has come round.</summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var settings = options.Value;
-        if (!settings.Enabled)
-        {
-            logger.LogInformation("The daily report is not printed on a schedule.");
-            return;
-        }
-
-        var zone = clock.LocalTimeZone;
-        logger.LogInformation(
-            "The daily report prints at {Time} {Zone} on {Printer}.",
-            settings.TimeOfDay,
-            zone.Id,
-            settings.PrinterHost ?? "no printer");
+        using var timer = new PeriodicTimer(SweepInterval, clock);
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var now = clock.GetUtcNow();
-            var next = NextRun(now, settings.TimeOfDay, zone);
-
             try
             {
-                await Task.Delay(next - now, clock, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-
-            try
-            {
-                using var scope = scopes.CreateScope();
-                var printing = scope.ServiceProvider.GetRequiredService<DailyReportPrinting>();
-                await printing.PrintTodayAsync(stoppingToken);
+                await SweepAsync(stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -57,33 +38,65 @@ public class DailyReportRunner(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "The daily report did not print. The next one runs on schedule.");
+                logger.LogError(ex, "A daily report sweep failed. The next one runs on schedule.");
             }
+
+            try
+            {
+                if (!await timer.WaitForNextTickAsync(stoppingToken))
+                {
+                    return;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>Prints the report if its time has come round and it has not already printed today.</summary>
+    public async Task SweepAsync(CancellationToken cancellationToken = default)
+    {
+        using var scope = scopes.CreateScope();
+        var settings = scope.ServiceProvider.GetRequiredService<DailyReportSettingsService>();
+        var configured = await settings.LoadAsync(cancellationToken);
+
+        if (!configured.IsEnabled)
+        {
+            return;
+        }
+
+        var now = clock.GetUtcNow();
+        var due = Instant(
+            DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, clock.LocalTimeZone).DateTime),
+            configured.TimeOfDay,
+            clock.LocalTimeZone);
+
+        if (now < due || now - due > Grace || configured.LastRunAt >= due)
+        {
+            return;
+        }
+
+        var printing = scope.ServiceProvider.GetRequiredService<DailyReportPrinting>();
+
+        try
+        {
+            await printing.PrintTodayAsync(cancellationToken);
+            await settings.RecordRunAsync(now, null, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "The daily report did not print. The next one runs on schedule.");
+            await settings.RecordRunAsync(now, ex.Message, cancellationToken);
         }
     }
 
     /// <summary>
-    /// Returns the next instant <paramref name="timeOfDay"/> comes round in <paramref name="zone"/>.
-    /// The hour the clocks go forward has no such wall time, so a time inside it moves to the first
-    /// minute that does exist.
+    /// Turns a day and a time of day into the instant it names. The hour the clocks go forward
+    /// has no such wall time, so a time inside it moves to the first minute that does exist.
     /// </summary>
-    public static DateTimeOffset NextRun(DateTimeOffset after, TimeOnly timeOfDay, TimeZoneInfo zone)
-    {
-        var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(after, zone).DateTime);
-
-        for (var ahead = 0; ahead < 3; ahead++)
-        {
-            var candidate = Instant(day.AddDays(ahead), timeOfDay, zone);
-            if (candidate > after)
-            {
-                return candidate;
-            }
-        }
-
-        return Instant(day.AddDays(3), timeOfDay, zone);
-    }
-
-    private static DateTimeOffset Instant(DateOnly day, TimeOnly timeOfDay, TimeZoneInfo zone)
+    public static DateTimeOffset Instant(DateOnly day, TimeOnly timeOfDay, TimeZoneInfo zone)
     {
         var local = day.ToDateTime(timeOfDay);
 

@@ -1,0 +1,329 @@
+@page "/report/settings"
+@using CapybaraHome.Application.Reports
+@using CapybaraHome.Domain.Reports
+@inject DailyReportSettingsService Settings
+@inject CategoryService Categories
+@inject TimeProvider Clock
+
+<PageTitle>Report settings</PageTitle>
+
+<div class="page-head">
+    <h1>Report settings</h1>
+    <a class="btn btn-small" href="report">Back to the report</a>
+</div>
+
+@if (saved is not null)
+{
+    <p class="muted">@saved</p>
+}
+@if (error is not null)
+{
+    <p class="error">@error</p>
+}
+
+<form method="post" @formname="report-settings" @onsubmit="SaveAsync">
+    <AntiforgeryToken />
+
+    <section class="card stack" style="margin-bottom:1rem">
+        <h2 class="card-title">Schedule</h2>
+
+        <label class="row" style="align-items:center;gap:0.5rem">
+            <input type="checkbox" name="enabled" value="true" checked="@settings.IsEnabled" style="width:auto;min-height:auto" />
+            Print the report every day
+        </label>
+
+        <div class="field">
+            <label for="time-of-day">Time of day</label>
+            <input id="time-of-day" type="time" name="time-of-day" value="@settings.TimeOfDay.ToString("HH\\:mm")" />
+            <p class="muted">The server's own clock, @DateNames.ZoneLabel(Clock.LocalTimeZone). A morning the app is down for is missed rather than printed late.</p>
+        </div>
+
+        <p class="muted">@LastRunLabel()</p>
+    </section>
+
+    <section class="card stack" style="margin-bottom:1rem">
+        <h2 class="card-title">Printer</h2>
+        <p class="muted">The report is sent as a PDF over IPP. Leave the host empty to stop printing altogether.</p>
+
+        <div class="field">
+            <label for="printer-host">Host</label>
+            <input id="printer-host" type="text" name="printer-host" value="@settings.PrinterHost" placeholder="printer.lan" />
+        </div>
+
+        <div class="filters">
+            <div class="field">
+                <label for="printer-port">Port</label>
+                <input id="printer-port" type="number" name="printer-port" min="1" max="65535" value="@settings.PrinterPort" />
+            </div>
+
+            <div class="field">
+                <label for="printer-queue">Queue</label>
+                <input id="printer-queue" type="text" name="printer-queue" value="@settings.PrinterQueue" placeholder="/ipp/print" />
+            </div>
+        </div>
+
+        <label class="row" style="align-items:center;gap:0.5rem">
+            <input type="checkbox" name="both-sides" value="true" checked="@settings.PrintBothSides" style="width:auto;min-height:auto" />
+            Print on both sides
+        </label>
+    </section>
+
+    <section class="card stack" style="margin-bottom:1rem">
+        <h2 class="card-title">Weather</h2>
+
+        <div class="field">
+            <label for="weather-url">Forecast address</label>
+            <input id="weather-url" type="url" name="weather-url" value="@settings.WeatherUrl" placeholder="http://weather.lan/forecast" />
+            <p class="muted">The service that answers with this week's periods. Empty leaves the weather out of the report.</p>
+        </div>
+    </section>
+
+    <section class="card stack" style="margin-bottom:1rem">
+        <h2 class="card-title">Tasks</h2>
+        <p class="muted">
+            @(trackedCategories.Count == 0
+                ? "Every category is in the report. Tick the ones to keep it to."
+                : "Only these categories are in the report.")
+        </p>
+
+        @if (categories.Count == 0)
+        {
+            <p class="muted">There are no categories yet.</p>
+        }
+        else
+        {
+            <div class="filters">
+                @foreach (var category in categories)
+                {
+                    <label class="row" style="align-items:center;gap:0.5rem">
+                        <input type="checkbox" name="category" value="@category.Id" checked="@trackedCategories.Contains(category.Id)" style="width:auto;min-height:auto" />
+                        @category.Name
+                    </label>
+                }
+            </div>
+        }
+    </section>
+
+    <div class="row">
+        <button class="btn btn-primary" type="submit">Save</button>
+    </div>
+</form>
+
+<section class="card stack" style="margin-top:1rem">
+    <h2 class="card-title">Calendars</h2>
+    <p class="muted">Each feed is an iCalendar address, and what the report does with it depends on its kind.</p>
+
+    @if (calendarError is not null)
+    {
+        <p class="error">@calendarError</p>
+    }
+
+    @if (calendars.Count == 0)
+    {
+        <p class="muted">No calendars yet, so the report carries no events, holidays or fixtures.</p>
+    }
+
+    @foreach (var calendar in calendars)
+    {
+        <div class="row" style="align-items:flex-end">
+            <form method="post" @formname="@($"calendar-{calendar.Id}")" @onsubmit="() => SaveCalendarAsync(calendar.Id)" style="flex:1 1 20rem">
+                <AntiforgeryToken />
+                <div class="filters">
+                    <div class="field">
+                        <label for="@($"calendar-name-{calendar.Id}")">Name</label>
+                        <input id="@($"calendar-name-{calendar.Id}")" type="text" name="name" value="@calendar.Name" />
+                    </div>
+
+                    <div class="field" style="flex:2 1 16rem">
+                        <label for="@($"calendar-url-{calendar.Id}")">Address</label>
+                        <input id="@($"calendar-url-{calendar.Id}")" type="url" name="url" value="@calendar.Url" />
+                    </div>
+
+                    <div class="field">
+                        <label for="@($"calendar-kind-{calendar.Id}")">Kind</label>
+                        <select id="@($"calendar-kind-{calendar.Id}")" name="kind">
+                            @foreach (var kind in ReportCalendarKindNames.All)
+                            {
+                                <option value="@kind" selected="@(calendar.Kind == kind)">@ReportCalendarKindNames.Label(kind)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <label class="row" style="align-items:center;gap:0.5rem">
+                    <input type="checkbox" name="enabled" value="true" checked="@calendar.IsEnabled" style="width:auto;min-height:auto" />
+                    Read this calendar
+                </label>
+
+                <div class="row">
+                    <button class="btn btn-small" type="submit">Save</button>
+                </div>
+            </form>
+
+            <form method="post" @formname="@($"delete-calendar-{calendar.Id}")" @onsubmit="() => DeleteCalendarAsync(calendar.Id)">
+                <AntiforgeryToken />
+                <button class="btn btn-small btn-danger" type="submit">Delete</button>
+            </form>
+        </div>
+    }
+
+    <form method="post" @formname="add-calendar" @onsubmit="AddCalendarAsync">
+        <AntiforgeryToken />
+        <h3 class="card-title">Add a calendar</h3>
+
+        <div class="filters">
+            <div class="field">
+                <label for="new-calendar-name">Name</label>
+                <input id="new-calendar-name" type="text" name="name" value="@newName" />
+            </div>
+
+            <div class="field" style="flex:2 1 16rem">
+                <label for="new-calendar-url">Address</label>
+                <input id="new-calendar-url" type="url" name="url" value="@newUrl" placeholder="https://example.com/basic.ics" />
+            </div>
+
+            <div class="field">
+                <label for="new-calendar-kind">Kind</label>
+                <select id="new-calendar-kind" name="kind">
+                    @foreach (var kind in ReportCalendarKindNames.All)
+                    {
+                        <option value="@kind" selected="@(newKind == kind)">@ReportCalendarKindNames.Label(kind)</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <p class="muted">@ReportCalendarKindNames.Description(newKind)</p>
+
+        <div class="row">
+            <button class="btn" type="submit">Add</button>
+        </div>
+    </form>
+</section>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private DailyReportSettingsView settings = default!;
+    private IReadOnlyList<ReportCalendarView> calendars = [];
+    private IReadOnlyList<CategoryView> categories = [];
+    private List<int> trackedCategories = [];
+    private string? newName;
+    private string? newUrl;
+    private ReportCalendarKind newKind = ReportCalendarKind.Upcoming;
+    private string? saved;
+    private string? error;
+    private string? calendarError;
+
+    /// <summary>Reads the settings, and the kind the add form is sitting on after a post.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+
+        if (HttpContext?.Request.Method == HttpMethods.Post)
+        {
+            newKind = Kind(HttpContext.Request.Form["kind"]);
+        }
+    }
+
+    /// <summary>Saves the schedule, the printer, the forecast address and the tracked categories.</summary>
+    private async Task SaveAsync()
+    {
+        var form = HttpContext!.Request.Form;
+
+        try
+        {
+            await Settings.SaveAsync(new UpdateDailyReportSettingsRequest(
+                form["enabled"] == "true",
+                Time(form["time-of-day"]),
+                form["printer-host"],
+                int.TryParse(form["printer-port"], out var port) ? port : 0,
+                form["printer-queue"],
+                form["both-sides"] == "true",
+                form["weather-url"],
+                form["category"]
+                    .Select(value => int.TryParse(value, out var id) ? id : 0)
+                    .Where(id => id > 0)
+                    .ToList()));
+
+            saved = "Saved.";
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    /// <summary>Adds the calendar the bottom form describes.</summary>
+    private async Task AddCalendarAsync()
+    {
+        var form = HttpContext!.Request.Form;
+
+        try
+        {
+            await Settings.AddCalendarAsync(new ReportCalendarInput(form["name"]!, form["url"]!, Kind(form["kind"])));
+            newName = null;
+            newUrl = null;
+        }
+        catch (ArgumentException ex)
+        {
+            calendarError = ex.Message;
+            newName = form["name"];
+            newUrl = form["url"];
+        }
+
+        await LoadAsync();
+    }
+
+    /// <summary>Saves one calendar's row.</summary>
+    private async Task SaveCalendarAsync(int id)
+    {
+        var form = HttpContext!.Request.Form;
+
+        try
+        {
+            await Settings.UpdateCalendarAsync(
+                id,
+                new ReportCalendarInput(form["name"]!, form["url"]!, Kind(form["kind"]), form["enabled"] == "true"));
+        }
+        catch (ArgumentException ex)
+        {
+            calendarError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    /// <summary>Removes one calendar.</summary>
+    private async Task DeleteCalendarAsync(int id)
+    {
+        await Settings.DeleteCalendarAsync(id);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        settings = await Settings.GetAsync();
+        calendars = settings.Calendars;
+        trackedCategories = [.. settings.CategoryIds];
+        categories = await Categories.ListAsync();
+    }
+
+    /// <summary>Returns what the page says about the last scheduled printing.</summary>
+    private string LastRunLabel() => settings switch
+    {
+        { LastRunAt: null } => "It has not printed on a schedule yet.",
+        { LastRunError: { } failure, LastRunAt: { } failedAt } =>
+            $"Last run {DateNames.LongWithTime(failedAt, Clock.LocalTimeZone)} did not print: {failure}",
+        { LastRunAt: { } at } => $"Last printed {DateNames.LongWithTime(at, Clock.LocalTimeZone)}.",
+    };
+
+    private static TimeOnly Time(string? value) =>
+        TimeOnly.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var time) ? time : new TimeOnly(8, 0);
+
+    private static ReportCalendarKind Kind(string? value) =>
+        Enum.TryParse<ReportCalendarKind>(value, out var kind) ? kind : ReportCalendarKind.Upcoming;
+}
