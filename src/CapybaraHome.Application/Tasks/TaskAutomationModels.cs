@@ -8,7 +8,8 @@ namespace CapybaraHome.Application.Tasks;
 /// <param name="Notes">Notes copied onto those tasks.</param>
 /// <param name="CategoryId">Category they are filed under, or null.</param>
 /// <param name="CategoryName">Name of that category, or null.</param>
-/// <param name="Frequency">How often it runs.</param>
+/// <param name="IntervalUnit">Unit the repeat interval is counted in.</param>
+/// <param name="IntervalCount">How many of that unit there are between runs.</param>
 /// <param name="StartsOn">Day the interval is counted from.</param>
 /// <param name="TimeOfDay">Time of day each run happens at, in the server's time zone.</param>
 /// <param name="DueInDays">How many days after it is created the task is due, or null for no due date.</param>
@@ -25,7 +26,8 @@ public record TaskAutomationView(
     string? Notes,
     int? CategoryId,
     string? CategoryName,
-    TaskAutomationFrequency Frequency,
+    TaskIntervalUnit IntervalUnit,
+    int IntervalCount,
     DateOnly StartsOn,
     TimeOnly TimeOfDay,
     int? DueInDays,
@@ -40,7 +42,8 @@ public record TaskAutomationView(
 /// <summary>Fields accepted when creating an automation.</summary>
 /// <param name="Title">Title to give the tasks it creates; required.</param>
 /// <param name="Notes">Notes to copy onto those tasks.</param>
-/// <param name="Frequency">How often it runs.</param>
+/// <param name="IntervalUnit">Unit the repeat interval is counted in.</param>
+/// <param name="IntervalCount">How many of that unit there are between runs.</param>
 /// <param name="StartsOn">Day to count the interval from.</param>
 /// <param name="TimeOfDay">Time of day to run at; midnight when left out.</param>
 /// <param name="CategoryId">Category to file the tasks under, or null.</param>
@@ -50,7 +53,8 @@ public record TaskAutomationView(
 public record CreateTaskAutomationRequest(
     string Title,
     string? Notes = null,
-    TaskAutomationFrequency Frequency = TaskAutomationFrequency.Weekly,
+    TaskIntervalUnit IntervalUnit = TaskIntervalUnit.Weeks,
+    int IntervalCount = 1,
     DateOnly StartsOn = default,
     TimeOnly TimeOfDay = default,
     int? CategoryId = null,
@@ -61,7 +65,8 @@ public record CreateTaskAutomationRequest(
 /// <summary>Fields accepted when updating an automation. A null member leaves that field alone.</summary>
 /// <param name="Title">New title.</param>
 /// <param name="Notes">New notes; pass an empty string to clear them.</param>
-/// <param name="Frequency">New frequency.</param>
+/// <param name="IntervalUnit">New unit for the repeat interval.</param>
+/// <param name="IntervalCount">New number of units between runs.</param>
 /// <param name="StartsOn">New start date.</param>
 /// <param name="TimeOfDay">New time of day.</param>
 /// <param name="CategoryId">New category.</param>
@@ -73,7 +78,8 @@ public record CreateTaskAutomationRequest(
 public record UpdateTaskAutomationRequest(
     string? Title = null,
     string? Notes = null,
-    TaskAutomationFrequency? Frequency = null,
+    TaskIntervalUnit? IntervalUnit = null,
+    int? IntervalCount = null,
     DateOnly? StartsOn = null,
     TimeOnly? TimeOfDay = null,
     int? CategoryId = null,

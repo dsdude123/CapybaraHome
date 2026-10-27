@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CapybaraHome.Application.Abstractions;
+using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Dashboards;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
@@ -90,7 +91,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         var automations = await context.TaskAutomations.AsNoTracking()
             .OrderBy(a => a.Id)
             .Select(a => new TaskAutomationRecord(
-                a.Title, a.Notes, a.CategoryId, a.Frequency, a.StartsOn, a.TimeOfDay, a.DueInDays,
+                a.Title, a.Notes, a.CategoryId, a.IntervalUnit, a.IntervalCount, a.StartsOn, a.TimeOfDay, a.DueInDays,
                 a.SkipWhenOpenTaskExists, a.IsEnabled, a.LastRunAt, a.LastRunSkipped,
                 a.CreatedAt, a.UpdatedAt))
             .ToListAsync(cancellationToken);
@@ -279,7 +280,8 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
             {
                 existing.Notes = record.Notes;
                 existing.CategoryId = categoryId;
-                existing.Frequency = record.Frequency;
+                existing.IntervalUnit = record.IntervalUnit;
+                existing.IntervalCount = Math.Max(TaskAutomationSchedule.MinimumIntervalCount, record.IntervalCount);
                 existing.StartsOn = record.StartsOn;
                 existing.TimeOfDay = record.TimeOfDay;
                 existing.DueInDays = record.DueInDays;
@@ -297,7 +299,8 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 Title = record.Title,
                 Notes = record.Notes,
                 CategoryId = categoryId,
-                Frequency = record.Frequency,
+                IntervalUnit = record.IntervalUnit,
+                IntervalCount = Math.Max(TaskAutomationSchedule.MinimumIntervalCount, record.IntervalCount),
                 StartsOn = record.StartsOn,
                 TimeOfDay = record.TimeOfDay,
                 DueInDays = record.DueInDays,

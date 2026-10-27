@@ -120,7 +120,8 @@ public record TaskRecord(
 /// <param name="Title">Title it gives the tasks it creates.</param>
 /// <param name="Notes">Notes it copies onto them.</param>
 /// <param name="CategoryId">Category they were filed under, or null.</param>
-/// <param name="Frequency">How often it runs.</param>
+/// <param name="IntervalUnit">Unit the repeat interval is counted in.</param>
+/// <param name="IntervalCount">How many of that unit there are between runs.</param>
 /// <param name="StartsOn">Day the interval is counted from.</param>
 /// <param name="TimeOfDay">Time of day each run happens at.</param>
 /// <param name="DueInDays">How many days after it is created the task is due, or null.</param>
@@ -134,7 +135,8 @@ public record TaskAutomationRecord(
     string Title,
     string? Notes,
     int? CategoryId,
-    TaskAutomationFrequency Frequency,
+    TaskIntervalUnit IntervalUnit,
+    int IntervalCount,
     DateOnly StartsOn,
     TimeOnly TimeOfDay,
     int? DueInDays,

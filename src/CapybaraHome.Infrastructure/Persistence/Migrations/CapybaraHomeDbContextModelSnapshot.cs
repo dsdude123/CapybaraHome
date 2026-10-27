@@ -301,7 +301,10 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<int?>("DueInDays")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("Frequency")
+                    b.Property<int>("IntervalCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("IntervalUnit")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");

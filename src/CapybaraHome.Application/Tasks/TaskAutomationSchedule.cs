@@ -13,28 +13,33 @@ public static class TaskAutomationSchedule
     // walk that follows it is short. The cap is only there to keep a nonsense date from looping.
     private const int MaxSteps = 1000;
 
+    /// <summary>The smallest interval an automation can repeat on.</summary>
+    public const int MinimumIntervalCount = 1;
+
     /// <summary>Returns the moment of the <paramref name="index"/>th occurrence, counting the start date as zero.</summary>
-    /// <param name="frequency">How often the automation runs.</param>
+    /// <param name="unit">Unit the interval is counted in.</param>
+    /// <param name="count">How many of <paramref name="unit"/> there are between runs.</param>
     /// <param name="startsOn">Day the interval is counted from.</param>
     /// <param name="timeOfDay">Time of day the run happens at, read in <paramref name="zone"/>.</param>
     /// <param name="index">Which occurrence to return, from zero.</param>
     /// <param name="zone">Time zone the start date and time of day are written in.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The occurrence falls outside the calendar.</exception>
     public static DateTimeOffset Occurrence(
-        TaskAutomationFrequency frequency,
+        TaskIntervalUnit unit,
+        int count,
         DateOnly startsOn,
         TimeOnly timeOfDay,
         int index,
         TimeZoneInfo zone)
     {
-        var date = frequency switch
+        var steps = Steps(unit, count, index);
+
+        var date = unit switch
         {
-            TaskAutomationFrequency.Daily => startsOn.AddDays(index),
-            TaskAutomationFrequency.Weekly => startsOn.AddDays(7 * index),
-            TaskAutomationFrequency.BiWeekly => startsOn.AddDays(14 * index),
-            TaskAutomationFrequency.Monthly => startsOn.AddMonths(index),
-            TaskAutomationFrequency.Quarterly => startsOn.AddMonths(3 * index),
-            TaskAutomationFrequency.Yearly => startsOn.AddYears(index),
-            _ => startsOn.AddDays(7 * index),
+            TaskIntervalUnit.Weeks => startsOn.AddDays(steps * 7),
+            TaskIntervalUnit.Months => startsOn.AddMonths(steps),
+            TaskIntervalUnit.Years => startsOn.AddYears(steps),
+            _ => startsOn.AddDays(steps),
         };
 
         return ToInstant(date, timeOfDay, zone);
@@ -44,30 +49,32 @@ public static class TaskAutomationSchedule
     /// Returns the first occurrence strictly after <paramref name="after"/>, or null when the
     /// schedule runs off the end of the calendar before reaching one.
     /// </summary>
-    /// <param name="frequency">How often the automation runs.</param>
+    /// <param name="unit">Unit the interval is counted in.</param>
+    /// <param name="count">How many of <paramref name="unit"/> there are between runs.</param>
     /// <param name="startsOn">Day the interval is counted from.</param>
     /// <param name="timeOfDay">Time of day the run happens at, read in <paramref name="zone"/>.</param>
     /// <param name="after">Moment the occurrence has to fall after.</param>
     /// <param name="zone">Time zone the start date and time of day are written in.</param>
     public static DateTimeOffset? NextAfter(
-        TaskAutomationFrequency frequency,
+        TaskIntervalUnit unit,
+        int count,
         DateOnly startsOn,
         TimeOnly timeOfDay,
         DateTimeOffset after,
         TimeZoneInfo zone)
     {
-        var index = Estimate(frequency, startsOn, after, zone);
+        var index = Estimate(unit, count, startsOn, after, zone);
 
         try
         {
-            while (index > 0 && Occurrence(frequency, startsOn, timeOfDay, index - 1, zone) > after)
+            while (index > 0 && Occurrence(unit, count, startsOn, timeOfDay, index - 1, zone) > after)
             {
                 index--;
             }
 
             for (var step = 0; step < MaxSteps; step++)
             {
-                var moment = Occurrence(frequency, startsOn, timeOfDay, index, zone);
+                var moment = Occurrence(unit, count, startsOn, timeOfDay, index, zone);
                 if (moment > after)
                 {
                     return moment;
@@ -85,29 +92,31 @@ public static class TaskAutomationSchedule
     }
 
     /// <summary>
-    /// Returns the next <paramref name="count"/> occurrences after <paramref name="after"/>, which
+    /// Returns the next <paramref name="take"/> occurrences after <paramref name="after"/>, which
     /// is what the editor shows so the start date can be picked against real dates.
     /// </summary>
-    /// <param name="frequency">How often the automation runs.</param>
+    /// <param name="unit">Unit the interval is counted in.</param>
+    /// <param name="count">How many of <paramref name="unit"/> there are between runs.</param>
     /// <param name="startsOn">Day the interval is counted from.</param>
     /// <param name="timeOfDay">Time of day the run happens at, read in <paramref name="zone"/>.</param>
     /// <param name="after">Moment the first occurrence has to fall after.</param>
-    /// <param name="count">How many occurrences to return.</param>
+    /// <param name="take">How many occurrences to return.</param>
     /// <param name="zone">Time zone the start date and time of day are written in.</param>
     public static IReadOnlyList<DateTimeOffset> Upcoming(
-        TaskAutomationFrequency frequency,
+        TaskIntervalUnit unit,
+        int count,
         DateOnly startsOn,
         TimeOnly timeOfDay,
         DateTimeOffset after,
-        int count,
+        int take,
         TimeZoneInfo zone)
     {
         var moments = new List<DateTimeOffset>();
         var from = after;
 
-        for (var taken = 0; taken < count; taken++)
+        for (var taken = 0; taken < take; taken++)
         {
-            if (NextAfter(frequency, startsOn, timeOfDay, from, zone) is not { } moment)
+            if (NextAfter(unit, count, startsOn, timeOfDay, from, zone) is not { } moment)
             {
                 break;
             }
@@ -117,6 +126,25 @@ public static class TaskAutomationSchedule
         }
 
         return moments;
+    }
+
+    /// <summary>
+    /// How far past the start date the <paramref name="index"/>th occurrence is, in whole units.
+    /// A long interval multiplied by a far-off index leaves the range a date can hold long before
+    /// it leaves the range an int can, so the product is taken in wider arithmetic and reported as
+    /// off the calendar rather than quietly wrapping into a date in the past.
+    /// </summary>
+    private static int Steps(TaskIntervalUnit unit, int count, int index)
+    {
+        var steps = (long)Math.Max(MinimumIntervalCount, count) * index;
+        var widest = unit == TaskIntervalUnit.Weeks ? steps * 7 : steps;
+
+        if (widest is > int.MaxValue or < int.MinValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), "The occurrence falls outside the calendar.");
+        }
+
+        return (int)steps;
     }
 
     /// <summary>
@@ -138,23 +166,22 @@ public static class TaskAutomationSchedule
     }
 
     /// <summary>Returns a starting guess at the index of the occurrence around <paramref name="after"/>.</summary>
-    private static int Estimate(TaskAutomationFrequency frequency, DateOnly startsOn, DateTimeOffset after, TimeZoneInfo zone)
+    private static int Estimate(TaskIntervalUnit unit, int count, DateOnly startsOn, DateTimeOffset after, TimeZoneInfo zone)
     {
         var target = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(after, zone).DateTime);
         var days = target.DayNumber - startsOn.DayNumber;
         var months = ((target.Year - startsOn.Year) * 12) + target.Month - startsOn.Month;
+        // In long arithmetic because a count near int.MaxValue overflows a week's multiplier.
+        long step = Math.Max(MinimumIntervalCount, count);
 
-        var guess = frequency switch
+        var guess = unit switch
         {
-            TaskAutomationFrequency.Daily => days,
-            TaskAutomationFrequency.Weekly => days / 7,
-            TaskAutomationFrequency.BiWeekly => days / 14,
-            TaskAutomationFrequency.Monthly => months,
-            TaskAutomationFrequency.Quarterly => months / 3,
-            TaskAutomationFrequency.Yearly => target.Year - startsOn.Year,
-            _ => days / 7,
+            TaskIntervalUnit.Weeks => days / (7 * step),
+            TaskIntervalUnit.Months => months / step,
+            TaskIntervalUnit.Years => (target.Year - startsOn.Year) / step,
+            _ => days / step,
         };
 
-        return Math.Max(0, guess);
+        return (int)Math.Clamp(guess, 0, int.MaxValue);
     }
 }

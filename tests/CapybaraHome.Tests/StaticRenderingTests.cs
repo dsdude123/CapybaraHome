@@ -912,7 +912,8 @@ public class StaticRenderingTests
             ["form.Action"] = "save",
             ["form.Title"] = "Take the bins out",
             ["form.Notes"] = "Green bin this week",
-            ["form.Frequency"] = nameof(TaskAutomationFrequency.BiWeekly),
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "2",
             ["form.StartsOn"] = "2026-11-02",
             ["form.TimeOfDay"] = "07:30",
             ["form.DueInDays"] = "3",
@@ -933,7 +934,8 @@ public class StaticRenderingTests
 
             Assert.Equal("Take the bins out", automation.Title);
             Assert.Equal("Green bin this week", automation.Notes);
-            Assert.Equal(TaskAutomationFrequency.BiWeekly, automation.Frequency);
+            Assert.Equal(TaskIntervalUnit.Weeks, automation.IntervalUnit);
+            Assert.Equal(2, automation.IntervalCount);
             Assert.Equal(new DateOnly(2026, 11, 2), automation.StartsOn);
             Assert.Equal(new TimeOnly(7, 30), automation.TimeOfDay);
             Assert.Equal(3, automation.DueInDays);
@@ -943,7 +945,7 @@ public class StaticRenderingTests
         // The list shows it with the interval it keeps and the execution it is waiting for.
         var list = await client.GetStringAsync("/automations");
         Assert.Contains("Take the bins out", list);
-        Assert.Contains("Every two weeks", list);
+        Assert.Contains("Every 2 weeks", list);
         Assert.Contains("Due 3 days after it is created", list);
         Assert.Contains("Never run", list);
 
@@ -952,7 +954,8 @@ public class StaticRenderingTests
             ["form.Action"] = "save",
             ["form.Title"] = "Take the bins out and rinse them",
             ["form.Notes"] = string.Empty,
-            ["form.Frequency"] = nameof(TaskAutomationFrequency.Monthly),
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Months),
+            ["form.IntervalCount"] = "9",
             ["form.StartsOn"] = "2026-12-01",
             ["form.TimeOfDay"] = "00:00",
             ["form.DueInDays"] = string.Empty,
@@ -969,7 +972,8 @@ public class StaticRenderingTests
 
             Assert.Equal("Take the bins out and rinse them", automation.Title);
             Assert.Null(automation.Notes);
-            Assert.Equal(TaskAutomationFrequency.Monthly, automation.Frequency);
+            Assert.Equal(TaskIntervalUnit.Months, automation.IntervalUnit);
+            Assert.Equal(9, automation.IntervalCount);
 
             // An empty Due in box takes the due date off again rather than leaving the old one.
             Assert.Null(automation.DueInDays);
@@ -990,13 +994,15 @@ public class StaticRenderingTests
     }
 
     [Theory]
-    [InlineData(TaskAutomationFrequency.Daily)]
-    [InlineData(TaskAutomationFrequency.Weekly)]
-    [InlineData(TaskAutomationFrequency.BiWeekly)]
-    [InlineData(TaskAutomationFrequency.Monthly)]
-    [InlineData(TaskAutomationFrequency.Quarterly)]
-    [InlineData(TaskAutomationFrequency.Yearly)]
-    public async Task The_preview_button_shows_every_frequencys_executions_without_saving(TaskAutomationFrequency frequency)
+    [InlineData(TaskIntervalUnit.Days, 1)]
+    [InlineData(TaskIntervalUnit.Days, 13)]
+    [InlineData(TaskIntervalUnit.Weeks, 1)]
+    [InlineData(TaskIntervalUnit.Weeks, 2)]
+    [InlineData(TaskIntervalUnit.Months, 1)]
+    [InlineData(TaskIntervalUnit.Months, 9)]
+    [InlineData(TaskIntervalUnit.Years, 1)]
+    [InlineData(TaskIntervalUnit.Years, 3)]
+    public async Task The_preview_button_shows_every_intervals_executions_without_saving(TaskIntervalUnit unit, int count)
     {
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
@@ -1005,7 +1011,8 @@ public class StaticRenderingTests
         {
             ["form.Action"] = "preview",
             ["form.Title"] = "Still being set up",
-            ["form.Frequency"] = frequency.ToString(),
+            ["form.IntervalUnit"] = unit.ToString(),
+            ["form.IntervalCount"] = count.ToString(),
             ["form.StartsOn"] = "2026-11-02",
             ["form.TimeOfDay"] = "06:00",
             ["form.CategoryId"] = string.Empty,
@@ -1088,7 +1095,8 @@ public class StaticRenderingTests
         bool lastRunSkipped = false) => new()
         {
             Title = title,
-            Frequency = startsOn == DateOnly.MaxValue ? TaskAutomationFrequency.Yearly : TaskAutomationFrequency.Daily,
+            IntervalUnit = startsOn == DateOnly.MaxValue ? TaskIntervalUnit.Years : TaskIntervalUnit.Days,
+            IntervalCount = 1,
             StartsOn = startsOn == default ? DateOnly.FromDateTime(createdAt.UtcDateTime) : startsOn,
             DueInDays = dueInDays,
             IsEnabled = isEnabled,
@@ -1108,7 +1116,8 @@ public class StaticRenderingTests
         {
             ["form.Action"] = "save",
             ["form.Title"] = "Backwards",
-            ["form.Frequency"] = nameof(TaskAutomationFrequency.Weekly),
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "1",
             ["form.StartsOn"] = "2026-11-02",
             ["form.TimeOfDay"] = "00:00",
             ["form.DueInDays"] = "-1",
@@ -1136,7 +1145,8 @@ public class StaticRenderingTests
         {
             ["form.Action"] = "save",
             ["form.Title"] = "   ",
-            ["form.Frequency"] = nameof(TaskAutomationFrequency.Weekly),
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "1",
             ["form.StartsOn"] = "2026-11-02",
             ["form.TimeOfDay"] = "00:00",
             ["form.CategoryId"] = string.Empty,
