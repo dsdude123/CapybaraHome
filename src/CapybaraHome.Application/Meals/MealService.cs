@@ -246,15 +246,59 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
             .ToDictionaryAsync(target => target.Slot, target => target.Count, cancellationToken);
     }
 
+    /// <summary>Returns the stored shared target, or null when nothing has been stored.</summary>
+    public async Task<int?> GetSharedTargetAsync(CancellationToken cancellationToken = default)
+    {
+        var stored = await context.MealPlanSharedTargets.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return stored?.Count;
+    }
+
     /// <summary>
     /// Stores how many meals each slot aims for, so the planning page opens on the last numbers
     /// used rather than the defaults. A slot left out of <paramref name="targets"/> goes back to
-    /// the default, since its row is removed.
+    /// the default, since its row is removed, and a null <paramref name="sharedTarget"/> does the
+    /// same for the shared count.
     /// </summary>
+    /// <param name="targets">How many meals each slot aims for.</param>
+    /// <param name="sharedTarget">How many of those are meant to be shared, or null for the default.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The shared target is more than the slot targets add up to: a shared meal is one of the
+    /// planned meals, so there cannot be more of them than there are meals planned for.
+    /// </exception>
     public async Task SaveTargetsAsync(
         IReadOnlyDictionary<MealSlot, int> targets,
+        int? sharedTarget = null,
         CancellationToken cancellationToken = default)
     {
+        var total = targets.Values.Sum(count => Math.Max(0, count));
+
+        if (sharedTarget is { } shared && Math.Max(0, shared) > total)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sharedTarget),
+                shared,
+                $"At most {total} of the planned meals can be shared ones.");
+        }
+
+        var storedShared = await context.MealPlanSharedTargets.ToListAsync(cancellationToken);
+
+        if (sharedTarget is { } wanted)
+        {
+            if (storedShared.FirstOrDefault() is { } row)
+            {
+                row.Count = Math.Max(0, wanted);
+            }
+            else
+            {
+                context.MealPlanSharedTargets.Add(new MealPlanSharedTarget { Count = Math.Max(0, wanted) });
+            }
+        }
+        else
+        {
+            context.MealPlanSharedTargets.RemoveRange(storedShared);
+        }
+
         var stored = await context.MealPlanTargets.ToListAsync(cancellationToken);
 
         foreach (var target in stored.Where(target => !targets.ContainsKey(target.Slot)))

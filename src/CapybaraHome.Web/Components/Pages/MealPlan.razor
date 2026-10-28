@@ -18,10 +18,18 @@
         {
             <div>
                 <label for="target-@slot">@MealSlotNames.Label(slot)</label>
-                <input id="target-@slot" type="number" min="0" name="@TargetName(slot)" value="@Target(slot)" />
+                <input id="target-@slot" type="number" min="0" name="@TargetName(slot)" value="@TargetField(slot)" />
             </div>
         }
+        <div>
+            <label for="target-shared">Shared</label>
+            <input id="target-shared" type="number" min="0" name="shared-target" value="@SharedTargetField" />
+        </div>
     </div>
+    @if (targetError is { } error)
+    {
+        <p class="error">@error</p>
+    }
     <div class="row" style="margin-top:0.5rem">
         <button class="btn" type="submit" name="targets" value="save">Save</button>
         <button class="btn" type="submit" name="targets" value="reset">Reset</button>
@@ -37,6 +45,13 @@
             @($" · {unslotted.Count} with no slot")
         }
     </p>
+    <p class="muted">@($"Planned {planned.Count} of {TotalTarget} · Shared {SharedPlanned} of {SharedTarget}")</p>
+    @if (SharedPlanned > TotalTarget)
+    {
+        <p class="error">
+            @($"{SharedPlanned} shared meals are planned, more than the {TotalTarget} meal{(TotalTarget == 1 ? string.Empty : "s")} the plan aims for.")
+        </p>
+    }
 
     @if (planned.Count == 0)
     {
@@ -149,12 +164,17 @@
     private List<int> selectedTags = [];
     private IReadOnlyDictionary<MealSlot, int> targets = new Dictionary<MealSlot, int>();
     private MealSlot nextSlot = MealSlot.Dinner;
+    private int? storedSharedTarget;
+    private IReadOnlyDictionary<MealSlot, int>? refusedTargets;
+    private int? refusedSharedTarget;
+    private string? targetError;
 
     /// <summary>Loads the plan, the search and the meals worth reviewing.</summary>
     protected override async Task OnParametersSetAsync()
     {
         tags = await Tags.ListAsync();
         targets = await Meals.GetTargetsAsync();
+        storedSharedTarget = await Meals.GetSharedTargetAsync();
         selectedTags = SelectedTags();
 
         planned = await Meals.ListAsync(
@@ -218,11 +238,13 @@
                 <AntiforgeryToken />
                 <input type="hidden" name="meal-id" value="@meal.Id" />
                 <input type="hidden" name="variant-id" value="@meal.PlannedVariantId" />
+                <input type="hidden" name="current-slot" value="@meal.PlannedSlot" />
                 <label style="align-items:center;gap:0.25rem;display:flex">
                     <input type="checkbox" name="shared" value="true" checked="@(meal.Status == MealStatus.PlannedShared)"
                            style="width:auto;min-height:auto" />
                     Shared
                 </label>
+                <button class="btn btn-small" type="submit" name="save-shared" value="save">Save shared</button>
                 @foreach (var slot in MealSlotNames.All)
                 {
                     <button class="btn btn-small" type="submit" name="slot" value="@slot" disabled="@(meal.PlannedSlot == slot)">
@@ -271,7 +293,10 @@
             return;
         }
 
-        var slot = Enum.TryParse<MealSlot>(form["slot"], out var posted) ? posted : MealSlot.Dinner;
+        // Save shared posts no slot, so the slot the meal is already in has to come back with it.
+        var slot = Enum.TryParse<MealSlot>(form["slot"], out var posted) ? posted
+            : Enum.TryParse<MealSlot>(form["current-slot"], out var current) ? current
+            : MealSlot.Dinner;
         var variantId = int.TryParse(form["variant-id"], out var variant) ? variant : (int?)null;
 
         await Meals.PlanAsync(mealId, slot, variantId, form["shared"] == "true");
@@ -305,24 +330,54 @@
 
         var form = HttpContext.Request.Form;
         var typed = new Dictionary<MealSlot, int>();
+        var reset = form["targets"] == "reset";
+        int? shared = null;
 
-        if (form["targets"] != "reset")
+        if (!reset)
         {
             foreach (var slot in MealSlotNames.All)
             {
-                if (int.TryParse(form[TargetName(slot)], out var count))
-                {
-                    typed[slot] = count;
-                }
+                typed[slot] = int.TryParse(form[TargetName(slot)], out var count) ? count : Target(slot);
             }
+
+            shared = int.TryParse(form["shared-target"], out var typedShared) ? typedShared : SharedTarget;
         }
 
-        await Meals.SaveTargetsAsync(typed);
+        try
+        {
+            await Meals.SaveTargetsAsync(typed, shared);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // The refused numbers stay in the form, so the one to correct is still there, while the
+            // counts below go on reading the plan as it is still stored.
+            refusedTargets = typed;
+            refusedSharedTarget = shared;
+            targetError = $"At most {typed.Values.Sum()} of the planned meals can be shared ones.";
+            return;
+        }
+
         Navigation.NavigateTo(Navigation.Uri);
     }
 
     private int Target(MealSlot slot) =>
         targets.TryGetValue(slot, out var stored) ? stored : MealSlotNames.DefaultTarget(slot);
+
+    /// <summary>What the slot's box shows: the refused number after a refusal, the stored one otherwise.</summary>
+    private int TargetField(MealSlot slot) =>
+        refusedTargets is { } refused && refused.TryGetValue(slot, out var typed) ? typed : Target(slot);
+
+    /// <summary>What the shared box shows, on the same terms as the slots'.</summary>
+    private int SharedTargetField => refusedSharedTarget ?? SharedTarget;
+
+    /// <summary>How many meals the plan aims for across the slots.</summary>
+    private int TotalTarget => MealSlotNames.All.Sum(Target);
+
+    /// <summary>How many of the planned meals are meant to be shared ones.</summary>
+    private int SharedTarget => storedSharedTarget ?? MealSlotNames.DefaultSharedTarget;
+
+    /// <summary>How many of the planned meals are shared ones.</summary>
+    private int SharedPlanned => planned.Count(m => m.Status == MealStatus.PlannedShared);
 
     private static string TargetName(MealSlot slot) => slot switch
     {

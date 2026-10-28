@@ -39,6 +39,9 @@ public interface ICapybaraHomeDbContext
     /// <summary>How many meals each slot aims for.</summary>
     DbSet<MealPlanTarget> MealPlanTargets { get; }
 
+    /// <summary>How many of the planned meals are meant to be shared ones.</summary>
+    DbSet<MealPlanSharedTarget> MealPlanSharedTargets { get; }
+
     /// <summary>Dashboard cards.</summary>
     DbSet<DashboardCard> DashboardCards { get; }
 

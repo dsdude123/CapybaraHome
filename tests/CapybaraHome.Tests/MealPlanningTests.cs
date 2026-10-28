@@ -160,6 +160,42 @@ public class MealPlanningTests
     }
 
     [Fact]
+    public async Task The_shared_target_is_stored_and_read_back()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+
+        Assert.Null(await service.GetSharedTargetAsync());
+
+        await service.SaveTargetsAsync(Targets(1, 2, 3), 4);
+        Assert.Equal(4, await service.GetSharedTargetAsync());
+
+        await service.SaveTargetsAsync(Targets(1, 2, 3), 2);
+        Assert.Equal(2, await service.GetSharedTargetAsync());
+
+        await service.SaveTargetsAsync(Targets(1, 2, 3), -1);
+        Assert.Equal(0, await service.GetSharedTargetAsync());
+
+        await service.SaveTargetsAsync(new Dictionary<MealSlot, int>());
+        Assert.Null(await service.GetSharedTargetAsync());
+    }
+
+    [Fact]
+    public async Task A_shared_target_above_the_slot_targets_is_refused()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        await service.SaveTargetsAsync(Targets(1, 2, 3), 6);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => service.SaveTargetsAsync(Targets(1, 2, 3), 7));
+
+        // The refusal stores nothing, so the numbers that were there are still there.
+        Assert.Equal(6, await service.GetSharedTargetAsync());
+        Assert.Equal(3, (await service.GetTargetsAsync())[MealSlot.Dinner]);
+    }
+
+    [Fact]
     public async Task A_meal_with_no_variants_offers_only_itself()
     {
         await using var db = await TestDatabase.CreateAsync();
@@ -171,4 +207,11 @@ public class MealPlanningTests
         Assert.False(option.HasVariants);
         Assert.Null(option.VariantId);
     }
+
+    private static Dictionary<MealSlot, int> Targets(int breakfast, int lunch, int dinner) => new()
+    {
+        [MealSlot.Breakfast] = breakfast,
+        [MealSlot.Lunch] = lunch,
+        [MealSlot.Dinner] = dinner,
+    };
 }

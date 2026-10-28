@@ -757,6 +757,194 @@ public class StaticRenderingTests
         Assert.Contains($"value=\"{slot}\" disabled", await client.GetStringAsync("/meals/plan"));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task The_shared_box_on_a_planned_meal_is_saved_without_moving_it(bool shared)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A plain meal"))).Id;
+            await meals.PlanAsync(mealId, MealSlot.Breakfast, shared: !shared);
+        }
+
+        // Save shared posts the box and no slot at all, which is the only way to turn the box on
+        // or off for a meal whose own slot button is the disabled one.
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new("meal-id", mealId.ToString()),
+            new("variant-id", string.Empty),
+            new("current-slot", nameof(MealSlot.Breakfast)),
+            new("save-shared", "save"),
+        };
+
+        if (shared)
+        {
+            fields.Add(new("shared", "true"));
+        }
+
+        var saved = await PostManyAsync(client, "/meals/plan", $"move-{mealId}", fields);
+        Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+
+        using var after = app.Services.CreateScope();
+        var service = after.ServiceProvider.GetRequiredService<MealService>();
+        var meal = (await service.GetAsync(mealId))!;
+
+        Assert.Equal(shared ? MealStatus.PlannedShared : MealStatus.Planned, meal.Status);
+        Assert.Equal(MealSlot.Breakfast, meal.PlannedSlot);
+
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("name=\"save-shared\"", page);
+        Assert.Equal(shared, page.Contains("name=\"shared\" value=\"true\" checked"));
+    }
+
+    [Fact]
+    public async Task The_planning_page_counts_the_shared_meals_against_their_own_target()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        // Nothing stored yet: the slot defaults add up, and no shared meals are asked for.
+        var fresh = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Planned 0 of 13", fresh);
+        Assert.Contains("Shared 0 of 0", fresh);
+
+        var saved = await PostManyAsync(client, "/meals/plan", "plan-targets",
+        [
+            new("breakfast", "1"),
+            new("lunch", "2"),
+            new("dinner", "3"),
+            new("shared-target", "2"),
+            new("targets", "save"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Planned 0 of 6", page);
+        Assert.Contains("Shared 0 of 2", page);
+        Assert.Contains("id=\"target-shared\" type=\"number\" min=\"0\" name=\"shared-target\" value=\"2\"", page);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A shared meal"))).Id;
+            await meals.PlanAsync(mealId, MealSlot.Dinner, shared: true);
+        }
+
+        var counted = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Planned 1 of 6", counted);
+        Assert.Contains("Shared 1 of 2", counted);
+        Assert.DoesNotContain("more than the", counted);
+
+        // The numbers survive a trip away from the page, like the slot targets do.
+        await client.GetStringAsync("/meals");
+        Assert.Contains("Shared 1 of 2", await client.GetStringAsync("/meals/plan"));
+
+        await PostManyAsync(client, "/meals/plan", "plan-targets", [new("targets", "reset")]);
+        var afterReset = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Planned 1 of 13", afterReset);
+        Assert.Contains("Shared 1 of 0", afterReset);
+    }
+
+    [Fact]
+    public async Task A_shared_target_above_the_meals_planned_for_is_refused_on_the_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var refused = await PostManyAsync(client, "/meals/plan", "plan-targets",
+        [
+            new("breakfast", "1"),
+            new("lunch", "1"),
+            new("dinner", "1"),
+            new("shared-target", "4"),
+            new("targets", "save"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.OK, refused.StatusCode);
+
+        var page = await refused.Content.ReadAsStringAsync();
+        Assert.Contains("At most 3 of the planned meals can be shared ones.", page);
+
+        // The refusal keeps what was typed, so the number to correct is still in the form, while the
+        // counts below it go on reading the plan as it is still stored.
+        Assert.Contains("name=\"shared-target\" value=\"4\"", page);
+        Assert.Contains("name=\"dinner\" value=\"1\"", page);
+        Assert.Contains("Planned 0 of 13", page);
+        Assert.Contains("Shared 0 of 0", page);
+
+        // Nothing was stored: the page comes back on the defaults.
+        var reloaded = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Planned 0 of 13", reloaded);
+        Assert.Contains("Shared 0 of 0", reloaded);
+    }
+
+    [Fact]
+    public async Task More_shared_meals_than_the_plan_aims_for_is_called_out()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostManyAsync(client, "/meals/plan", "plan-targets",
+        [
+            new("breakfast", "0"),
+            new("lunch", "0"),
+            new("dinner", "1"),
+            new("shared-target", "1"),
+            new("targets", "save"),
+        ]);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            foreach (var name in new[] { "One", "Two", "Three" })
+            {
+                var meal = await meals.CreateAsync(new CreateMealRequest(name));
+                await meals.PlanAsync(meal.Id, MealSlot.Dinner, shared: true);
+            }
+        }
+
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Planned 3 of 1", page);
+        Assert.Contains("Shared 3 of 1", page);
+        Assert.Contains("3 shared meals are planned, more than the 1 meal the plan aims for.", page);
+
+        // Room for one more meal: the same line, counted and worded for more than one.
+        await PostManyAsync(client, "/meals/plan", "plan-targets",
+        [
+            new("breakfast", "0"),
+            new("lunch", "1"),
+            new("dinner", "1"),
+            new("shared-target", "1"),
+            new("targets", "save"),
+        ]);
+
+        var raised = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Shared 3 of 1", raised);
+        Assert.Contains("3 shared meals are planned, more than the 2 meals the plan aims for.", raised);
+
+        // One more meal than that, and the line is gone.
+        await PostManyAsync(client, "/meals/plan", "plan-targets",
+        [
+            new("breakfast", "1"),
+            new("lunch", "1"),
+            new("dinner", "1"),
+            new("shared-target", "3"),
+            new("targets", "save"),
+        ]);
+
+        var within = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("Shared 3 of 3", within);
+        Assert.DoesNotContain("more than the", within);
+    }
+
     [Fact]
     public async Task A_meal_with_variants_is_planned_through_the_chooser_page()
     {

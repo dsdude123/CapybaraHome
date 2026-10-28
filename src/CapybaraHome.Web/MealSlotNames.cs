@@ -13,6 +13,12 @@ public static class MealSlotNames
         MealSlot.Dinner,
     ];
 
+    /// <summary>
+    /// How many of the planned meals are meant to be shared ones before the page is told
+    /// otherwise. None of them: who a meal is shared with is not something the slots imply.
+    /// </summary>
+    public const int DefaultSharedTarget = 0;
+
     /// <summary>Returns the label for <paramref name="slot"/>.</summary>
     public static string Label(MealSlot slot) => slot switch
     {
