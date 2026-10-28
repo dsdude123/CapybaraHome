@@ -90,6 +90,47 @@ public class StaticRenderingTests
         }
     }
 
+    [Theory]
+    [InlineData("/tasks", "tasks/new")]
+    [InlineData("/board", "tasks/new")]
+    [InlineData("/automations", "automations/new")]
+    [InlineData("/meals", "meals/new")]
+    [InlineData("/meals/plan", "meals/new")]
+    public async Task Every_list_page_offers_its_own_create_link(string path, string href)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var head = PageHead(await client.GetStringAsync(path));
+
+        Assert.Contains($"href=\"{href}\"", head);
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/board")]
+    [InlineData("/tasks")]
+    [InlineData("/tasks/new")]
+    [InlineData("/automations")]
+    [InlineData("/automations/new")]
+    [InlineData("/meals")]
+    [InlineData("/meals/new")]
+    [InlineData("/meals/plan")]
+    [InlineData("/settings")]
+    [InlineData("/settings/jira")]
+    [InlineData("/account")]
+    public async Task The_nav_bar_offers_no_create_link_of_its_own(string path)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var nav = Nav(await client.GetStringAsync(path));
+
+        // One create button in the header meant the Meals page showed a Create for tasks next to
+        // its own; creating now belongs to the page being looked at.
+        Assert.DoesNotContain("/new\"", nav);
+    }
+
     [Fact]
     public async Task The_whole_jira_wizard_runs_on_form_posts()
     {
@@ -1166,6 +1207,21 @@ public class StaticRenderingTests
         {
             yield return match.Value;
         }
+    }
+
+    private static string PageHead(string html) => Between(html, "<div class=\"page-head\">", "</div>");
+
+    private static string Nav(string html) => Between(html, "<nav class=\"nav-bar\"", "</nav>");
+
+    private static string Between(string html, string open, string close)
+    {
+        var start = html.IndexOf(open, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"The page has no {open} in it.");
+
+        var end = html.IndexOf(close, start, StringComparison.Ordinal);
+        Assert.True(end > start, $"The {open} on the page is never closed.");
+
+        return html[start..end];
     }
 
     private static HttpClient Client(AppFactory app) =>
