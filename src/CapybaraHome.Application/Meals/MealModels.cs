@@ -15,6 +15,18 @@ public record MealIngredientView(int Id, string? Quantity, string Item, int Sort
 /// <param name="Facet">Which side of a meal the tag describes.</param>
 public record MealTagView(int Id, string Name, MealTagFacet Facet);
 
+/// <summary>A tag with the number of meals carrying it, for the screen that manages them.</summary>
+/// <param name="Id">Primary key.</param>
+/// <param name="Name">Display name.</param>
+/// <param name="Facet">Which side of a meal the tag describes.</param>
+/// <param name="MealCount">How many meals carry the tag.</param>
+public record MealTagUsageView(int Id, string Name, MealTagFacet Facet, int MealCount);
+
+/// <summary>A meal carrying a tag, named so a deletion can say what it will change.</summary>
+/// <param name="Id">Primary key of the meal.</param>
+/// <param name="Name">What the meal is called.</param>
+public record MealTagHolderView(int Id, string Name);
+
 /// <summary>A variant as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
 /// <param name="MealId">Meal the variant belongs to.</param>
