@@ -12,6 +12,10 @@
 <form method="post" @formname="meal-editor" @onsubmit="SubmitAsync">
     <AntiforgeryToken />
 
+    @* The browser submits a form's first submit button when Enter is pressed in a text box, so
+       Save goes first and hidden: without it Enter would press a Remove button instead. *@
+    <button type="submit" name="action" value="save" hidden></button>
+
     <div class="field">
         <label for="meal-name">Name</label>
         <input id="meal-name" type="text" name="name" value="@name" />
@@ -40,19 +44,9 @@
         One-time meal
     </label>
 
-    <fieldset class="check-list" style="margin-top:0.75rem">
-        <legend>Ingredients</legend>
-        <p class="muted">A quantity and an item per line. Clear the item to drop the line.</p>
-        @for (var index = 0; index < rows.Count; index++)
-        {
-            var row = rows[index];
-            <div class="ingredient-line">
-                <input type="text" name="quantity" value="@row.Quantity" aria-label="Quantity" placeholder="Quantity" />
-                <input type="text" name="item" value="@row.Item" aria-label="Ingredient" placeholder="Ingredient" />
-            </div>
-        }
-        <button class="btn btn-small" type="submit" name="action" value="add-rows" style="margin-top:0.5rem">Add lines</button>
-    </fieldset>
+    <div style="margin-top:0.75rem">
+        <IngredientRows Rows="rows" EmptyText="No ingredients yet." />
+    </div>
 
     <div class="field">
         <label for="meal-directions">Directions</label>
@@ -71,13 +65,15 @@
             if (choices.Count > 0)
             {
                 <p class="muted">@MealTagFacetNames.Label(facet)</p>
-                @foreach (var tag in choices)
-                {
-                    <label for="meal-tag-@tag.Id">
-                        <input id="meal-tag-@tag.Id" type="checkbox" name="tag" value="@tag.Id" checked="@selectedTags.Contains(tag.Id)" />
-                        @tag.Name
-                    </label>
-                }
+                <div class="tag-choices">
+                    @foreach (var tag in choices)
+                    {
+                        <label for="meal-tag-@tag.Id">
+                            <input id="meal-tag-@tag.Id" type="checkbox" name="tag" value="@tag.Id" checked="@selectedTags.Contains(tag.Id)" />
+                            @tag.Name
+                        </label>
+                    }
+                </div>
             }
         }
     </fieldset>
@@ -98,12 +94,22 @@
         </div>
     </div>
 
+    <div class="row">
+        <button class="btn btn-small" type="submit" name="action" value="add-tags">Add these tags</button>
+        <a class="btn btn-small" href="meals/tags">Manage tags</a>
+    </div>
+
+    @if (added is not null)
+    {
+        <p class="notice" style="margin-top:0.5rem">@added</p>
+    }
+
     @if (error is not null)
     {
         <p class="error">@error</p>
     }
 
-    <div class="row">
+    <div class="row" style="margin-top:0.75rem">
         <button class="btn btn-primary" type="submit" name="action" value="save">Save</button>
         <a class="btn" href="meals">Cancel</a>
     </div>
@@ -157,9 +163,6 @@
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
-    /// <summary>How many blank ingredient lines a fresh editor offers, and how many a press of Add lines adds.</summary>
-    private const int BlankRows = 3;
-
     private IReadOnlyList<MealTagView> tags = [];
     private IReadOnlyList<MealVariantView> variants = [];
     private List<IngredientRow> rows = [];
@@ -173,10 +176,11 @@
     private MealTagFacet newTagFacet = MealTagFacet.Trait;
     private bool isOneTime;
     private string? error;
+    private string? added;
 
     /// <summary>
     /// Fills the editor. A post carries the edited values, so they are read back out of the form
-    /// rather than the database, which is what lets a press of Add lines keep what was typed.
+    /// rather than the database, which is what lets a press of Add or Remove keep what was typed.
     /// </summary>
     protected override async Task OnParametersSetAsync()
     {
@@ -199,7 +203,8 @@
 
         if (meal is null)
         {
-            rows = Blank(BlankRows);
+            // A new meal has nowhere to type without a line, so it starts with one empty one.
+            rows = [new IngredientRow(null, null)];
             return;
         }
 
@@ -210,7 +215,7 @@
         lastCooked = meal.LastCookedAt?.ToString("yyyy-MM-dd");
         lastCookedHeld = lastCooked;
         selectedTags = meal.Tags.Select(t => t.Id).ToList();
-        rows = meal.Ingredients.Select(i => new IngredientRow(i.Quantity, i.Item)).Concat(Blank(BlankRows)).ToList();
+        rows = meal.Ingredients.Select(i => new IngredientRow(i.Quantity, i.Item)).ToList();
     }
 
     private async Task SubmitAsync()
@@ -220,13 +225,31 @@
             return;
         }
 
-        if (HttpContext.Request.Form["action"] == "add-rows")
+        var action = HttpContext.Request.Form["action"].ToString();
+
+        if (action == "add-row")
         {
-            rows.AddRange(Blank(BlankRows));
+            rows.Add(new IngredientRow(null, null));
+            return;
+        }
+
+        if (IngredientRow.RemovedIndex(action) is { } index)
+        {
+            if (index >= 0 && index < rows.Count)
+            {
+                rows.RemoveAt(index);
+            }
+
             return;
         }
 
         error = null;
+
+        if (action == "add-tags")
+        {
+            await AddTagsAsync();
+            return;
+        }
 
         var ingredients = rows
             .Where(row => !string.IsNullOrWhiteSpace(row.Item))
@@ -279,6 +302,29 @@
         Navigation.NavigateTo("meals");
     }
 
+    /// <summary>
+    /// Creates the tags typed into the box and ticks them, without leaving the editor, so several
+    /// facets can be added one press after another.
+    /// </summary>
+    private async Task AddTagsAsync()
+    {
+        var before = selectedTags.Count;
+
+        try
+        {
+            selectedTags = await WithNewTagsAsync(newTags ?? string.Empty);
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+            return;
+        }
+
+        tags = await Tags.ListAsync();
+        newTags = null;
+        added = $"Added {selectedTags.Count - before} tag(s).";
+    }
+
     /// <summary>Creates the tags typed into the new tags box and returns every tag the meal should carry.</summary>
     private async Task<List<int>> WithNewTagsAsync(string typed)
     {
@@ -312,18 +358,6 @@
             .Where(id => id > 0)
             .ToList();
 
-        var quantities = form["quantity"];
-        var items = form["item"];
-        rows = items
-            .Select((item, index) => new IngredientRow(index < quantities.Count ? quantities[index] : null, item))
-            .ToList();
+        rows = IngredientRow.ReadFrom(form);
     }
-
-    private static List<IngredientRow> Blank(int count) =>
-        Enumerable.Range(0, count).Select(_ => new IngredientRow(null, null)).ToList();
-
-    /// <summary>One line of the ingredient list as the editor holds it.</summary>
-    /// <param name="Quantity">How much is needed, as typed.</param>
-    /// <param name="Item">What the ingredient is, as typed.</param>
-    private record IngredientRow(string? Quantity, string? Item);
 }

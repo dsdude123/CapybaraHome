@@ -18,6 +18,10 @@ else
     <form method="post" @formname="variant-editor" @onsubmit="SubmitAsync">
         <AntiforgeryToken />
 
+        @* The browser submits a form's first submit button when Enter is pressed in a text box, so
+           Save goes first and hidden: without it Enter would press a Remove button instead. *@
+        <button type="submit" name="action" value="save" hidden></button>
+
         <div class="field">
             <label for="variant-name">Name</label>
             <input id="variant-name" type="text" name="name" value="@name" />
@@ -28,18 +32,7 @@ else
             <textarea id="variant-directions" name="directions" rows="8">@directions</textarea>
         </div>
 
-        <fieldset class="check-list">
-            <legend>Ingredients added</legend>
-            <p class="muted">A quantity and an item per line. Clear the item to drop the line.</p>
-            @foreach (var row in rows)
-            {
-                <div class="ingredient-line">
-                    <input type="text" name="quantity" value="@row.Quantity" aria-label="Quantity" placeholder="Quantity" />
-                    <input type="text" name="item" value="@row.Item" aria-label="Ingredient" placeholder="Ingredient" />
-                </div>
-            }
-            <button class="btn btn-small" type="submit" name="action" value="add-rows" style="margin-top:0.5rem">Add lines</button>
-        </fieldset>
+        <IngredientRows Legend="Ingredients added" EmptyText="No ingredients added yet." Rows="rows" />
 
         <fieldset class="check-list">
             <legend>Ingredients removed</legend>
@@ -47,6 +40,7 @@ else
             {
                 <p class="muted">The meal has no ingredients to leave out.</p>
             }
+            <div class="tag-choices">
             @foreach (var ingredient in meal.Ingredients)
             {
                 <label for="variant-remove-@ingredient.Id">
@@ -55,6 +49,7 @@ else
                     @($"{ingredient.Quantity} {ingredient.Item}".Trim())
                 </label>
             }
+            </div>
         </fieldset>
 
         @if (error is not null)
@@ -89,9 +84,6 @@ else
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
-    /// <summary>How many blank ingredient lines a fresh editor offers, and how many a press of Add lines adds.</summary>
-    private const int BlankRows = 3;
-
     private MealView? meal;
     private List<IngredientRow> rows = [];
     private List<int> removed = [];
@@ -124,9 +116,10 @@ else
         name = variant?.Name;
         directions = variant?.DirectionsModifications;
         removed = variant?.RemovedIngredientIds.ToList() ?? [];
-        rows = (variant?.AddedIngredients.Select(i => new IngredientRow(i.Quantity, i.Item)) ?? [])
-            .Concat(Blank(BlankRows))
-            .ToList();
+        // A fresh variant has nowhere to type without a line, so it starts with one empty one.
+        rows = variant is null
+            ? [new IngredientRow(null, null)]
+            : variant.AddedIngredients.Select(i => new IngredientRow(i.Quantity, i.Item)).ToList();
     }
 
     private async Task SubmitAsync()
@@ -136,9 +129,21 @@ else
             return;
         }
 
-        if (HttpContext.Request.Form["action"] == "add-rows")
+        var action = HttpContext.Request.Form["action"].ToString();
+
+        if (action == "add-row")
         {
-            rows.AddRange(Blank(BlankRows));
+            rows.Add(new IngredientRow(null, null));
+            return;
+        }
+
+        if (IngredientRow.RemovedIndex(action) is { } index)
+        {
+            if (index >= 0 && index < rows.Count)
+            {
+                rows.RemoveAt(index);
+            }
+
             return;
         }
 
@@ -190,18 +195,6 @@ else
             .Where(id => id > 0)
             .ToList();
 
-        var quantities = form["quantity"];
-        var items = form["item"];
-        rows = items
-            .Select((item, index) => new IngredientRow(index < quantities.Count ? quantities[index] : null, item))
-            .ToList();
+        rows = IngredientRow.ReadFrom(form);
     }
-
-    private static List<IngredientRow> Blank(int count) =>
-        Enumerable.Range(0, count).Select(_ => new IngredientRow(null, null)).ToList();
-
-    /// <summary>One line of the added ingredient list as the editor holds it.</summary>
-    /// <param name="Quantity">How much is needed, as typed.</param>
-    /// <param name="Item">What the ingredient is, as typed.</param>
-    private record IngredientRow(string? Quantity, string? Item);
 }
