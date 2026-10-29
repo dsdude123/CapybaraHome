@@ -118,7 +118,7 @@ public class MealPlanningTests
     }
 
     [Fact]
-    public async Task The_options_list_offers_a_meal_and_each_of_its_variants()
+    public async Task The_options_list_offers_the_meal_once_however_many_variants_it_has()
     {
         await using var db = await TestDatabase.CreateAsync();
         var service = new MealService(db.Context, db.Clock);
@@ -129,23 +129,15 @@ public class MealPlanningTests
 
         var options = await service.ListOptionsAsync(new MealFilter());
 
-        Assert.Equal(["A meal", "A meal (First)", "A meal (Second)"], options.Select(o => o.Name));
-
-        // A variant shares its meal's status and the day the meal was cooked, which is the point of
-        // the whole arrangement: one variant does not look untouched because another was cooked.
-        Assert.All(options, option =>
-        {
-            Assert.Equal(cookedOn, option.LastCookedAt);
-            Assert.Equal(MealStatus.Queued, option.Status);
-            Assert.True(option.HasVariants);
-        });
-
-        Assert.Null(options[0].VariantId);
-        Assert.NotNull(options[1].VariantId);
+        var option = Assert.Single(options);
+        Assert.Equal("A meal", option.Name);
+        Assert.True(option.HasVariants);
+        Assert.Equal(cookedOn, option.LastCookedAt);
+        Assert.Equal(MealStatus.Queued, option.Status);
     }
 
     [Fact]
-    public async Task The_limit_counts_variant_rows_too()
+    public async Task The_limit_counts_meals()
     {
         await using var db = await TestDatabase.CreateAsync();
         var service = new MealService(db.Context, db.Clock);
@@ -153,14 +145,15 @@ public class MealPlanningTests
         await service.CreateVariantAsync(meal.Id, new MealVariantRequest("First"));
         await service.CreateVariantAsync(meal.Id, new MealVariantRequest("Second"));
         await service.CreateAsync(new CreateMealRequest("Another meal"));
+        await service.CreateAsync(new CreateMealRequest("A third meal"));
 
-        var options = await service.ListOptionsAsync(new MealFilter(Limit: 2));
+        var options = await service.ListOptionsAsync(new MealFilter(Limit: 2), MealSort.Name);
 
-        Assert.Equal(["A meal", "A meal (First)"], options.Select(o => o.Name));
+        Assert.Equal(["A meal", "A third meal"], options.Select(o => o.Name));
     }
 
     [Fact]
-    public async Task A_meal_with_no_variants_offers_only_itself()
+    public async Task A_meal_with_no_variants_is_offered_with_nothing_to_choose()
     {
         await using var db = await TestDatabase.CreateAsync();
         var service = new MealService(db.Context, db.Clock);
@@ -169,6 +162,36 @@ public class MealPlanningTests
         var option = Assert.Single(await service.ListOptionsAsync(new MealFilter()));
 
         Assert.False(option.HasVariants);
-        Assert.Null(option.VariantId);
+    }
+
+    [Theory]
+    [InlineData("A variant")]
+    [InlineData("chopped")]
+    [InlineData("twice as long")]
+    public async Task A_search_that_matches_a_variant_returns_its_meal(string text)
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal"));
+        await service.CreateVariantAsync(meal.Id, new MealVariantRequest(
+            "A variant",
+            "Cook it twice as long.",
+            [new MealIngredientInput("chopped nuts", "1 cup")]));
+
+        var option = Assert.Single(await service.ListOptionsAsync(new MealFilter(Text: text)));
+
+        Assert.Equal("A meal", option.Name);
+        Assert.Equal(meal.Id, option.MealId);
+    }
+
+    [Fact]
+    public async Task A_search_that_matches_nothing_in_a_meal_or_its_variants_returns_nothing()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal"));
+        await service.CreateVariantAsync(meal.Id, new MealVariantRequest("A variant"));
+
+        Assert.Empty(await service.ListOptionsAsync(new MealFilter(Text: "nothing like it")));
     }
 }

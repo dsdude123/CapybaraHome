@@ -47,6 +47,8 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
+    [InlineData("/meals/1/print")]
+    [InlineData("/meals/1/variants/1/print")]
     [InlineData("/meals/tags")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
@@ -72,6 +74,8 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
+    [InlineData("/meals/1/print")]
+    [InlineData("/meals/1/variants/1/print")]
     [InlineData("/meals/tags")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
@@ -983,8 +987,9 @@ public class StaticRenderingTests
         // The meal page lists the variant it now carries.
         var mealPage = await client.GetStringAsync($"/meals/{mealId}");
         Assert.Contains("A variant", mealPage);
-        Assert.Contains("1 added", mealPage);
-        Assert.Contains("1 removed", mealPage);
+        Assert.Contains("Adds 1 tin an extra", mealPage);
+        Assert.Contains("Leaves out second", mealPage);
+        Assert.Contains("Changes the directions", mealPage);
 
         int variantId;
         using (var scope = app.Services.CreateScope())
@@ -1080,10 +1085,9 @@ public class StaticRenderingTests
         Assert.Contains("Dinner 0 of 2", page);
         Assert.Contains("A plain meal", page);
 
-        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}-base",
+        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}",
         [
             new("meal-id", mealId.ToString()),
-            new("variant-id", string.Empty),
             new("slot", nameof(MealSlot.Dinner)),
             new("shared", "true"),
         ]);
@@ -1189,10 +1193,9 @@ public class StaticRenderingTests
         var page = await client.GetStringAsync("/meals/plan");
         Assert.Contains($"value=\"{slot}\"", page);
 
-        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}-base",
+        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}",
         [
             new("meal-id", mealId.ToString()),
-            new("variant-id", string.Empty),
             new("slot", slot.ToString()),
         ]);
 
@@ -1228,7 +1231,7 @@ public class StaticRenderingTests
         // The planning page sends a meal with variants to the chooser rather than planning it flat.
         var page = await client.GetStringAsync("/meals/plan");
         Assert.Contains($"meals/plan/choose/{mealId}", page);
-        Assert.Contains("A meal with variants (A variant)", page);
+        Assert.DoesNotContain("A meal with variants (A variant)", page);
 
         var chosen = await PostManyAsync(client, $"/meals/plan/choose/{mealId}", "plan-choice",
         [
@@ -1609,6 +1612,137 @@ public class StaticRenderingTests
 
         Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
         Assert.Contains("An automation needs a title", html);
+    }
+
+    [Fact]
+    public async Task The_planning_page_lists_a_meal_once_however_many_variants_it_has()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var seeded = await SeedVariantAsync(app);
+
+        var plan = await client.GetStringAsync("/meals/plan");
+
+        Assert.Contains("A meal", plan);
+        Assert.DoesNotContain("A meal (A variant)", plan);
+        Assert.Contains($"meals/plan/choose/{seeded.MealId}", plan);
+    }
+
+    [Fact]
+    public async Task A_planned_variant_links_to_the_variant_and_to_its_printable_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var seeded = await SeedVariantAsync(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            await meals.PlanAsync(seeded.MealId, MealSlot.Dinner, seeded.VariantId);
+        }
+
+        var plan = await client.GetStringAsync("/meals/plan");
+
+        Assert.Contains($"href=\"meals/{seeded.MealId}/variants/{seeded.VariantId}\"", plan);
+        Assert.Contains($"href=\"meals/{seeded.MealId}/variants/{seeded.VariantId}/print\"", plan);
+    }
+
+    [Fact]
+    public async Task The_chooser_and_the_meal_editor_spell_out_what_each_variant_changes()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var seeded = await SeedVariantAsync(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            await meals.CreateVariantAsync(seeded.MealId, new MealVariantRequest("A plain variant"));
+        }
+
+        foreach (var path in new[] { $"/meals/plan/choose/{seeded.MealId}", $"/meals/{seeded.MealId}" })
+        {
+            var html = await client.GetStringAsync(path);
+
+            Assert.Contains("Adds 2 cups walnuts", html);
+            Assert.Contains("Leaves out 1 tin butter", html);
+            Assert.Contains("Changes the directions", html);
+
+            // The arm for a variant that holds nothing yet, which is what a half-filled one shows.
+            Assert.Contains("Changes nothing yet", html);
+        }
+    }
+
+    [Fact]
+    public async Task The_printed_variant_carries_the_meals_directions_and_its_adjusted_ingredients()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var seeded = await SeedVariantAsync(app);
+
+        var meal = await client.GetStringAsync($"/meals/{seeded.MealId}/print");
+
+        Assert.Contains("1 kg flour", meal);
+        Assert.Contains("1 tin butter", meal);
+        Assert.Contains("Mix it.", meal);
+        Assert.Contains("A label", meal);
+
+        var variant = await client.GetStringAsync($"/meals/{seeded.MealId}/variants/{seeded.VariantId}/print");
+
+        Assert.Contains("A meal (A variant)", variant);
+        Assert.Contains("1 kg flour", variant);
+        Assert.Contains("2 cups walnuts", variant);
+        Assert.DoesNotContain("butter", variant);
+        Assert.Contains("Mix it.", variant);
+        Assert.Contains("Bake it longer.", variant);
+    }
+
+    [Fact]
+    public async Task A_meal_with_nothing_written_down_still_prints()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        int variantId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A bare meal"))).Id;
+            variantId = (await meals.CreateVariantAsync(mealId, new MealVariantRequest("A bare variant")))!.Id;
+        }
+
+        var meal = await client.GetStringAsync($"/meals/{mealId}/print");
+        Assert.Contains("None listed.", meal);
+        Assert.Contains("None written.", meal);
+
+        var variant = await client.GetStringAsync($"/meals/{mealId}/variants/{variantId}/print");
+        Assert.Contains("None listed.", variant);
+        Assert.Contains("None written.", variant);
+        Assert.DoesNotContain("Changes for this variant", variant);
+    }
+
+    // A meal with two ingredients, a tag and a variant that adds one ingredient, leaves one out
+    // and changes the directions: enough for every arm the variant screens can show.
+    private static async Task<(int MealId, int VariantId)> SeedVariantAsync(AppFactory app)
+    {
+        using var scope = app.Services.CreateScope();
+        var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+        var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+
+        var tag = await tags.EnsureAsync(new MealTagRequest("A label", MealTagFacet.Trait));
+        var meal = await meals.CreateAsync(new CreateMealRequest(
+            "A meal",
+            "Mix it.",
+            MealStatus.Available,
+            Ingredients: [new MealIngredientInput("flour", "1 kg"), new MealIngredientInput("butter", "1 tin")],
+            TagIds: [tag.Id]));
+
+        var butter = meal.Ingredients.Single(i => i.Item == "butter");
+        var variant = await meals.CreateVariantAsync(meal.Id, new MealVariantRequest(
+            "A variant", "Bake it longer.", [new MealIngredientInput("walnuts", "2 cups")], [butter.Id]));
+
+        return (meal.Id, variant!.Id);
     }
 
     private static IEnumerable<string> Forms(string html)

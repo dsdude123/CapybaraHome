@@ -7,7 +7,13 @@
 
 <PageTitle>@(Id is null ? "Create a meal" : "Edit a meal")</PageTitle>
 
-<h1>@(Id is null ? "Create a meal" : "Edit a meal")</h1>
+<div class="page-head">
+    <h1>@(Id is null ? "Create a meal" : "Edit a meal")</h1>
+    @if (Id is not null)
+    {
+        <a class="btn btn-small" href="meals/@Id/print">Print</a>
+    }
+</div>
 
 <form method="post" @formname="meal-editor" @onsubmit="SubmitAsync">
     <AntiforgeryToken />
@@ -119,29 +125,21 @@
 {
     <section class="card stack" style="margin-top:1rem">
         <h2 class="card-title">Variants</h2>
-        @if (variants.Count == 0)
+        @if (saved is null || saved.Variants.Count == 0)
         {
             <p class="muted">No variants yet.</p>
         }
         else
         {
             <ul class="task-list">
-                @foreach (var variant in variants)
+                @foreach (var variant in saved.Variants)
                 {
                     <li>
                         <div class="task-line">
                             <a class="task-link" href="meals/@Id/variants/@variant.Id">@variant.Name</a>
+                            <a href="meals/@Id/variants/@variant.Id/print">Print</a>
                         </div>
-                        <div class="task-meta">
-                            @if (variant.AddedIngredients.Count > 0)
-                            {
-                                <span>@variant.AddedIngredients.Count added</span>
-                            }
-                            @if (variant.RemovedIngredientIds.Count > 0)
-                            {
-                                <span>@variant.RemovedIngredientIds.Count removed</span>
-                            }
-                        </div>
+                        <VariantChanges Meal="saved" Variant="variant" />
                     </li>
                 }
             </ul>
@@ -164,7 +162,7 @@
     private HttpContext? HttpContext { get; set; }
 
     private IReadOnlyList<MealTagView> tags = [];
-    private IReadOnlyList<MealVariantView> variants = [];
+    private MealView? saved;
     private List<IngredientRow> rows = [];
     private List<int> selectedTags = [];
     private string? name;
@@ -193,7 +191,7 @@
             return;
         }
 
-        variants = meal?.Variants ?? [];
+        saved = meal;
 
         if (HttpContext?.Request.Method == HttpMethods.Post)
         {

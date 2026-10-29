@@ -168,17 +168,15 @@ public record UpdateMealRequest(
     string? ImportedText = null,
     bool? NeedsIngredientSplit = null);
 
-/// <summary>One thing the planning screens can put on the plan: a meal, or one of its variants.</summary>
+/// <summary>One meal the planning screens can put on the plan.</summary>
 /// <param name="MealId">The meal.</param>
-/// <param name="VariantId">The variant, or null for the meal itself.</param>
-/// <param name="Name">What to show: the meal's name, or the meal and the variant.</param>
+/// <param name="Name">What the meal is called.</param>
 /// <param name="Status">The meal's status, which its variants share.</param>
 /// <param name="LastCookedAt">Day the meal was last cooked, which its variants share.</param>
 /// <param name="Tags">The meal's tags.</param>
 /// <param name="HasVariants">Whether the meal has variants to choose between.</param>
 public record MealPlanOption(
     int MealId,
-    int? VariantId,
     string Name,
     MealStatus Status,
     DateOnly? LastCookedAt,

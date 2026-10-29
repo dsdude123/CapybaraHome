@@ -5,7 +5,13 @@
 
 <PageTitle>@(Id is null ? "Add a variant" : "Edit a variant")</PageTitle>
 
-<h1>@(Id is null ? "Add a variant" : "Edit a variant")</h1>
+<div class="page-head">
+    <h1>@(Id is null ? "Add a variant" : "Edit a variant")</h1>
+    @if (Id is not null)
+    {
+        <a class="btn btn-small" href="meals/@MealId/variants/@Id/print">Print</a>
+    }
+</div>
 
 @if (meal is null)
 {

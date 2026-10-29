@@ -1,4 +1,4 @@
-@* The rows the planning page offers to choose from, each with the controls that put one on the plan. *@
+@* The meals the planning page offers to choose from, each with the controls that put one on the plan. *@
 
 @if (Options.Count == 0)
 {
@@ -11,7 +11,7 @@ else
         {
             <li>
                 <div class="task-line">
-                    <span class="task-link">@option.Name</span>
+                    <a class="task-link" href="meals/@option.MealId">@option.Name</a>
                     <span class="pill">@MealStatusNames.Label(option.Status)</span>
                 </div>
                 <div class="task-meta">
@@ -21,7 +21,7 @@ else
                         <span>@tag.Name</span>
                     }
                 </div>
-                @if (option.VariantId is null && option.HasVariants)
+                @if (option.HasVariants)
                 {
                     <a class="btn btn-small" href="@ChooseLink(option)">Choose a variant</a>
                 }
@@ -30,7 +30,6 @@ else
                     <form method="post" @formname="@FormName(option)" @onsubmit="Plan" class="row plan-controls">
                         <AntiforgeryToken />
                         <input type="hidden" name="meal-id" value="@option.MealId" />
-                        <input type="hidden" name="variant-id" value="@option.VariantId" />
                         <label style="align-items:center;gap:0.25rem;display:flex">
                             <input type="checkbox" name="shared" value="true" style="width:auto;min-height:auto" />
                             Shared
@@ -70,6 +69,5 @@ else
     [Parameter, EditorRequired]
     public Func<MealPlanOption, string> ChooseLink { get; set; } = _ => "meals/plan";
 
-    private string FormName(MealPlanOption option) =>
-        $"{Prefix}-{option.MealId}-{option.VariantId?.ToString() ?? "base"}";
+    private string FormName(MealPlanOption option) => $"{Prefix}-{option.MealId}";
 }

@@ -154,4 +154,39 @@ public class MealVariantTests
         var after = await service.GetAsync(meal.Id);
         Assert.Equal(["First", "Second"], after!.Variants.Select(v => v.Name));
     }
+
+    [Fact]
+    public async Task The_variant_ingredient_list_drops_what_it_leaves_out_and_appends_what_it_adds()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal", Ingredients:
+            [new MealIngredientInput("first", "1 tin"), new MealIngredientInput("second")]));
+        var dropped = meal.Ingredients.Single(i => i.Item == "second");
+        await service.CreateVariantAsync(meal.Id, new MealVariantRequest(
+            "A variant", null, [new MealIngredientInput("extra", "2 cups")], [dropped.Id]));
+
+        var saved = await service.GetAsync(meal.Id);
+        var variant = Assert.Single(saved!.Variants);
+
+        Assert.Equal(["1 tin first", "2 cups extra"],
+            MealVariants.Ingredients(saved, variant).Select(MealVariants.Line));
+        Assert.Equal(["second"], MealVariants.Removed(saved, variant).Select(MealVariants.Line));
+    }
+
+    [Fact]
+    public async Task A_variant_that_changes_no_ingredients_prints_the_meals_own_list()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal", Ingredients:
+            [new MealIngredientInput("first")]));
+        await service.CreateVariantAsync(meal.Id, new MealVariantRequest("A variant"));
+
+        var saved = await service.GetAsync(meal.Id);
+        var variant = Assert.Single(saved!.Variants);
+
+        Assert.Equal(["first"], MealVariants.Ingredients(saved, variant).Select(MealVariants.Line));
+        Assert.Empty(MealVariants.Removed(saved, variant));
+    }
 }
