@@ -574,3 +574,60 @@ code.secret {
     overflow-wrap: anywhere;
     padding: 0.5rem;
 }
+
+/* One choice of the planning chooser: the name, then what the variant changes. */
+.choice-line {
+    margin-bottom: 0.6rem;
+}
+
+.variant-changes {
+    margin-top: 0.15rem;
+}
+
+.directions {
+    white-space: pre-wrap;
+}
+
+.print-list {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+/* The printed sheet is the page: everything that is only there to navigate goes. */
+@media print {
+    :root {
+        color-scheme: light;
+    }
+
+    body {
+        background: #ffffff;
+        color: #000000;
+    }
+
+    .app-header,
+    .no-print,
+    .btn,
+    form {
+        display: none !important;
+    }
+
+    .content {
+        max-width: none;
+        padding: 0;
+    }
+
+    .print-sheet h2 {
+        break-after: avoid;
+        font-size: 1.1rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .print-sheet li,
+    .print-sheet p {
+        break-inside: avoid;
+    }
+
+    a[href]::after {
+        content: "";
+    }
+}
