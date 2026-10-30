@@ -1,0 +1,532 @@
+@page "/homes/{Id:int}"
+@using CapybaraHome.Domain.Homes
+@inject PropertyService Properties
+@inject HomeSearchService Search
+@inject HomeSearchBoardService Board
+@inject DriveTimeMeasurer Measurer
+@inject PropertyPhotoService Photos
+@inject NavigationManager Navigation
+
+<PageTitle>@(property?.Name ?? "Property")</PageTitle>
+
+@if (property is null)
+{
+    <p class="muted">That property is not here.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>
+            @property.Name
+            @if (property.IsCurrent)
+            {
+                <span class="pill">Where I live now</span>
+            }
+        </h1>
+        <div class="row">
+            <a class="btn btn-small" href="homes">All properties</a>
+            <a class="btn btn-primary btn-small" href="homes/@Id/edit">Edit</a>
+        </div>
+    </div>
+
+    @if (property.Address is { Length: > 0 })
+    {
+        <p class="muted">@property.Address</p>
+    }
+
+    <section class="card stack">
+        <h2 class="card-title">Score</h2>
+        @if (!settings.AnyWeightSet && priorityPoints == 0m)
+        {
+            <p class="notice">
+                No scoring weights are set yet, so everything scores zero.
+                <a href="homes/settings">Set the weights</a>.
+            </p>
+        }
+        <p class="metric">@Points(score!.Total)</p>
+        <table>
+            <thead>
+                <tr><th scope="col">What</th><th scope="col">Difference</th><th scope="col">Points</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Fees a month</td>
+                    <td>@Money(score.MonthlyDifference)</td>
+                    <td>@Points(score.MonthlyFees)</td>
+                </tr>
+                <tr>
+                    <td>Deposit</td>
+                    <td>@Money(score.DepositDifference)</td>
+                    <td>@Points(score.Deposit)</td>
+                </tr>
+                @foreach (var line in score.DriveTimeLines)
+                {
+                    <tr>
+                        <td>Drive to @line.Name</td>
+                        <td>@Difference(line)</td>
+                        <td>@Points(line.Points)</td>
+                    </tr>
+                }
+                <tr>
+                    <td>Amenities</td>
+                    <td>@property.Amenities.Count</td>
+                    <td>@Points(score.Amenities)</td>
+                </tr>
+                <tr>
+                    <td>Pros</td>
+                    <td>@property.Pros.Count()</td>
+                    <td>@Points(score.Pros)</td>
+                </tr>
+                <tr>
+                    <td>Cons</td>
+                    <td>@property.Cons.Count()</td>
+                    <td>@Points(score.Cons)</td>
+                </tr>
+                <tr>
+                    <td>Priorities met</td>
+                    <td>@property.Priorities.Count(p => p.Meets == true) of @priorities.Count</td>
+                    <td>@Points(score.Priorities)</td>
+                </tr>
+            </tbody>
+        </table>
+        @if (property.IsCurrent)
+        {
+            <p class="muted">
+                This is the baseline, so its fees and drives are not compared with anything.
+            </p>
+        }
+        else if (current is null)
+        {
+            <p class="muted">
+                No home is marked as the one you live in, so there is nothing to compare the fees
+                and the drives against.
+            </p>
+        }
+    </section>
+
+    <section class="card stack">
+        <h2 class="card-title">What it costs</h2>
+        <table>
+            <tbody>
+                <tr><td>Rent</td><td>@Money(property.Rent)</td></tr>
+                <tr><td>Parking</td><td>@Money(property.ParkingFee)</td></tr>
+                <tr><td>Cat rent</td><td>@Money(property.PetRent)</td></tr>
+                @foreach (var utility in property.Utilities)
+                {
+                    <tr>
+                        <td>@UtilityKindNames.Label(utility.Kind, utility.Label)</td>
+                        <td>@Money(utility.MonthlyCost)</td>
+                    </tr>
+                }
+                <tr><td><strong>A month in all</strong></td><td><strong>@Money(property.MonthlyTotal)</strong></td></tr>
+                <tr><td>Deposit, once</td><td>@Money(property.Deposit)</td></tr>
+            </tbody>
+        </table>
+        <p class="muted">Internet: @(property.Internet is { Length: > 0 } ? property.Internet : "not recorded")</p>
+    </section>
+
+    <div class="card-grid">
+        <section class="card stack">
+            <h2 class="card-title">Amenities</h2>
+            @if (property.Amenities.Count == 0)
+            {
+                <p class="muted">None recorded.</p>
+            }
+            else
+            {
+                <ul class="print-list">
+                    @foreach (var amenity in property.Amenities)
+                    {
+                        <li>@amenity.Name</li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="card stack">
+            <h2 class="card-title">Pros</h2>
+            @if (!property.Pros.Any())
+            {
+                <p class="muted">None recorded.</p>
+            }
+            else
+            {
+                <ul class="print-list">
+                    @foreach (var pro in property.Pros)
+                    {
+                        <li>@pro.Text</li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="card stack">
+            <h2 class="card-title">Cons</h2>
+            @if (!property.Cons.Any())
+            {
+                <p class="muted">None recorded.</p>
+            }
+            else
+            {
+                <ul class="print-list">
+                    @foreach (var con in property.Cons)
+                    {
+                        <li>@con.Text</li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+
+    <section class="card stack">
+        <h2 class="card-title">Priorities</h2>
+        @if (priorities.Count == 0)
+        {
+            <p class="muted">
+                No priorities yet. <a href="homes/settings">Add some</a> and they appear here to mark.
+            </p>
+        }
+        else
+        {
+            <form method="post" @formname="property-priorities" @onsubmit="SavePrioritiesAsync" class="stack">
+                <AntiforgeryToken />
+                @foreach (var priority in priorities)
+                {
+                    var held = property.Priorities.FirstOrDefault(p => p.PriorityId == priority.Id);
+                    <div class="choice-line">
+                        <label for="priority-@priority.Id">@priority.Name <span class="muted">@Points(priority.Points)</span></label>
+                        <select id="priority-@priority.Id" name="priority-@priority.Id">
+                            @foreach (var choice in PriorityMarks.All)
+                            {
+                                <option value="@PriorityMarks.Value(choice)" selected="@(held?.Meets == choice)">
+                                    @PriorityMarks.Label(choice)
+                                </option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="row">
+                    <button class="btn btn-primary btn-small" type="submit">Save the markings</button>
+                </div>
+            </form>
+        }
+    </section>
+
+    <section class="card stack">
+        <h2 class="card-title">Drive times</h2>
+        @if (destinations.Count == 0)
+        {
+            <p class="muted">
+                No destinations yet. <a href="homes/settings">Add work and anywhere else</a> you drive to.
+            </p>
+        }
+        else
+        {
+            <form method="post" @formname="property-drives" @onsubmit="SaveDrivesAsync" class="stack">
+                <AntiforgeryToken />
+                @foreach (var destination in destinations)
+                {
+                    var held = property.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id);
+                    <div class="choice-line">
+                        <label for="drive-@destination.Id">
+                            @destination.Name
+                            @if (held is not null)
+                            {
+                                <span class="muted">— @(held.Source == DriveTimeSource.Measured ? "measured" : "typed in")</span>
+                            }
+                        </label>
+                        <input id="drive-@destination.Id" type="number" step="0.1" name="drive-@destination.Id"
+                               value="@Typed(held?.Minutes)" placeholder="Minutes" />
+                    </div>
+                }
+                <div class="row">
+                    <button class="btn btn-primary btn-small" type="submit">Save the times</button>
+                </div>
+            </form>
+
+            <form method="post" @formname="property-measure" @onsubmit="MeasureAsync">
+                <AntiforgeryToken />
+                <div class="row">
+                    <button class="btn btn-small" type="submit" disabled="@(!settings.CanMeasureDriveTimes)">
+                        Measure them from the address
+                    </button>
+                </div>
+            </form>
+
+            @if (!settings.CanMeasureDriveTimes)
+            {
+                <p class="muted">
+                    Measuring needs a routing service. <a href="homes/settings">Set one up</a>, or type the
+                    minutes in above.
+                </p>
+            }
+
+            @if (measured is not null)
+            {
+                <p class="notice">@measured</p>
+            }
+
+            @foreach (var problem in problems)
+            {
+                <p class="error">@problem</p>
+            }
+        }
+    </section>
+
+    <section class="card stack">
+        <h2 class="card-title">Notes</h2>
+        <form method="post" @formname="property-note" @onsubmit="AddNoteAsync" class="stack">
+            <AntiforgeryToken />
+            <div class="field">
+                <label for="note-body">A new note</label>
+                <textarea id="note-body" name="body" rows="3">@noteBody</textarea>
+            </div>
+            <div class="row">
+                <button class="btn btn-primary btn-small" type="submit">Add the note</button>
+            </div>
+        </form>
+
+        @if (noteError is not null)
+        {
+            <p class="error">@noteError</p>
+        }
+
+        @if (property.Notes.Count == 0)
+        {
+            <p class="muted">No notes yet.</p>
+        }
+        else
+        {
+            <ul class="task-list">
+                @foreach (var note in property.Notes)
+                {
+                    <li>
+                        <div class="task-line">
+                            <span class="directions">@note.Body</span>
+                            <form method="post" @formname="@($"note-delete-{note.Id}")" @onsubmit="() => DeleteNoteAsync(note.Id)">
+                                <AntiforgeryToken />
+                                <button class="btn btn-small btn-danger" type="submit"
+                                        aria-label="@($"Delete the note from {DateNames.Day(note.CreatedAt)}")">Delete</button>
+                            </form>
+                        </div>
+                        <p class="task-meta">@DateNames.Day(note.CreatedAt)</p>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="card stack">
+        <h2 class="card-title">Pictures</h2>
+        <form method="post" action="homes/@Id/photos" enctype="multipart/form-data" class="stack">
+            <AntiforgeryToken />
+            <div class="field">
+                <label for="photo-file">A picture</label>
+                <input id="photo-file" type="file" name="file" accept="image/jpeg,image/png,image/gif,image/webp" required />
+            </div>
+            <div class="field">
+                <label for="photo-caption">What it shows</label>
+                <input id="photo-caption" type="text" name="caption" />
+            </div>
+            <div class="row">
+                <button class="btn btn-primary btn-small" type="submit">Upload it</button>
+            </div>
+        </form>
+
+        @if (Photo is { Length: > 0 })
+        {
+            <p class="notice">@Photo</p>
+        }
+
+        @if (PhotoError is { Length: > 0 })
+        {
+            <p class="error">@PhotoError</p>
+        }
+
+        @if (property.Photos.Count == 0)
+        {
+            <p class="muted">No pictures yet.</p>
+        }
+        else
+        {
+            <div class="photo-grid">
+                @foreach (var photo in property.Photos)
+                {
+                    <figure class="photo">
+                        <a href="homes/photos/@photo.Id">
+                            <img src="homes/photos/@photo.Id" alt="@(photo.Caption ?? photo.FileName)" loading="lazy" />
+                        </a>
+                        <figcaption>
+                            @(photo.Caption ?? photo.FileName)
+                            <form method="post" @formname="@($"photo-delete-{photo.Id}")" @onsubmit="() => DeletePhotoAsync(photo.Id)">
+                                <AntiforgeryToken />
+                                <button class="btn btn-small btn-danger" type="submit"
+                                        aria-label="@($"Delete {photo.FileName}")">Delete</button>
+                            </form>
+                        </figcaption>
+                    </figure>
+                }
+            </div>
+        }
+    </section>
+}
+
+@code {
+    /// <summary>Id of the property being looked at.</summary>
+    [Parameter]
+    public int Id { get; set; }
+
+    /// <summary>What an upload said, carried back from the endpoint that handled the file.</summary>
+    [SupplyParameterFromQuery(Name = "photo")]
+    private string? Photo { get; set; }
+
+    /// <summary>Why an upload was refused, carried back from the endpoint that handled the file.</summary>
+    [SupplyParameterFromQuery(Name = "photoError")]
+    private string? PhotoError { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private PropertyView? property;
+    private PropertyView? current;
+    private PropertyScore? score;
+    private IReadOnlyList<SearchDestinationView> destinations = [];
+    private IReadOnlyList<SearchPriorityView> priorities = [];
+    private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, null, false);
+    private decimal priorityPoints;
+    private List<string> problems = [];
+    private string? measured;
+    private string? noteBody;
+    private string? noteError;
+
+    /// <summary>Loads the property and everything shown beside it.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var scored = await Board.GetScoredAsync(Id);
+        property = scored?.Property;
+        score = scored?.Score;
+
+        if (property is null)
+        {
+            return;
+        }
+
+        current = await Properties.GetCurrentAsync();
+        destinations = await Search.ListDestinationsAsync();
+        priorities = await Search.ListPrioritiesAsync();
+        settings = await Search.GetSettingsAsync();
+        priorityPoints = priorities.Sum(p => Math.Abs(p.Points));
+    }
+
+    private async Task SavePrioritiesAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        foreach (var priority in priorities)
+        {
+            var posted = HttpContext.Request.Form[$"priority-{priority.Id}"].ToString();
+            await Properties.MarkPriorityAsync(Id, priority.Id, PriorityMarks.Parse(posted));
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task SaveDrivesAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        foreach (var destination in destinations)
+        {
+            var posted = HttpContext.Request.Form[$"drive-{destination.Id}"].ToString();
+
+            if (double.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var minutes) && minutes >= 0)
+            {
+                await Properties.SetDriveTimeAsync(Id, destination.Id, minutes, null, DriveTimeSource.Manual);
+            }
+            else
+            {
+                await Properties.ClearDriveTimeAsync(Id, destination.Id);
+            }
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task MeasureAsync()
+    {
+        try
+        {
+            var outcome = await Measurer.MeasureAsync(Id);
+            if (outcome is not null)
+            {
+                measured = $"Measured {outcome.Measured} drive(s).";
+                problems = outcome.Problems.ToList();
+            }
+        }
+        catch (RoutingException ex)
+        {
+            problems = [ex.Message];
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task AddNoteAsync()
+    {
+        noteBody = HttpContext?.Request.Form["body"];
+
+        try
+        {
+            await Properties.AddNoteAsync(Id, noteBody ?? string.Empty);
+            noteBody = null;
+            noteError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            noteError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task DeleteNoteAsync(int noteId)
+    {
+        await Properties.DeleteNoteAsync(noteId);
+        await LoadAsync();
+    }
+
+    private async Task DeletePhotoAsync(int photoId)
+    {
+        await Photos.DeleteAsync(photoId);
+        Navigation.NavigateTo($"homes/{Id}");
+    }
+
+    // The container has no locale, so a currency format renders the generic sign rather than a
+    // dollar one; the weights are labelled per dollar, so the sign is written out here.
+    private static string Money(decimal? value) =>
+        value is null ? "\u2014" : "$" + value.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Points(decimal value) =>
+        (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string? Typed(double? minutes) =>
+        minutes?.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Difference(DriveTimeScore line) =>
+        line.Minutes is { } mine && line.CurrentMinutes is { } theirs
+            ? $"{Typed(mine)} min against {Typed(theirs)} min"
+            : line.Minutes is { } only
+                ? $"{Typed(only)} min, nothing to compare"
+                : "not known";
+}

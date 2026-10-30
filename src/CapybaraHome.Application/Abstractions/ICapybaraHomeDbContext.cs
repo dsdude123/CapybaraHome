@@ -1,4 +1,5 @@
 using CapybaraHome.Domain.Dashboards;
+using CapybaraHome.Domain.Homes;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Domain.Users;
@@ -38,6 +39,39 @@ public interface ICapybaraHomeDbContext
 
     /// <summary>How many meals each slot aims for.</summary>
     DbSet<MealPlanTarget> MealPlanTargets { get; }
+
+    /// <summary>Homes being tracked, candidates and the one lived in now.</summary>
+    DbSet<Property> Properties { get; }
+
+    /// <summary>Lines of the properties' utility breakdowns.</summary>
+    DbSet<PropertyUtility> PropertyUtilities { get; }
+
+    /// <summary>What the properties offer.</summary>
+    DbSet<PropertyAmenity> PropertyAmenities { get; }
+
+    /// <summary>The written pros and cons.</summary>
+    DbSet<PropertyPoint> PropertyPoints { get; }
+
+    /// <summary>Notes written about the properties.</summary>
+    DbSet<PropertyNote> PropertyNotes { get; }
+
+    /// <summary>Pictures of the properties.</summary>
+    DbSet<PropertyPhoto> PropertyPhotos { get; }
+
+    /// <summary>Places the drive from each property is measured to.</summary>
+    DbSet<SearchDestination> SearchDestinations { get; }
+
+    /// <summary>The measured and typed drive times.</summary>
+    DbSet<PropertyDriveTime> PropertyDriveTimes { get; }
+
+    /// <summary>What a home has to do, each worth its own points.</summary>
+    DbSet<SearchPriority> SearchPriorities { get; }
+
+    /// <summary>How the properties were marked against the priorities.</summary>
+    DbSet<PropertyPriority> PropertyPriorities { get; }
+
+    /// <summary>The scoring weights and the routing service the search uses.</summary>
+    DbSet<HomeSearchSettings> HomeSearchSettings { get; }
 
     /// <summary>Dashboard cards.</summary>
     DbSet<DashboardCard> DashboardCards { get; }

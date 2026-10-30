@@ -74,10 +74,42 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   executions, and an automation can skip its run while a task with the same title is still
   open. Times are the server's own clock, so in a container they follow `TZ`. A run missed
   while the app was down happens once when it is back.
+- **Homes** (`/homes`) — the home search: the place you live now, then the candidates ranked by
+  score. A property (`/homes/{id}`) holds its rent, parking, cat rent, deposit, a utility
+  breakdown by kind, what internet is provided, amenities, pros and cons, notes and pictures,
+  and the drive time to each destination. **Search settings** (`/homes/settings`) holds the
+  scoring weights, the destinations and the priorities.
 - **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
 - **Your account** (`/account`) — your own password and your authenticator.
+
+## The home search
+
+Scoring is entirely yours to set, under `/homes/settings`. Every weight starts at zero, so
+nothing is scored until you fill them in:
+
+- **Points per dollar a month** and **points per dollar of deposit** — a candidate cheaper
+  than the home you live in now earns points, a dearer one loses them. The month is rent plus
+  parking plus cat rent plus the utilities.
+- **Points per minute of drive**, multiplied by each destination's own weight, against the
+  same baseline. Work, driven to every day, is worth setting above one.
+- **Points per amenity**, **per pro** and **off per con**.
+- Each priority carries its own points, earned by a property you mark as meeting it.
+
+Fees and drive times are differences, so they need a property ticked as *This is where I live
+now*; amenities, pros, cons and priorities stand on their own. A drive only scores where both
+ends are known, so a destination you have not measured for both places counts for nothing
+rather than inventing a saving.
+
+Drive times can always be typed in. To have them measured instead, put an OpenRouteService
+address and key under **Routing service**: `https://api.openrouteservice.org` with a key from
+their site, or your own instance, which needs no key. The same service places an address the
+first time a drive is measured. The key is write-only — the page says whether one is held,
+never what it is — and there is a button to forget it.
+
+Pictures are kept as files rather than in the database, so an export stays a readable
+document. `Photos__Path` says where, `/data/photos` in the container.
 
 ## Signing in
 
@@ -114,8 +146,9 @@ cookies the old one wrote, and everybody is signed out on every image pull.
 
 ## The Claude connector
 
-The app serves MCP over streamable HTTP at `/mcp`, with five tools: `search_tasks`,
-`get_task`, `create_task`, `update_task` and `list_categories`.
+The app serves MCP over streamable HTTP at `/mcp`, with tools for the tasks, the meals and the
+home search: `search_tasks`, `get_task`, `create_task`, `update_task`, `list_categories`, the
+meal tools, and `get_home_search`, `get_property`, `add_property` and `add_property_note`.
 
 Mint a token under Settings, then point a custom connector at `https://your-host/mcp` and
 send the token as `Authorization: Bearer <token>`. Only a SHA-256 hash of each token is
@@ -155,6 +188,7 @@ docker build -t capybarahome .
 docker run -p 8080:8080 -v capybarahome-data:/data capybarahome
 ```
 
-The database, the backups and the cookie keys live in `/data`, so that is the volume to keep.
+The database, the backups, the property pictures and the cookie keys live in `/data`, so that is
+the volume to keep.
 Open the app and it takes you to `/setup` for the first account. GitHub Actions builds the image
 on every pull request and pushes it to `ghcr.io` on a push to `main`.

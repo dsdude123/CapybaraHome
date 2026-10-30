@@ -1,0 +1,112 @@
+@page "/homes"
+@inject HomeSearchBoardService Board
+
+<PageTitle>Homes</PageTitle>
+
+<div class="page-head">
+    <h1>Homes</h1>
+    <div class="row">
+        <a class="btn btn-small" href="homes/settings">Search settings</a>
+        <a class="btn btn-primary btn-small" href="homes/new">Add a property</a>
+    </div>
+</div>
+
+@if (board is null)
+{
+    <p class="muted">Loading.</p>
+}
+else
+{
+    @if (!board.Settings.AnyWeightSet && board.Priorities.All(p => p.Points == 0m))
+    {
+        <p class="notice">
+            No scoring weights are set yet, so every property scores zero.
+            <a href="homes/settings">Set the weights</a> for fees, drive times, amenities and
+            pros and cons.
+        </p>
+    }
+
+    <section class="card stack">
+        <h2 class="card-title">Where I live now</h2>
+        @if (board.Current is null)
+        {
+            <p class="muted">
+                Nothing is marked as your current home, so the fees and the drive times have
+                nothing to be compared against. Add it and tick the box on the editor.
+            </p>
+        }
+        else
+        {
+            <div class="task-line">
+                <a class="task-link" href="homes/@board.Current.Id">@board.Current.Name</a>
+                <span class="muted">@Money(board.Current.MonthlyTotal) a month</span>
+            </div>
+            <p class="task-meta">@Baseline(board.Current)</p>
+        }
+    </section>
+
+    <h2>Candidates</h2>
+
+    @if (board.Candidates.Count == 0)
+    {
+        <p class="muted">No candidates yet.</p>
+    }
+    else
+    {
+        <ul class="task-list card">
+            @foreach (var scored in board.Candidates)
+            {
+                <li>
+                    <div class="task-line">
+                        <a class="task-link" href="homes/@scored.Property.Id">@scored.Property.Name</a>
+                        <strong>@Points(scored.Score.Total)</strong>
+                    </div>
+                    <div class="facts">
+                        <span><span class="muted">A month</span> @Money(scored.Property.MonthlyTotal)</span>
+                        <span><span class="muted">Deposit</span> @Money(scored.Property.Deposit)</span>
+                        @foreach (var destination in board.Destinations)
+                        {
+                            var line = scored.Score.DriveTimeLines.FirstOrDefault(d => d.DestinationId == destination.Id);
+                            <span><span class="muted">@destination.Name</span> @Minutes(line?.Minutes)</span>
+                        }
+                        <span>
+                            <span class="muted">Priorities</span>
+                            @scored.Property.Priorities.Count(p => p.Meets == true) of @board.Priorities.Count
+                        </span>
+                    </div>
+                </li>
+            }
+        </ul>
+
+        <p class="muted">
+            A candidate's score is the difference from your current home in fees and drive times,
+            plus what its amenities, pros, cons and priorities are worth.
+        </p>
+    }
+}
+
+@code {
+    private HomeSearchBoard? board;
+
+    /// <summary>Loads the properties, the setup and the scores.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        board = await Board.GetAsync();
+    }
+
+    private static string Baseline(PropertyView current) =>
+        $"{Money(current.Rent)} rent, {Money(current.UtilitiesTotal)} utilities, {Money(current.Deposit)} deposit";
+
+    // The container has no locale, so a currency format renders the generic sign rather than a
+    // dollar one; the weights are labelled per dollar, so the sign is written out here.
+    private static string Money(decimal? value) =>
+        value is null ? "\u2014" : "$" + value.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Points(decimal value) =>
+        (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Minutes(double? minutes) =>
+        minutes is { } value
+            ? value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " min"
+            : "—";
+}

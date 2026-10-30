@@ -1,0 +1,433 @@
+@page "/homes/settings"
+@inject HomeSearchService Search
+@inject NavigationManager Navigation
+
+<PageTitle>Home search settings</PageTitle>
+
+<div class="page-head">
+    <h1>Home search settings</h1>
+    <a class="btn btn-small" href="homes">All properties</a>
+</div>
+
+<section class="card stack">
+    <h2 class="card-title">Scoring weights</h2>
+    <p class="muted">
+        Fees and drive times score as the difference from your current home: a candidate that is
+        cheaper or closer earns points, one that is dearer or further loses them. Every weight
+        starts at zero, which is the same as switching that part of the score off.
+    </p>
+
+    <form method="post" @formname="home-weights" @onsubmit="SaveWeightsAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="filters">
+            <div class="field">
+                <label for="weight-fees">Points per dollar a month</label>
+                <input id="weight-fees" type="number" step="0.001" name="fees" value="@fees" />
+            </div>
+            <div class="field">
+                <label for="weight-deposit">Points per dollar of deposit</label>
+                <input id="weight-deposit" type="number" step="0.001" name="deposit" value="@deposit" />
+            </div>
+            <div class="field">
+                <label for="weight-drive">Points per minute of drive</label>
+                <input id="weight-drive" type="number" step="0.001" name="drive" value="@drive" />
+            </div>
+            <div class="field">
+                <label for="weight-amenity">Points per amenity</label>
+                <input id="weight-amenity" type="number" step="0.001" name="amenity" value="@amenity" />
+            </div>
+            <div class="field">
+                <label for="weight-pro">Points per pro</label>
+                <input id="weight-pro" type="number" step="0.001" name="pro" value="@pro" />
+            </div>
+            <div class="field">
+                <label for="weight-con">Points off per con</label>
+                <input id="weight-con" type="number" step="0.001" name="con" value="@con" />
+            </div>
+        </div>
+        <div class="row">
+            <button class="btn btn-primary btn-small" type="submit">Save the weights</button>
+        </div>
+    </form>
+
+    @if (saved is not null)
+    {
+        <p class="notice">@saved</p>
+    }
+</section>
+
+<section class="card stack">
+    <h2 class="card-title">Routing service</h2>
+    <p class="muted">
+        Addresses are placed and drives measured through OpenRouteService. Use
+        <code>https://api.openrouteservice.org</code> with a key from their site, or the address of
+        your own instance, which needs no key. With this empty, every drive time is typed in by hand.
+    </p>
+
+    <form method="post" @formname="home-routing" @onsubmit="SaveRoutingAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="field">
+            <label for="routing-url">Base address</label>
+            <input id="routing-url" type="text" name="url" value="@routingUrl" placeholder="https://api.openrouteservice.org" />
+        </div>
+        <div class="field">
+            <label for="routing-key">Key</label>
+            <input id="routing-key" type="password" name="key" autocomplete="off"
+                   placeholder="@(settings.HasRoutingApiKey ? "A key is held; type a new one to replace it" : "Needed by the hosted service")" />
+        </div>
+        <div class="row">
+            <button class="btn btn-primary btn-small" type="submit" name="action" value="save">Save the service</button>
+            <button class="btn btn-small btn-danger" type="submit" name="action" value="forget"
+                    disabled="@(!settings.HasRoutingApiKey)">Forget the key</button>
+        </div>
+    </form>
+</section>
+
+<section class="card stack">
+    <h2 class="card-title">Destinations</h2>
+    <p class="muted">
+        Where you drive to. The weight is how much that drive counts next to the others, so work,
+        driven to every day, is worth more than one.
+    </p>
+
+    @if (destinations.Count == 0)
+    {
+        <p class="muted">No destinations yet. Work is the one to add first.</p>
+    }
+    else
+    {
+        <ul class="task-list">
+            @foreach (var destination in destinations)
+            {
+                <li>
+                    <form method="post" @formname="@($"destination-{destination.Id}")" @onsubmit="() => SaveDestinationAsync(destination.Id)" class="stack">
+                        <AntiforgeryToken />
+                        <div class="filters">
+                            <div class="field">
+                                <label for="destination-name-@destination.Id">Name</label>
+                                <input id="destination-name-@destination.Id" type="text" name="name" value="@destination.Name" />
+                            </div>
+                            <div class="field">
+                                <label for="destination-address-@destination.Id">Address</label>
+                                <input id="destination-address-@destination.Id" type="text" name="address" value="@destination.Address" />
+                            </div>
+                            <div class="field">
+                                <label for="destination-weight-@destination.Id">Weight</label>
+                                <input id="destination-weight-@destination.Id" type="number" step="0.1" name="weight" value="@Typed(destination.Weight)" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <button class="btn btn-small" type="submit" name="action" value="save">Save</button>
+                            <button class="btn btn-small btn-danger" type="submit" name="action" value="delete">Delete</button>
+                        </div>
+                        <p class="task-meta">@Placed(destination)</p>
+                    </form>
+                </li>
+            }
+        </ul>
+    }
+
+    <form method="post" @formname="destination-new" @onsubmit="AddDestinationAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="filters">
+            <div class="field">
+                <label for="new-destination-name">New destination</label>
+                <input id="new-destination-name" type="text" name="name" value="@destinationName" placeholder="Work" />
+            </div>
+            <div class="field">
+                <label for="new-destination-address">Its address</label>
+                <input id="new-destination-address" type="text" name="address" value="@destinationAddress" />
+            </div>
+            <div class="field">
+                <label for="new-destination-weight">Weight</label>
+                <input id="new-destination-weight" type="number" step="0.1" name="weight" value="@destinationWeight" />
+            </div>
+        </div>
+        <div class="row">
+            <button class="btn btn-primary btn-small" type="submit">Add the destination</button>
+        </div>
+    </form>
+
+    @if (destinationError is not null)
+    {
+        <p class="error">@destinationError</p>
+    }
+</section>
+
+<section class="card stack">
+    <h2 class="card-title">Priorities</h2>
+    <p class="muted">
+        What a home has to do. Each one is worth its own points, earned by a property marked as
+        meeting it on the property's own page.
+    </p>
+
+    @if (priorities.Count == 0)
+    {
+        <p class="muted">No priorities yet.</p>
+    }
+    else
+    {
+        <ul class="task-list">
+            @foreach (var priority in priorities)
+            {
+                <li>
+                    <form method="post" @formname="@($"priority-{priority.Id}")" @onsubmit="() => SavePriorityAsync(priority.Id)" class="stack">
+                        <AntiforgeryToken />
+                        <div class="filters">
+                            <div class="field">
+                                <label for="priority-name-@priority.Id">Priority</label>
+                                <input id="priority-name-@priority.Id" type="text" name="name" value="@priority.Name" />
+                            </div>
+                            <div class="field">
+                                <label for="priority-points-@priority.Id">Points</label>
+                                <input id="priority-points-@priority.Id" type="number" step="0.1" name="points" value="@Typed(priority.Points)" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <button class="btn btn-small" type="submit" name="action" value="save">Save</button>
+                            <button class="btn btn-small btn-danger" type="submit" name="action" value="delete">Delete</button>
+                        </div>
+                        <p class="task-meta">@priority.MetCount property(s) meet it</p>
+                    </form>
+                </li>
+            }
+        </ul>
+    }
+
+    <form method="post" @formname="priority-new" @onsubmit="AddPriorityAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="filters">
+            <div class="field">
+                <label for="new-priority-name">New priority</label>
+                <input id="new-priority-name" type="text" name="name" value="@priorityName" placeholder="In-unit laundry" />
+            </div>
+            <div class="field">
+                <label for="new-priority-points">Points</label>
+                <input id="new-priority-points" type="number" step="0.1" name="points" value="@priorityPoints" />
+            </div>
+        </div>
+        <div class="row">
+            <button class="btn btn-primary btn-small" type="submit">Add the priority</button>
+        </div>
+    </form>
+
+    @if (priorityError is not null)
+    {
+        <p class="error">@priorityError</p>
+    }
+</section>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, null, false);
+    private IReadOnlyList<SearchDestinationView> destinations = [];
+    private IReadOnlyList<SearchPriorityView> priorities = [];
+    private string? fees;
+    private string? deposit;
+    private string? drive;
+    private string? amenity;
+    private string? pro;
+    private string? con;
+    private string? routingUrl;
+    private string? destinationName;
+    private string? destinationAddress;
+    private string? destinationWeight;
+    private string? priorityName;
+    private string? priorityPoints;
+    private string? destinationError;
+    private string? priorityError;
+    private string? saved;
+
+    /// <summary>Loads the weights, the service and the lists.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        settings = await Search.GetSettingsAsync();
+        destinations = await Search.ListDestinationsAsync();
+        priorities = await Search.ListPrioritiesAsync();
+
+        fees = Typed(settings.MonthlyFeePointsPerDollar);
+        deposit = Typed(settings.DepositPointsPerDollar);
+        drive = Typed(settings.DriveTimePointsPerMinute);
+        amenity = Typed(settings.AmenityPoints);
+        pro = Typed(settings.ProPoints);
+        con = Typed(settings.ConPoints);
+        routingUrl = settings.RoutingBaseUrl;
+    }
+
+    private async Task SaveWeightsAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+
+        await Search.SaveSettingsAsync(new HomeSearchSettingsRequest(
+            MonthlyFeePointsPerDollar: PropertyRows.Money(form["fees"]) ?? 0m,
+            DepositPointsPerDollar: PropertyRows.Money(form["deposit"]) ?? 0m,
+            DriveTimePointsPerMinute: PropertyRows.Money(form["drive"]) ?? 0m,
+            AmenityPoints: PropertyRows.Money(form["amenity"]) ?? 0m,
+            ProPoints: PropertyRows.Money(form["pro"]) ?? 0m,
+            ConPoints: PropertyRows.Money(form["con"]) ?? 0m));
+
+        saved = "Saved the weights.";
+        await LoadAsync();
+    }
+
+    private async Task SaveRoutingAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        if (HttpContext.Request.Form["action"] == "forget")
+        {
+            await Search.ForgetRoutingKeyAsync();
+            await LoadAsync();
+            return;
+        }
+
+        await Search.SaveSettingsAsync(new HomeSearchSettingsRequest(
+            RoutingBaseUrl: HttpContext.Request.Form["url"].ToString(),
+            RoutingApiKey: HttpContext.Request.Form["key"].ToString()));
+
+        await LoadAsync();
+    }
+
+    private async Task AddDestinationAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        destinationName = form["name"];
+        destinationAddress = form["address"];
+        destinationWeight = form["weight"];
+
+        try
+        {
+            await Search.CreateDestinationAsync(new SearchDestinationRequest(
+                destinationName ?? string.Empty, destinationAddress, PropertyRows.Money(destinationWeight) ?? 1m));
+
+            destinationName = null;
+            destinationAddress = null;
+            destinationWeight = null;
+            destinationError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            destinationError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task SaveDestinationAsync(int id)
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+
+        if (form["action"] == "delete")
+        {
+            await Search.DeleteDestinationAsync(id);
+            await LoadAsync();
+            return;
+        }
+
+        try
+        {
+            await Search.UpdateDestinationAsync(id, new SearchDestinationRequest(
+                form["name"].ToString(), form["address"].ToString(), PropertyRows.Money(form["weight"]) ?? 1m));
+
+            destinationError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            destinationError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task AddPriorityAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        priorityName = form["name"];
+        priorityPoints = form["points"];
+
+        try
+        {
+            await Search.CreatePriorityAsync(new SearchPriorityRequest(
+                priorityName ?? string.Empty, PropertyRows.Money(priorityPoints) ?? 0m));
+
+            priorityName = null;
+            priorityPoints = null;
+            priorityError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            priorityError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task SavePriorityAsync(int id)
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+
+        if (form["action"] == "delete")
+        {
+            await Search.DeletePriorityAsync(id);
+            await LoadAsync();
+            return;
+        }
+
+        try
+        {
+            await Search.UpdatePriorityAsync(id, new SearchPriorityRequest(
+                form["name"].ToString(), PropertyRows.Money(form["points"]) ?? 0m));
+
+            priorityError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            priorityError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Typed(decimal value) =>
+        value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Placed(SearchDestinationView destination) =>
+        destination.Latitude is not null && destination.Longitude is not null
+            ? "Placed on the map"
+            : "Not placed yet; it is looked up the first time a drive is measured";
+}

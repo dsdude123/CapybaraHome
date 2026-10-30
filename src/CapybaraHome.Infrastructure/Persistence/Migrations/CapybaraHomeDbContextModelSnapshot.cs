@@ -55,6 +55,357 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("DashboardCards", (string)null);
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.HomeSearchSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("AmenityPoints")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("ConPoints")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("DepositPointsPerDollar")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("DriveTimePointsPerMinute")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("MonthlyFeePointsPerDollar")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("ProPoints")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("RoutingApiKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RoutingBaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("HomeSearchSettings");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.Property", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Deposit")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Internet")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("ParkingFee")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("PetRent")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("Rent")
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsCurrent");
+
+                    b.ToTable("Properties");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyAmenity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId");
+
+                    b.ToTable("PropertyAmenities");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyDriveTime", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DestinationId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("Kilometres")
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTimeOffset>("MeasuredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Minutes")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DestinationId");
+
+                    b.HasIndex("PropertyId", "DestinationId")
+                        .IsUnique();
+
+                    b.ToTable("PropertyDriveTimes");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyNote", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId");
+
+                    b.ToTable("PropertyNotes");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyPhoto", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ByteCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StoredName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId");
+
+                    b.HasIndex("StoredName")
+                        .IsUnique();
+
+                    b.ToTable("PropertyPhotos");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyPoint", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId");
+
+                    b.ToTable("PropertyPoints");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyPriority", b =>
+                {
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PriorityId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Meets")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("PropertyId", "PriorityId");
+
+                    b.HasIndex("PriorityId");
+
+                    b.ToTable("PropertyPriorities");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyUtility", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("MonthlyCost")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId");
+
+                    b.ToTable("PropertyUtilities");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchDestination", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("Weight")
+                        .HasColumnType("REAL");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SearchDestinations");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchPriority", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Points")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SearchPriorities");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
                 {
                     b.Property<int>("Id")
@@ -519,6 +870,99 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyAmenity", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("Amenities")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyDriveTime", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.SearchDestination", "Destination")
+                        .WithMany("DriveTimes")
+                        .HasForeignKey("DestinationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("DriveTimes")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Destination");
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyNote", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("Notes")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyPhoto", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("Photos")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyPoint", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("Points")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyPriority", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.SearchPriority", "Priority")
+                        .WithMany("Properties")
+                        .HasForeignKey("PriorityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("Priorities")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Priority");
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyUtility", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("Utilities")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
                 {
                     b.HasOne("CapybaraHome.Domain.Meals.MealVariant", "PlannedVariant")
@@ -623,6 +1067,33 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TagsId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.Property", b =>
+                {
+                    b.Navigation("Amenities");
+
+                    b.Navigation("DriveTimes");
+
+                    b.Navigation("Notes");
+
+                    b.Navigation("Photos");
+
+                    b.Navigation("Points");
+
+                    b.Navigation("Priorities");
+
+                    b.Navigation("Utilities");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchDestination", b =>
+                {
+                    b.Navigation("DriveTimes");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchPriority", b =>
+                {
+                    b.Navigation("Properties");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
