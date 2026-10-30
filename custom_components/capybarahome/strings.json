@@ -9,7 +9,7 @@
           "token": "API token"
         },
         "data_description": {
-          "url": "For example http://tokyo-3-wsl.nerv.jpn.com:8101",
+          "url": "The address and port Home Assistant can reach CapybaraHome on.",
           "token": "The token is shown once when you mint it and cannot be read back."
         }
       }

@@ -12,7 +12,7 @@ so nothing new has to be exposed.
 4. Go to **Settings → Devices & services → Add integration** and pick **CapybaraHome**.
 
 The setup form asks for the address Home Assistant can reach CapybaraHome on
-(for example `http://tokyo-3-wsl.nerv.jpn.com:8101`) and an API token, which is minted
+(for example `http://your-host:8101`) and an API token, which is minted
 under Settings in CapybaraHome and shown only once.
 
 Home Assistant 2025.12 or newer is required.
