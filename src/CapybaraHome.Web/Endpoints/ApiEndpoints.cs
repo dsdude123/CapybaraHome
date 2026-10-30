@@ -1,11 +1,13 @@
 using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Dashboards;
+using CapybaraHome.Application.Homes;
 using CapybaraHome.Application.DataTransfer;
 using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
+using CapybaraHome.Domain.Homes;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Web.Auth;
@@ -25,6 +27,8 @@ public static class ApiEndpoints
         MapCategories(api);
         MapMeals(api);
         MapMealTags(api);
+        MapProperties(api);
+        MapHomeSearch(api);
         MapGrocery(api);
         MapDashboard(api);
         MapTransfer(api);
@@ -335,6 +339,259 @@ public static class ApiEndpoints
 
         categories.MapDelete("/{id:int}", async (int id, CategoryService service, CancellationToken cancellationToken) =>
             await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+    }
+
+    private static void MapProperties(IEndpointRouteBuilder api)
+    {
+        var properties = api.MapGroup("/properties");
+
+        properties.MapGet("/", async (HomeSearchBoardService board, CancellationToken cancellationToken) =>
+            Results.Ok(await board.GetAsync(cancellationToken)));
+
+        properties.MapGet("/{id:int}", async (int id, HomeSearchBoardService board, CancellationToken cancellationToken) =>
+            await board.GetScoredAsync(id, cancellationToken) is { } scored ? Results.Ok(scored) : Results.NotFound());
+
+        properties.MapPost("/", async (CreatePropertyRequest request, PropertyService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateAsync(request, cancellationToken);
+                return Results.Created($"/api/properties/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        properties.MapPatch("/{id:int}", async (int id, UpdatePropertyRequest request, PropertyService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        properties.MapDelete("/{id:int}", async (int id, PropertyService service, CancellationToken cancellationToken) =>
+            await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        properties.MapPost("/{id:int}/notes", async (
+            int id,
+            PropertyNoteRequest request,
+            PropertyService service,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.AddNoteAsync(id, request.Body, cancellationToken) is { } note
+                    ? Results.Created($"/api/properties/{id}/notes/{note.Id}", note)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        properties.MapDelete("/notes/{noteId:int}", async (int noteId, PropertyService service, CancellationToken cancellationToken) =>
+            await service.DeleteNoteAsync(noteId, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        properties.MapPut("/{id:int}/priorities/{priorityId:int}", async (
+            int id,
+            int priorityId,
+            PropertyPriorityRequest request,
+            PropertyService service,
+            CancellationToken cancellationToken) =>
+            await service.MarkPriorityAsync(id, priorityId, request.Meets, cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound());
+
+        properties.MapPut("/{id:int}/drives/{destinationId:int}", async (
+            int id,
+            int destinationId,
+            PropertyDriveTimeRequest request,
+            PropertyService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (request.Minutes is null)
+            {
+                return await service.ClearDriveTimeAsync(id, destinationId, cancellationToken)
+                    ? Results.NoContent()
+                    : Results.NotFound();
+            }
+
+            return await service.SetDriveTimeAsync(
+                id, destinationId, request.Minutes.Value, request.Miles, DriveTimeSource.Manual, request.TolledRoads, cancellationToken)
+                    ? Results.NoContent()
+                    : Results.NotFound();
+        });
+
+        properties.MapPost("/{id:int}/drives/measure", async (
+            int id,
+            DriveTimeMeasurer measurer,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await measurer.MeasureAsync(id, cancellationToken) is { } outcome
+                    ? Results.Ok(outcome)
+                    : Results.NotFound();
+            }
+            catch (RoutingException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+    }
+
+    private static void MapHomeSearch(IEndpointRouteBuilder api)
+    {
+        var search = api.MapGroup("/home-search");
+
+        search.MapGet("/destinations", async (HomeSearchService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListDestinationsAsync(cancellationToken)));
+
+        search.MapPost("/destinations", async (SearchDestinationRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateDestinationAsync(request, cancellationToken);
+                return Results.Created($"/api/home-search/destinations/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapPut("/destinations/{id:int}", async (int id, SearchDestinationRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateDestinationAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapDelete("/destinations/{id:int}", async (int id, HomeSearchService service, CancellationToken cancellationToken) =>
+            await service.DeleteDestinationAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        search.MapGet("/priorities", async (HomeSearchService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListPrioritiesAsync(cancellationToken)));
+
+        search.MapPost("/priorities", async (SearchPriorityRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreatePriorityAsync(request, cancellationToken);
+                return Results.Created($"/api/home-search/priorities/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapPut("/priorities/{id:int}", async (int id, SearchPriorityRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdatePriorityAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapDelete("/priorities/{id:int}", async (int id, HomeSearchService service, CancellationToken cancellationToken) =>
+            await service.DeletePriorityAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        search.MapGet("/toll-roads", async (HomeSearchService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListTollRoadsAsync(cancellationToken)));
+
+        search.MapPost("/toll-roads", async (TollRoadRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateTollRoadAsync(request, cancellationToken);
+                return Results.Created($"/api/home-search/toll-roads/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapPut("/toll-roads/{id:int}", async (int id, TollRoadRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateTollRoadAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapDelete("/toll-roads/{id:int}", async (int id, HomeSearchService service, CancellationToken cancellationToken) =>
+            await service.DeleteTollRoadAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        search.MapGet("/vehicles", async (HomeSearchService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListVehiclesAsync(cancellationToken)));
+
+        search.MapPost("/vehicles", async (VehicleRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateVehicleAsync(request, cancellationToken);
+                return Results.Created($"/api/home-search/vehicles/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapPut("/vehicles/{id:int}", async (int id, VehicleRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateVehicleAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapDelete("/vehicles/{id:int}", async (int id, HomeSearchService service, CancellationToken cancellationToken) =>
+            await service.DeleteVehicleAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        // The routing key is write-only: the settings say whether one is held, never what it is.
+        search.MapGet("/settings", async (HomeSearchService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.GetSettingsAsync(cancellationToken)));
+
+        search.MapPut("/settings", async (HomeSearchSettingsRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.SaveSettingsAsync(request, cancellationToken)));
     }
 
     private static void MapDashboard(IEndpointRouteBuilder api)

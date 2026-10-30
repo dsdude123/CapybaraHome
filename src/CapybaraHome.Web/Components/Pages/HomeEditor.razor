@@ -1,0 +1,319 @@
+@page "/homes/new"
+@page "/homes/{Id:int}/edit"
+@using CapybaraHome.Domain.Homes
+@inject PropertyService Properties
+@inject NavigationManager Navigation
+
+<PageTitle>@Title</PageTitle>
+
+<div class="page-head">
+    <h1>@Title</h1>
+    @if (Id is not null)
+    {
+        <a class="btn btn-small" href="homes/@Id">Back to the property</a>
+    }
+</div>
+
+<form method="post" @formname="property-editor" @onsubmit="SubmitAsync">
+    <AntiforgeryToken />
+
+    @* The browser submits a form's first submit button when Enter is pressed in a text box, so
+       Save goes first and hidden: without it Enter would press an Add or Remove button instead. *@
+    <button type="submit" name="action" value="save" hidden></button>
+
+    <div class="field">
+        <label for="property-name">Name</label>
+        <input id="property-name" type="text" name="name" value="@name" />
+    </div>
+
+    <div class="field">
+        <label for="property-address">Address</label>
+        <input id="property-address" type="text" name="address" value="@address" />
+    </div>
+
+    <label class="row" style="align-items:center;gap:0.5rem">
+        <input type="checkbox" name="is-current" value="true" checked="@isCurrent" style="width:auto;min-height:auto" />
+        This is where I live now
+    </label>
+    <p class="muted">
+        The current home is the baseline: a candidate's fees and drive times are scored as the
+        difference from it.
+    </p>
+
+    <div class="filters">
+        <div class="field">
+            <label for="property-rent">Rent a month</label>
+            <input id="property-rent" type="number" step="0.01" name="rent" value="@rent" />
+        </div>
+        <div class="field">
+            <label for="property-parking">Parking a month</label>
+            <input id="property-parking" type="number" step="0.01" name="parking" value="@parking" />
+        </div>
+        <div class="field">
+            <label for="property-pet-rent">Cat rent a month</label>
+            <input id="property-pet-rent" type="number" step="0.01" name="pet-rent" value="@petRent" />
+        </div>
+        <div class="field">
+            <label for="property-deposit">Deposit</label>
+            <input id="property-deposit" type="number" step="0.01" name="deposit" value="@deposit" />
+        </div>
+    </div>
+
+    <div class="field">
+        <label for="property-internet">Internet</label>
+        <input id="property-internet" type="text" name="internet" value="@internet"
+               placeholder="What is provided, and how fast" />
+    </div>
+
+    <UtilityRows Rows="utilities" />
+
+    <TextRows Legend="Amenities" Noun="Amenity" Field="amenity" Rows="amenities"
+              EmptyText="No amenities yet." Placeholder="Gym, pool, lounge…" />
+
+    <TextRows Legend="Pros" Noun="Pro" Field="pro" Rows="pros"
+              EmptyText="No pros yet." Placeholder="Something in its favour" />
+
+    <TextRows Legend="Cons" Noun="Con" Field="con" Rows="cons"
+              EmptyText="No cons yet." Placeholder="Something against it" />
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+
+    <div class="row" style="margin-top:0.75rem">
+        <button class="btn btn-primary" type="submit" name="action" value="save">Save</button>
+        <a class="btn" href="@(Id is null ? "homes" : $"homes/{Id}")">Cancel</a>
+    </div>
+</form>
+
+@if (Id is not null)
+{
+    <form method="post" @formname="property-delete" @onsubmit="DeleteAsync" style="margin-top:0.75rem">
+        <AntiforgeryToken />
+        <button class="btn btn-danger" type="submit">Delete this property</button>
+    </form>
+}
+
+@code {
+    /// <summary>Id of the property being edited, or null when adding one.</summary>
+    [Parameter]
+    public int? Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private List<UtilityRow> utilities = [];
+    private List<TextRow> amenities = [];
+    private List<TextRow> pros = [];
+    private List<TextRow> cons = [];
+    private string? name;
+    private string? address;
+    private string? internet;
+    private string? rent;
+    private string? parking;
+    private string? petRent;
+    private string? deposit;
+    private bool isCurrent;
+    private string? error;
+
+    private string Title => Id is null ? "Add a property" : "Edit a property";
+
+    /// <summary>
+    /// Fills the editor. A post carries the edited values, so they are read back out of the form
+    /// rather than the database, which is what lets a press of Add or Remove keep what was typed.
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        var property = Id is { } editing ? await Properties.GetAsync(editing) : null;
+        if (Id is not null && property is null)
+        {
+            Navigation.NavigateTo("homes");
+            return;
+        }
+
+        if (HttpContext?.Request.Method == HttpMethods.Post)
+        {
+            ReadForm(HttpContext.Request.Form);
+            return;
+        }
+
+        if (property is null)
+        {
+            return;
+        }
+
+        name = property.Name;
+        address = property.Address;
+        internet = property.Internet;
+        isCurrent = property.IsCurrent;
+        rent = Typed(property.Rent);
+        parking = Typed(property.ParkingFee);
+        petRent = Typed(property.PetRent);
+        deposit = Typed(property.Deposit);
+
+        utilities = property.Utilities
+            .Select(u => new UtilityRow(u.Kind, u.Label, Typed(u.MonthlyCost)))
+            .ToList();
+
+        amenities = property.Amenities.Select(a => new TextRow(a.Name)).ToList();
+        pros = property.Pros.Select(p => new TextRow(p.Text)).ToList();
+        cons = property.Cons.Select(c => new TextRow(c.Text)).ToList();
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var action = HttpContext.Request.Form["action"].ToString();
+
+        if (PropertyRows.Added(action) is { } grown)
+        {
+            Grow(grown);
+            return;
+        }
+
+        if (PropertyRows.Removed(action) is { } dropped)
+        {
+            Drop(dropped.List, dropped.Index);
+            return;
+        }
+
+        error = null;
+
+        var utilityLines = utilities
+            .Where(row => PropertyRows.Money(row.MonthlyCost) is not null || !string.IsNullOrWhiteSpace(row.Label))
+            .Select(row => new PropertyUtilityInput(row.Kind, PropertyRows.Money(row.MonthlyCost) ?? 0m, row.Label))
+            .ToList();
+
+        var amenityNames = Written(amenities);
+
+        var points = Written(pros).Select(text => new PropertyPointInput(PropertyPointKind.Pro, text))
+            .Concat(Written(cons).Select(text => new PropertyPointInput(PropertyPointKind.Con, text)))
+            .ToList();
+
+        try
+        {
+            if (Id is null)
+            {
+                var created = await Properties.CreateAsync(new CreatePropertyRequest(
+                    name ?? string.Empty,
+                    address,
+                    isCurrent,
+                    PropertyRows.Money(rent),
+                    PropertyRows.Money(parking),
+                    PropertyRows.Money(petRent),
+                    PropertyRows.Money(deposit),
+                    internet,
+                    utilityLines,
+                    amenityNames,
+                    points));
+
+                Navigation.NavigateTo($"homes/{created.Id}");
+                return;
+            }
+
+            await Properties.UpdateAsync(Id.Value, new UpdatePropertyRequest(
+                Name: name,
+                Address: address ?? string.Empty,
+                IsCurrent: isCurrent,
+                Rent: PropertyRows.Money(rent),
+                ParkingFee: PropertyRows.Money(parking),
+                PetRent: PropertyRows.Money(petRent),
+                Deposit: PropertyRows.Money(deposit),
+                ClearMoney: true,
+                Internet: internet ?? string.Empty,
+                Utilities: utilityLines,
+                Amenities: amenityNames,
+                Points: points));
+
+            Navigation.NavigateTo($"homes/{Id}");
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Id is not null)
+        {
+            await Properties.DeleteAsync(Id.Value);
+        }
+
+        Navigation.NavigateTo("homes");
+    }
+
+    private void Grow(string list)
+    {
+        switch (list)
+        {
+            case "utility":
+                utilities.Add(new UtilityRow(UtilityKind.Electricity, null, null));
+                break;
+            case "amenity":
+                amenities.Add(new TextRow(null));
+                break;
+            case "pro":
+                pros.Add(new TextRow(null));
+                break;
+            case "con":
+                cons.Add(new TextRow(null));
+                break;
+        }
+    }
+
+    private void Drop(string list, int index)
+    {
+        switch (list)
+        {
+            case "utility":
+                Remove(utilities, index);
+                break;
+            case "amenity":
+                Remove(amenities, index);
+                break;
+            case "pro":
+                Remove(pros, index);
+                break;
+            case "con":
+                Remove(cons, index);
+                break;
+        }
+    }
+
+    private static void Remove<T>(List<T> rows, int index)
+    {
+        if (index >= 0 && index < rows.Count)
+        {
+            rows.RemoveAt(index);
+        }
+    }
+
+    private static List<string> Written(List<TextRow> rows) =>
+        rows.Where(row => !string.IsNullOrWhiteSpace(row.Text)).Select(row => row.Text!.Trim()).ToList();
+
+    private static string? Typed(decimal? value) =>
+        value?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private void ReadForm(IFormCollection form)
+    {
+        name = form["name"];
+        address = form["address"];
+        internet = form["internet"];
+        isCurrent = form["is-current"] == "true";
+        rent = form["rent"];
+        parking = form["parking"];
+        petRent = form["pet-rent"];
+        deposit = form["deposit"];
+
+        utilities = PropertyRows.ReadUtilities(form);
+        amenities = PropertyRows.ReadText(form, "amenity");
+        pros = PropertyRows.ReadText(form, "pro");
+        cons = PropertyRows.ReadText(form, "con");
+    }
+}

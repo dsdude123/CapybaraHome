@@ -1,0 +1,46 @@
+<fieldset class="check-list">
+    <legend>@Legend</legend>
+    @if (Rows.Count == 0)
+    {
+        <p class="muted">@EmptyText</p>
+    }
+    @for (var index = 0; index < Rows.Count; index++)
+    {
+        var row = Rows[index];
+        var position = index + 1;
+        <div class="row-line">
+            <input type="text" name="@Field" value="@row.Text" aria-label="@($"{Noun} {position}")" placeholder="@Placeholder" />
+            <button class="btn btn-small btn-danger" type="submit" name="action" value="@PropertyRows.RemoveAction(Field, index)"
+                    aria-label="@($"Remove {Noun.ToLowerInvariant()} {position}")">Remove</button>
+        </div>
+    }
+    <button class="btn btn-small" type="submit" name="action" value="@PropertyRows.AddAction(Field)" style="margin-top:0.5rem">
+        Add @Noun.ToLowerInvariant()
+    </button>
+</fieldset>
+
+@code {
+    /// <summary>What the list is called on this editor.</summary>
+    [Parameter]
+    public string Legend { get; set; } = string.Empty;
+
+    /// <summary>What one line is called, used on the buttons and the labels.</summary>
+    [Parameter]
+    public string Noun { get; set; } = "line";
+
+    /// <summary>Field name the lines are posted under, which also names the add and remove actions.</summary>
+    [Parameter]
+    public string Field { get; set; } = string.Empty;
+
+    /// <summary>What to say when there are no lines yet.</summary>
+    [Parameter]
+    public string EmptyText { get; set; } = "Nothing here yet.";
+
+    /// <summary>Placeholder shown in an empty box.</summary>
+    [Parameter]
+    public string? Placeholder { get; set; }
+
+    /// <summary>The lines to render, in order.</summary>
+    [Parameter]
+    public IReadOnlyList<TextRow> Rows { get; set; } = [];
+}

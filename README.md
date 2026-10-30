@@ -76,6 +76,12 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   executions, and an automation can skip its run while a task with the same title is still
   open. Times are the server's own clock, so in a container they follow `TZ`. A run missed
   while the app was down happens once when it is back.
+- **Homes** (`/homes`) — the home search: the place you live now, then the candidates ranked by
+  score. A property (`/homes/{id}`) holds its rent, parking, cat rent, deposit, a utility
+  breakdown by kind, what internet is provided, amenities, pros and cons, notes and pictures,
+  and the drive time and distance to each destination, with what a week of driving costs in
+  fuel and tolls. **Search settings** (`/homes/settings`) holds the scoring weights, the
+  destinations, the priorities, the cars and the toll roads.
 - **Morning report** (`/report`) — one page of the day: the forecast, the tasks due within a
   week, what is planned to eat, the next thirty days of your calendars, the holidays, today's
   fixtures and the headlines. **Download PDF** is exactly the sheet that is printed, and
@@ -94,6 +100,50 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
 - **Your account** (`/account`) — your own password and your authenticator.
+
+## The home search
+
+Scoring is entirely yours to set, under `/homes/settings`. Every weight starts at zero, so
+nothing is scored until you fill them in:
+
+- **Points per dollar a month** and **points per dollar of deposit** — a candidate cheaper
+  than the home you live in now earns points, a dearer one loses them. The month is rent plus
+  parking plus cat rent plus the utilities.
+- **Points per minute of drive**, multiplied by each destination's own weight, against the
+  same baseline. Work, driven to every day, is worth setting above one.
+- **Points per amenity**, **per pro** and **off per con**.
+- Each priority carries its own points, earned by a property you mark as meeting it.
+
+Fees and drive times are differences, so they need a property ticked as *This is where I live
+now*; amenities, pros, cons and priorities stand on their own. A drive only scores where both
+ends are known, so a destination you have not measured for both places counts for nothing
+rather than inventing a saving.
+
+Drive times can always be typed in. To have them measured instead, put an OpenRouteService
+address and key under **Routing service**: `https://api.openrouteservice.org` with a key from
+their site, or your own instance, which needs no key. The same service places an address the
+first time a drive is measured. The key is write-only — the page says whether one is held,
+never what it is — and there is a button to forget it.
+
+### Driving cost
+
+Each destination carries how many round trips a week you drive to it — three for a three-day
+work week — and any carpool credit a day; each car carries its average mpg and what a gallon
+costs now; and each toll road its peak toll. All of it lives under `/homes/settings`. A
+property's page then costs its usual week of driving: the fuel in every car, the tolls, and
+the carpool credit taken off, a week and over an average month.
+
+The miles come from each drive's distance, which a measured route fills in and which can be
+typed in beside the minutes. A measured route also names the tolled roads it uses, which
+OpenRouteService marks from OpenStreetMap's toll tags without a price. A toll road under
+settings prices every tolled road whose name contains what you type, so `520` covers the
+SR 520 bridge, and each crossing is charged its peak toll in both directions. A tolled road
+the route used that nothing prices yet is named on the property's page. Tolls come only from
+a measured route, so a drive typed in by hand carries none. Driving cost is shown, not scored — it is not part
+of the points.
+
+Pictures are kept as files rather than in the database, so an export stays a readable
+document. `Photos__Path` says where, `/data/photos` in the container.
 
 ## Signing in
 
@@ -132,8 +182,9 @@ cookies the old one wrote, and everybody is signed out on every image pull.
 
 The app serves MCP over streamable HTTP at `/mcp`. It carries the task tools (`search_tasks`,
 `get_task`, `create_task`, `update_task`, `list_categories`), the meal tools (`search_meals`,
-`get_meal`, `create_meal`, `update_meal`, `create_meal_variant`, `list_meal_tags`) and the
-grocery tools (`get_grocery_list`, `add_grocery_item`, `remove_grocery_item`,
+`get_meal`, `create_meal`, `update_meal`, `create_meal_variant`, `list_meal_tags`), the
+home search tools (`get_home_search`, `get_property`, `add_property`, `add_property_note`) and
+the grocery tools (`get_grocery_list`, `add_grocery_item`, `remove_grocery_item`,
 `start_fresh_grocery_list`, `list_grocery_candidates`).
 
 Mint a token under Settings, then point a custom connector at `https://your-host/mcp` and
@@ -199,6 +250,7 @@ docker build -t capybarahome .
 docker run -p 8080:8080 -v capybarahome-data:/data capybarahome
 ```
 
-The database, the backups and the cookie keys live in `/data`, so that is the volume to keep.
+The database, the backups, the property pictures and the cookie keys live in `/data`, so that is
+the volume to keep.
 Open the app and it takes you to `/setup` for the first account. GitHub Actions builds the image
 on every pull request and pushes it to `ghcr.io` on a push to `main`.
