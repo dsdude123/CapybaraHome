@@ -17,7 +17,8 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             .OrderBy(d => d.SortOrder)
             .ThenBy(d => d.Id)
             .Select(d => new SearchDestinationView(
-                d.Id, d.Name, d.Address, d.Weight, d.RoundTripsPerWeek, d.Latitude, d.Longitude, d.SortOrder))
+                d.Id, d.Name, d.Address, d.Weight, d.RoundTripsPerWeek, d.CarpoolCreditPerDay,
+                d.Latitude, d.Longitude, d.SortOrder))
             .ToListAsync(cancellationToken);
     }
 
@@ -46,6 +47,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             Address = Blank(request.Address),
             Weight = request.Weight,
             RoundTripsPerWeek = Trips(request.RoundTripsPerWeek),
+            CarpoolCreditPerDay = Positive(request.CarpoolCreditPerDay),
             SortOrder = (last ?? -1) + 1,
         };
 
@@ -54,7 +56,8 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
 
         return new SearchDestinationView(
             destination.Id, destination.Name, destination.Address, destination.Weight,
-            destination.RoundTripsPerWeek, destination.Latitude, destination.Longitude, destination.SortOrder);
+            destination.RoundTripsPerWeek, destination.CarpoolCreditPerDay,
+            destination.Latitude, destination.Longitude, destination.SortOrder);
     }
 
     /// <summary>Renames a destination, or returns null when none has that id.</summary>
@@ -84,12 +87,14 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         destination.Address = address;
         destination.Weight = request.Weight;
         destination.RoundTripsPerWeek = Trips(request.RoundTripsPerWeek);
+        destination.CarpoolCreditPerDay = Positive(request.CarpoolCreditPerDay);
 
         await context.SaveChangesAsync(cancellationToken);
 
         return new SearchDestinationView(
             destination.Id, destination.Name, destination.Address, destination.Weight,
-            destination.RoundTripsPerWeek, destination.Latitude, destination.Longitude, destination.SortOrder);
+            destination.RoundTripsPerWeek, destination.CarpoolCreditPerDay,
+            destination.Latitude, destination.Longitude, destination.SortOrder);
     }
 
     /// <summary>Records where a destination is. Returns false when none has that id.</summary>
@@ -196,6 +201,76 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         }
 
         context.SearchPriorities.Remove(priority);
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>Returns the toll roads, in order.</summary>
+    public async Task<IReadOnlyList<TollRoadView>> ListTollRoadsAsync(CancellationToken cancellationToken = default)
+    {
+        return await context.TollRoads.AsNoTracking()
+            .OrderBy(t => t.SortOrder)
+            .ThenBy(t => t.Id)
+            .Select(t => new TollRoadView(t.Id, t.Road, t.PeakToll, t.SortOrder))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Adds a toll road and returns it as saved.</summary>
+    /// <exception cref="ArgumentException">The road is blank.</exception>
+    public async Task<TollRoadView> CreateTollRoadAsync(
+        TollRoadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var road = Required(request.Road, "A toll road needs the name to look for.", nameof(request));
+
+        var last = await context.TollRoads.AsNoTracking()
+            .OrderByDescending(t => t.SortOrder)
+            .Select(t => (int?)t.SortOrder)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var toll = new TollRoad
+        {
+            Road = road,
+            PeakToll = Positive(request.PeakToll),
+            SortOrder = (last ?? -1) + 1,
+        };
+
+        context.TollRoads.Add(toll);
+        await context.SaveChangesAsync(cancellationToken);
+
+        return new TollRoadView(toll.Id, toll.Road, toll.PeakToll, toll.SortOrder);
+    }
+
+    /// <summary>Changes a toll road, or returns null when none has that id.</summary>
+    /// <exception cref="ArgumentException">The road is blank.</exception>
+    public async Task<TollRoadView?> UpdateTollRoadAsync(
+        int id,
+        TollRoadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var toll = await context.TollRoads.SingleOrDefaultAsync(t => t.Id == id, cancellationToken);
+        if (toll is null)
+        {
+            return null;
+        }
+
+        toll.Road = Required(request.Road, "A toll road needs the name to look for.", nameof(request));
+        toll.PeakToll = Positive(request.PeakToll);
+        await context.SaveChangesAsync(cancellationToken);
+
+        return new TollRoadView(toll.Id, toll.Road, toll.PeakToll, toll.SortOrder);
+    }
+
+    /// <summary>Deletes a toll road. Returns false when none has that id.</summary>
+    public async Task<bool> DeleteTollRoadAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var toll = await context.TollRoads.SingleOrDefaultAsync(t => t.Id == id, cancellationToken);
+        if (toll is null)
+        {
+            return false;
+        }
+
+        context.TollRoads.Remove(toll);
         await context.SaveChangesAsync(cancellationToken);
         return true;
     }

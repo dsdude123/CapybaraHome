@@ -30,6 +30,9 @@ public class SearchDestination
     /// </summary>
     public int RoundTripsPerWeek { get; set; }
 
+    /// <summary>What each day driven there pays back, such as a carpool credit from work.</summary>
+    public decimal CarpoolCreditPerDay { get; set; }
+
     /// <summary>Position in the list; lower sorts first.</summary>
     public int SortOrder { get; set; }
 

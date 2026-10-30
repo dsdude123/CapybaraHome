@@ -73,6 +73,9 @@ public interface ICapybaraHomeDbContext
     /// <summary>The cars the drives are made in.</summary>
     DbSet<Vehicle> Vehicles { get; }
 
+    /// <summary>The toll roads and what each crossing costs.</summary>
+    DbSet<TollRoad> TollRoads { get; }
+
     /// <summary>The scoring weights and the routing service the search uses.</summary>
     DbSet<HomeSearchSettings> HomeSearchSettings { get; }
 

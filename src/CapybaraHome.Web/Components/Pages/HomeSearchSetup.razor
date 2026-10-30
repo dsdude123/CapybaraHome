@@ -87,8 +87,9 @@
     <h2 class="card-title">Destinations</h2>
     <p class="muted">
         Where you drive to. The weight is how much that drive counts next to the others, so work,
-        driven to every day, is worth more than one. The round trips a week are what the fuel cost
-        counts, so a three-day work week is three.
+        driven to every day, is worth more than one. The round trips a week are what the driving
+        cost counts, so a three-day work week is three, and the carpool credit is taken off for
+        each of those days.
     </p>
 
     @if (destinations.Count == 0)
@@ -120,6 +121,10 @@
                                 <label for="destination-trips-@destination.Id">Round trips a week</label>
                                 <input id="destination-trips-@destination.Id" type="number" step="1" min="0" name="trips" value="@destination.RoundTripsPerWeek" />
                             </div>
+                            <div class="field">
+                                <label for="destination-carpool-@destination.Id">Carpool credit a day</label>
+                                <input id="destination-carpool-@destination.Id" type="number" step="0.01" min="0" name="carpool" value="@Typed(destination.CarpoolCreditPerDay)" />
+                            </div>
                         </div>
                         <div class="row">
                             <button class="btn btn-small" type="submit" name="action" value="save">Save</button>
@@ -150,6 +155,10 @@
             <div class="field">
                 <label for="new-destination-trips">Round trips a week</label>
                 <input id="new-destination-trips" type="number" step="1" min="0" name="trips" value="@destinationTrips" />
+            </div>
+            <div class="field">
+                <label for="new-destination-carpool">Carpool credit a day</label>
+                <input id="new-destination-carpool" type="number" step="0.01" min="0" name="carpool" value="@destinationCarpool" />
             </div>
         </div>
         <div class="row">
@@ -300,6 +309,70 @@
     }
 </section>
 
+<section class="card stack">
+    <h2 class="card-title">Toll roads</h2>
+    <p class="muted">
+        A measured route names the tolled roads it uses. A toll road here prices every one whose
+        name contains what you type, so <code>520</code> covers the SR 520 bridge, and each
+        crossing is charged its peak toll in both directions. A property's page lists any tolled
+        road the route used that nothing here prices yet, under the name to type.
+    </p>
+
+    @if (tollRoads.Count == 0)
+    {
+        <p class="muted">No toll roads yet.</p>
+    }
+    else
+    {
+        <ul class="task-list">
+            @foreach (var toll in tollRoads)
+            {
+                <li>
+                    <form method="post" @formname="@($"toll-{toll.Id}")" @onsubmit="() => SaveTollRoadAsync(toll.Id)" class="stack">
+                        <AntiforgeryToken />
+                        <div class="filters">
+                            <div class="field">
+                                <label for="toll-road-@toll.Id">Road</label>
+                                <input id="toll-road-@toll.Id" type="text" name="road" value="@toll.Road" />
+                            </div>
+                            <div class="field">
+                                <label for="toll-price-@toll.Id">Peak toll, each way</label>
+                                <input id="toll-price-@toll.Id" type="number" step="0.01" min="0" name="price" value="@Typed(toll.PeakToll)" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <button class="btn btn-small" type="submit" name="action" value="save">Save</button>
+                            <button class="btn btn-small btn-danger" type="submit" name="action" value="delete">Delete</button>
+                        </div>
+                    </form>
+                </li>
+            }
+        </ul>
+    }
+
+    <form method="post" @formname="toll-new" @onsubmit="AddTollRoadAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="filters">
+            <div class="field">
+                <label for="new-toll-road">New toll road</label>
+                <input id="new-toll-road" type="text" name="road" value="@tollRoad" />
+            </div>
+            <div class="field">
+                <label for="new-toll-price">Peak toll, each way</label>
+                <input id="new-toll-price" type="number" step="0.01" min="0" name="price" value="@tollPrice" />
+            </div>
+        </div>
+        <div class="row">
+            <button class="btn btn-primary btn-small" type="submit">Add the toll road</button>
+        </div>
+    </form>
+
+    @if (tollError is not null)
+    {
+        <p class="error">@tollError</p>
+    }
+</section>
+
 @code {
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -308,6 +381,7 @@
     private IReadOnlyList<SearchDestinationView> destinations = [];
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
+    private IReadOnlyList<TollRoadView> tollRoads = [];
     private string? fees;
     private string? deposit;
     private string? drive;
@@ -319,6 +393,10 @@
     private string? destinationAddress;
     private string? destinationWeight;
     private string? destinationTrips;
+    private string? destinationCarpool;
+    private string? tollRoad;
+    private string? tollPrice;
+    private string? tollError;
     private string? priorityName;
     private string? priorityPoints;
     private string? vehicleName;
@@ -341,6 +419,7 @@
         destinations = await Search.ListDestinationsAsync();
         priorities = await Search.ListPrioritiesAsync();
         vehicles = await Search.ListVehiclesAsync();
+        tollRoads = await Search.ListTollRoadsAsync();
 
         fees = Typed(settings.MonthlyFeePointsPerDollar);
         deposit = Typed(settings.DepositPointsPerDollar);
@@ -405,6 +484,7 @@
         destinationAddress = form["address"];
         destinationWeight = form["weight"];
         destinationTrips = form["trips"];
+        destinationCarpool = form["carpool"];
 
         try
         {
@@ -412,12 +492,14 @@
                 destinationName ?? string.Empty,
                 destinationAddress,
                 PropertyRows.Money(destinationWeight) ?? 1m,
-                Trips(destinationTrips)));
+                Trips(destinationTrips),
+                PropertyRows.Money(destinationCarpool) ?? 0m));
 
             destinationName = null;
             destinationAddress = null;
             destinationWeight = null;
             destinationTrips = null;
+            destinationCarpool = null;
             destinationError = null;
         }
         catch (ArgumentException ex)
@@ -450,7 +532,8 @@
                 form["name"].ToString(),
                 form["address"].ToString(),
                 PropertyRows.Money(form["weight"]) ?? 1m,
-                Trips(form["trips"])));
+                Trips(form["trips"]),
+                PropertyRows.Money(form["carpool"]) ?? 0m));
 
             destinationError = null;
         }
@@ -577,6 +660,65 @@
         catch (ArgumentException ex)
         {
             vehicleError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task AddTollRoadAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        tollRoad = form["road"];
+        tollPrice = form["price"];
+
+        try
+        {
+            await Search.CreateTollRoadAsync(new TollRoadRequest(
+                tollRoad ?? string.Empty, PropertyRows.Money(tollPrice) ?? 0m));
+
+            tollRoad = null;
+            tollPrice = null;
+            tollError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            tollError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task SaveTollRoadAsync(int id)
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+
+        if (form["action"] == "delete")
+        {
+            await Search.DeleteTollRoadAsync(id);
+            await LoadAsync();
+            return;
+        }
+
+        try
+        {
+            await Search.UpdateTollRoadAsync(id, new TollRoadRequest(
+                form["road"].ToString(), PropertyRows.Money(form["price"]) ?? 0m));
+
+            tollError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            tollError = ex.Message;
         }
 
         await LoadAsync();

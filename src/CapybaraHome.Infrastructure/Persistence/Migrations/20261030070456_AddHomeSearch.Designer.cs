@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CapybaraHome.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CapybaraHomeDbContext))]
-    [Migration("20261030062310_AddHomeSearch")]
+    [Migration("20261030070456_AddHomeSearch")]
     partial class AddHomeSearch
     {
         /// <inheritdoc />
@@ -200,6 +200,10 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("TEXT");
 
+                    b.PrimitiveCollection<string>("TolledRoads")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("DestinationId");
@@ -365,6 +369,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<double>("CarpoolCreditPerDay")
+                        .HasColumnType("REAL");
+
                     b.Property<double?>("Latitude")
                         .HasColumnType("REAL");
 
@@ -410,6 +417,28 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("SearchPriorities");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.TollRoad", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("PeakToll")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Road")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TollRoads");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Homes.Vehicle", b =>
@@ -526,6 +555,19 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.HasIndex("MealId", "SortOrder");
 
                     b.ToTable("MealIngredients");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealPlanSharedTarget", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MealPlanSharedTargets");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.MealPlanTarget", b =>

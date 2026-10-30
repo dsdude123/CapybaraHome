@@ -265,6 +265,62 @@ public class HomeSearchServiceTests
         Assert.False(vehicle.CanCost);
     }
 
+    [Fact]
+    public async Task Toll_roads_keep_their_order_and_can_be_changed_and_dropped()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var first = await service.CreateTollRoadAsync(new TollRoadRequest("  520  ", 4.50m));
+        await service.CreateTollRoadAsync(new TollRoadRequest("99", 2.25m));
+
+        var held = await service.ListTollRoadsAsync();
+        Assert.Equal(["520", "99"], held.Select(t => t.Road));
+        Assert.Equal([0, 1], held.Select(t => t.SortOrder));
+
+        var changed = await service.UpdateTollRoadAsync(first.Id, new TollRoadRequest("SR 520", -3m));
+        Assert.Equal("SR 520", changed!.Road);
+        Assert.Equal(0m, changed.PeakToll);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateTollRoadAsync(new TollRoadRequest(" ")));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateTollRoadAsync(first.Id, new TollRoadRequest("")));
+
+        Assert.True(await service.DeleteTollRoadAsync(first.Id));
+        Assert.False(await service.DeleteTollRoadAsync(first.Id));
+        Assert.Null(await service.UpdateTollRoadAsync(first.Id, new TollRoadRequest("Gone")));
+        Assert.Single(await service.ListTollRoadsAsync());
+    }
+
+    [Fact]
+    public async Task A_destination_keeps_its_carpool_credit_and_refuses_a_negative_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(new SearchDestinationRequest("Work", null, 3m, 3, 5m));
+        Assert.Equal(5m, work.CarpoolCreditPerDay);
+
+        var negative = await service.UpdateDestinationAsync(work.Id, new SearchDestinationRequest("Work", null, 3m, 3, -5m));
+        Assert.Equal(0m, negative!.CarpoolCreditPerDay);
+    }
+
+    [Fact]
+    public async Task A_drive_keeps_its_tolled_roads_trimmed_and_once_each()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+
+        var destination = await service.CreateDestinationAsync(new SearchDestinationRequest("Work"));
+        var property = await properties.CreateAsync(new CreatePropertyRequest("Somewhere"));
+
+        await properties.SetDriveTimeAsync(
+            property.Id, destination.Id, 20d, 10d, CapybaraHome.Domain.Homes.DriveTimeSource.Manual,
+            [" 520 ", "520", "", "99"]);
+
+        Assert.Equal(["520", "99"], (await properties.GetAsync(property.Id))!.DriveTimes.Single().TolledRoads);
+    }
+
     private static async Task<DateTimeOffset> UpdatedAtAsync(TestDatabase db) =>
         (await db.Context.HomeSearchSettings.FirstAsync()).UpdatedAt;
 }

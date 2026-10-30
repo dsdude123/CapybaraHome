@@ -73,6 +73,62 @@ public class RoutingClientTests
         Assert.Contains("v2/directions/driving-car", http.Requests[0].RequestUri!.ToString());
 
         Assert.Contains("[-122.3,47.6]", http.Bodies[0]);
+        Assert.Contains("\"extra_info\":[\"tollways\"]", http.Bodies[0]);
+        Assert.Empty(drive.TolledRoads);
+    }
+
+    [Fact]
+    public async Task A_route_names_the_roads_that_run_over_a_tolled_stretch()
+    {
+        const string Tolled = """
+        {
+          "routes": [ {
+            "summary": { "distance": 16093.44, "duration": 1200.0 },
+            "segments": [
+              { "steps": [
+                { "name": "1st Avenue", "way_points": [0, 4] },
+                { "name": "WA 520", "way_points": [4, 9] },
+                { "name": "WA 520", "way_points": [9, 12] }
+              ] },
+              { "steps": [
+                { "name": "-", "way_points": [12, 14] },
+                { "name": "", "way_points": [14, 15] },
+                { "name": "Bellevue Way", "way_points": [15, 20] },
+                { "name": "Unnamed shape" },
+                { "way_points": [20, 21] }
+              ] }
+            ],
+            "extras": { "tollways": { "values": [ [0, 4, 0], [4, 15, 1], [15, 20, 0], "bad" ] } }
+          } ]
+        }
+        """;
+
+        await using var db = await TestDatabase.CreateAsync();
+        var (client, _) = await ClientAsync(db, Tolled);
+
+        var drive = await client.MeasureAsync(47.6d, -122.3d, 47.7d, -122.4d);
+
+        // The unnamed steps over the tolled stretch name nothing, and a road is named once.
+        Assert.Equal(["WA 520"], drive!.TolledRoads);
+        Assert.Equal(10d, drive.Miles, 3);
+    }
+
+    [Fact]
+    public async Task A_route_with_no_steps_names_no_tolled_road_even_when_one_is_tolled()
+    {
+        const string Stepless = """
+        {
+          "routes": [ {
+            "summary": { "distance": 1000.0, "duration": 60.0 },
+            "extras": { "tollways": { "values": [ [0, 4, 1] ] } }
+          } ]
+        }
+        """;
+
+        await using var db = await TestDatabase.CreateAsync();
+        var (client, _) = await ClientAsync(db, Stepless);
+
+        Assert.Empty((await client.MeasureAsync(47.6d, -122.3d, 47.7d, -122.4d))!.TolledRoads);
     }
 
     [Theory]

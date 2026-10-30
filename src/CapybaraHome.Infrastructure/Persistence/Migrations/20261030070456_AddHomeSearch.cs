@@ -67,6 +67,7 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     Latitude = table.Column<double>(type: "REAL", nullable: true),
                     Longitude = table.Column<double>(type: "REAL", nullable: true),
                     RoundTripsPerWeek = table.Column<int>(type: "INTEGER", nullable: false),
+                    CarpoolCreditPerDay = table.Column<double>(type: "REAL", nullable: false),
                     SortOrder = table.Column<int>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
@@ -87,6 +88,21 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_SearchPriorities", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TollRoads",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "INTEGER", nullable: false)
+                        .Annotation("Sqlite:Autoincrement", true),
+                    Road = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
+                    PeakToll = table.Column<double>(type: "REAL", nullable: false),
+                    SortOrder = table.Column<int>(type: "INTEGER", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TollRoads", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -227,6 +243,7 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     DestinationId = table.Column<int>(type: "INTEGER", nullable: false),
                     Minutes = table.Column<double>(type: "REAL", nullable: false),
                     Miles = table.Column<double>(type: "REAL", nullable: true),
+                    TolledRoads = table.Column<string>(type: "TEXT", nullable: false),
                     Source = table.Column<string>(type: "TEXT", maxLength: 10, nullable: false),
                     MeasuredAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)
                 },
@@ -351,6 +368,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "PropertyUtilities");
+
+            migrationBuilder.DropTable(
+                name: "TollRoads");
 
             migrationBuilder.DropTable(
                 name: "Vehicles");

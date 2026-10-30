@@ -283,6 +283,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <param name="minutes">How long the drive takes.</param>
     /// <param name="miles">How far it is, when known.</param>
     /// <param name="source">Whether the time was measured or typed in.</param>
+    /// <param name="tolledRoads">Names of the tolled roads the drive uses.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     public async Task<bool> SetDriveTimeAsync(
         int propertyId,
@@ -290,6 +291,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         double minutes,
         double? miles,
         DriveTimeSource source,
+        IReadOnlyList<string>? tolledRoads = null,
         CancellationToken cancellationToken = default)
     {
         if (!await context.Properties.AnyAsync(p => p.Id == propertyId, cancellationToken)
@@ -309,6 +311,11 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
 
         held.Minutes = minutes;
         held.Miles = miles;
+        held.TolledRoads = (tolledRoads ?? [])
+            .Select(road => road.Trim())
+            .Where(road => road.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         held.Source = source;
         held.MeasuredAt = clock.GetUtcNow();
 
@@ -426,7 +433,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             .OrderBy(d => d.Destination!.SortOrder)
             .ThenBy(d => d.DestinationId)
             .Select(d => new PropertyDriveTimeView(
-                d.DestinationId, d.Destination!.Name, d.Minutes, d.Miles, d.Source, d.MeasuredAt))
+                d.DestinationId, d.Destination!.Name, d.Minutes, d.Miles, d.TolledRoads, d.Source, d.MeasuredAt))
             .ToList(),
         property.Priorities
             .OrderBy(m => m.Priority!.SortOrder)

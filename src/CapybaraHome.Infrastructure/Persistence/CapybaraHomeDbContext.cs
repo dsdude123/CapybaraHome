@@ -78,6 +78,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>The cars the drives are made in.</summary>
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
 
+    /// <summary>The toll roads and what each crossing costs.</summary>
+    public DbSet<TollRoad> TollRoads => Set<TollRoad>();
+
     /// <summary>The scoring weights and the routing service the search uses.</summary>
     public DbSet<HomeSearchSettings> HomeSearchSettings => Set<HomeSearchSettings>();
 

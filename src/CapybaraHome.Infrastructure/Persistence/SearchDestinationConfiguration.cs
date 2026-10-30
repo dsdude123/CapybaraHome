@@ -13,5 +13,6 @@ public class SearchDestinationConfiguration : IEntityTypeConfiguration<SearchDes
         builder.Property(d => d.Name).IsRequired().HasMaxLength(200);
         builder.Property(d => d.Address).HasMaxLength(1000);
         builder.Property(d => d.Weight).HasConversion<double>();
+        builder.Property(d => d.CarpoolCreditPerDay).HasConversion<double>();
     }
 }

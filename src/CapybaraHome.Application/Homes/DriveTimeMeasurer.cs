@@ -62,7 +62,7 @@ public class DriveTimeMeasurer(
                 }
 
                 await properties.SetDriveTimeAsync(
-                    propertyId, destination.Id, drive.Minutes, drive.Miles, DriveTimeSource.Measured, cancellationToken);
+                    propertyId, destination.Id, drive.Minutes, drive.Miles, DriveTimeSource.Measured, drive.TolledRoads, cancellationToken);
 
                 measured++;
             }

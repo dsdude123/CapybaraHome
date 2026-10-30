@@ -78,8 +78,8 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   score. A property (`/homes/{id}`) holds its rent, parking, cat rent, deposit, a utility
   breakdown by kind, what internet is provided, amenities, pros and cons, notes and pictures,
   and the drive time and distance to each destination, with what a week of driving costs in
-  fuel. **Search settings** (`/homes/settings`) holds the scoring weights, the destinations,
-  the priorities and the cars.
+  fuel and tolls. **Search settings** (`/homes/settings`) holds the scoring weights, the
+  destinations, the priorities, the cars and the toll roads.
 - **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
@@ -109,14 +109,22 @@ their site, or your own instance, which needs no key. The same service places an
 first time a drive is measured. The key is write-only — the page says whether one is held,
 never what it is — and there is a button to forget it.
 
-### Fuel
+### Driving cost
 
 Each destination carries how many round trips a week you drive to it — three for a three-day
-work week — and each car its average mpg and what a gallon costs now, both under
-`/homes/settings`. A property's page then costs its week of driving in every car: the miles
-a week, the gallons they burn, and what that is a week and over an average month. The miles
-come from each drive's distance, which a measured route fills in and which can be typed in
-beside the minutes. Fuel is shown, not scored — it is not part of the points.
+work week — and any carpool credit a day; each car carries its average mpg and what a gallon
+costs now; and each toll road its peak toll. All of it lives under `/homes/settings`. A
+property's page then costs its usual week of driving: the fuel in every car, the tolls, and
+the carpool credit taken off, a week and over an average month.
+
+The miles come from each drive's distance, which a measured route fills in and which can be
+typed in beside the minutes. A measured route also names the tolled roads it uses, which
+OpenRouteService marks from OpenStreetMap's toll tags without a price. A toll road under
+settings prices every tolled road whose name contains what you type, so `520` covers the
+SR 520 bridge, and each crossing is charged its peak toll in both directions. A tolled road
+the route used that nothing prices yet is named on the property's page; a drive typed in by
+hand has a box to tick for each toll road. Driving cost is shown, not scored — it is not part
+of the points.
 
 Pictures are kept as files rather than in the database, so an export stays a readable
 document. `Photos__Path` says where, `/data/photos` in the container.

@@ -144,11 +144,12 @@ public class HomeSearchApiTests
             $"/api/properties/{property.Id}/priorities/{priority.Id}", new PropertyPriorityRequest(true), Json)).StatusCode);
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(
-            $"/api/properties/{property.Id}/drives/{destination.Id}", new PropertyDriveTimeRequest(18.5d, 12.4d), Json)).StatusCode);
+            $"/api/properties/{property.Id}/drives/{destination.Id}", new PropertyDriveTimeRequest(18.5d, 12.4d, ["WA 520"]), Json)).StatusCode);
 
         var scored = await client.GetFromJsonAsync<ScoredProperty>($"/api/properties/{property.Id}", Json);
         Assert.Equal(18.5d, scored!.Property.DriveTimes.Single().Minutes);
         Assert.Equal(12.4d, scored.Property.DriveTimes.Single().Miles);
+        Assert.Equal(["WA 520"], scored.Property.DriveTimes.Single().TolledRoads);
         Assert.True(scored.Property.Priorities.Single().Meets);
         Assert.Equal(10m, scored.Score.Priorities);
 
@@ -160,6 +161,36 @@ public class HomeSearchApiTests
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsJsonAsync(
             $"/api/properties/404/priorities/{priority.Id}", new PropertyPriorityRequest(true), Json)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Toll_roads_are_listed_changed_and_deleted_over_the_api()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var toll = (await (await client.PostAsJsonAsync("/api/home-search/toll-roads",
+            new TollRoadRequest("520", 4.50m), Json)).Content.ReadFromJsonAsync<TollRoadView>(Json))!;
+
+        Assert.Equal(4.50m, toll.PeakToll);
+        Assert.Single((await client.GetFromJsonAsync<List<TollRoadView>>("/api/home-search/toll-roads", Json))!);
+
+        await client.PutAsJsonAsync($"/api/home-search/toll-roads/{toll.Id}", new TollRoadRequest("SR 520", 4.80m), Json);
+
+        var held = await client.GetFromJsonAsync<List<TollRoadView>>("/api/home-search/toll-roads", Json);
+        Assert.Equal("SR 520", held!.Single().Road);
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/home-search/toll-roads",
+            new TollRoadRequest(" "), Json)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync(
+            $"/api/home-search/toll-roads/{toll.Id}", new TollRoadRequest(""), Json)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.DeleteAsync($"/api/home-search/toll-roads/{toll.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.DeleteAsync($"/api/home-search/toll-roads/{toll.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsJsonAsync(
+            $"/api/home-search/toll-roads/{toll.Id}", new TollRoadRequest("Gone"), Json)).StatusCode);
     }
 
     [Fact]

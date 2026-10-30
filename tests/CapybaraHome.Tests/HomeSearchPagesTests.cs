@@ -684,17 +684,13 @@ public class HomeSearchPagesTests
     }
 
     [Fact]
-    public async Task The_fuel_card_says_what_is_missing_rather_than_costing_nothing_quietly()
+    public async Task The_driving_card_says_what_is_missing_rather_than_costing_nothing_quietly()
     {
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
 
         var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
 
-        var noCars = await client.GetStringAsync($"/homes/{property.Id}");
-        Assert.Contains("No cars yet.", noCars);
-
-        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
         var noTrips = await client.GetStringAsync($"/homes/{property.Id}");
         Assert.Contains("Nothing to cost yet.", noTrips);
 
@@ -704,10 +700,176 @@ public class HomeSearchPagesTests
 
         var noMiles = await client.GetStringAsync($"/homes/{property.Id}");
         Assert.Contains("The drive to Work has no distance yet", noMiles);
+
+        await PostAsync(client, $"/homes/{property.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "20", [$"miles-{work.Id}"] = "10" });
+
+        var noCars = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Contains("No cars yet.", noCars);
+
+        await VehicleAsync(app, "Unpriced", 30d, 0m);
+        var noPrice = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Contains("None of the cars has both a mileage and a fuel price yet", noPrice);
     }
 
     [Fact]
-    public async Task The_list_shows_the_monthly_fuel_beside_a_candidate_and_the_current_home()
+    public async Task A_toll_road_is_added_changed_and_deleted_from_the_settings_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var added = await PostAsync(client, "/homes/settings", "toll-new",
+            new() { ["road"] = "520", ["price"] = "4.50" });
+
+        Assert.Contains("value=\"520\"", await added.Content.ReadAsStringAsync());
+
+        var id = (await TollRoadsAsync(app)).Single().Id;
+
+        await PostAsync(client, "/homes/settings", $"toll-{id}",
+            new() { ["action"] = "save", ["road"] = "SR 520", ["price"] = "4.80" });
+
+        var changed = (await TollRoadsAsync(app)).Single();
+        Assert.Equal("SR 520", changed.Road);
+        Assert.Equal(4.80m, changed.PeakToll);
+
+        var blank = await PostAsync(client, "/homes/settings", $"toll-{id}",
+            new() { ["action"] = "save", ["road"] = " ", ["price"] = "1" });
+
+        Assert.Contains("A toll road needs the name to look for.", await blank.Content.ReadAsStringAsync());
+
+        var deleted = await PostAsync(client, "/homes/settings", $"toll-{id}", new() { ["action"] = "delete" });
+        Assert.Contains("No toll roads yet.", await deleted.Content.ReadAsStringAsync());
+
+        var refused = await PostAsync(client, "/homes/settings", "toll-new", new() { ["road"] = "" });
+        Assert.Contains("A toll road needs the name to look for.", await refused.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task The_carpool_credit_is_saved_with_the_destination()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostAsync(client, "/homes/settings", "destination-new",
+            new() { ["name"] = "Work", ["weight"] = "3", ["trips"] = "3", ["carpool"] = "5" });
+
+        Assert.Equal(5m, (await DestinationsAsync(app)).Single().CarpoolCreditPerDay);
+
+        var id = (await DestinationsAsync(app)).Single().Id;
+
+        await PostAsync(client, "/homes/settings", $"destination-{id}",
+            new() { ["action"] = "save", ["name"] = "Work", ["weight"] = "3", ["trips"] = "3", ["carpool"] = "4.50" });
+
+        Assert.Equal(4.50m, (await DestinationsAsync(app)).Single().CarpoolCreditPerDay);
+    }
+
+    [Fact]
+    public async Task A_toll_ticked_on_a_typed_in_drive_is_charged_each_way_and_the_credit_comes_off()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3, carpool: 5m);
+        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
+        var toll = await TollRoadAsync(app, "520", 4.50m);
+        await TollRoadAsync(app, "99", 2.25m);
+
+        var page = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Contains("Crosses 520", page);
+        Assert.Contains("Crosses 99", page);
+
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+            new($"toll-{work.Id}", toll.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ]);
+
+        Assert.Equal(["520"], (await ReadAsync(app, property.Id)).DriveTimes.Single().TolledRoads);
+
+        var html = System.Net.WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+
+        // $9 of fuel and $27 of tolls, less three days of $5 credit.
+        Assert.Contains("$27.00", html);
+        Assert.Contains("\u2212$15.00", html);
+        Assert.Contains("$21.00", html);
+        Assert.Contains("$91.00", html);
+
+        // Saving with the box unticked takes the toll back off.
+        await PostAsync(client, $"/homes/{property.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "20", [$"miles-{work.Id}"] = "10" });
+
+        Assert.Empty((await ReadAsync(app, property.Id)).DriveTimes.Single().TolledRoads);
+    }
+
+    [Fact]
+    public async Task A_measured_route_names_its_tolled_roads_and_flags_any_nothing_prices()
+    {
+        const string Place = """
+        { "features": [ { "geometry": { "coordinates": [-122.33, 47.61] }, "properties": { "label": "Somewhere" } } ] }
+        """;
+
+        const string Route = """
+        {
+          "routes": [ {
+            "summary": { "distance": 16093.44, "duration": 1200.0 },
+            "segments": [ { "steps": [
+              { "name": "1st Avenue", "way_points": [0, 4] },
+              { "name": "SR 99 Tunnel", "way_points": [4, 9] },
+              { "name": "Evergreen Point Floating Bridge", "way_points": [9, 14] },
+              { "name": "-", "way_points": [14, 15] }
+            ] } ],
+            "extras": { "tollways": { "values": [ [0, 4, 0], [4, 14, 1], [14, 15, 0] ] } }
+          } ]
+        }
+        """;
+
+        var routing = new FakeHttp().Reply(Place).Reply(Place).Reply(Route);
+
+        await using var app = await AppFactory.CreateAsync(configureServices: services =>
+            services.AddHttpClient<RoutingClient>().ConfigurePrimaryHttpMessageHandler(routing.Handler));
+
+        var client = Client(app);
+
+        await PostAsync(client, "/homes/settings", "home-routing", new()
+        {
+            ["action"] = "save",
+            ["url"] = "https://api.openrouteservice.org",
+            ["key"] = "a-key",
+        });
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven", Address: "1221 1st Ave"));
+        await DestinationAsync(app, "Work", address: "400 Broad St", trips: 3);
+        var toll = await TollRoadAsync(app, "99", 2.25m);
+
+        await PostAsync(client, $"/homes/{property.Id}", "property-measure", []);
+
+        var drive = (await ReadAsync(app, property.Id)).DriveTimes.Single();
+        Assert.Equal(["SR 99 Tunnel", "Evergreen Point Floating Bridge"], drive.TolledRoads);
+        Assert.Equal(10d, drive.Miles!.Value, 3);
+
+        var html = System.Net.WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("Tolled roads on the route: SR 99 Tunnel, Evergreen Point Floating Bridge", html);
+        Assert.Contains("uses a tolled road nothing prices yet:", html);
+        Assert.Contains("Evergreen Point Floating Bridge.", html);
+        Assert.Contains("$13.50", html);
+
+        // Saving the times by hand keeps the unpriced road, which has no box to tick.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{drive.DestinationId}", "20"),
+            new($"miles-{drive.DestinationId}", "10"),
+            new($"toll-{drive.DestinationId}", toll.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ]);
+
+        Assert.Equal(
+            ["Evergreen Point Floating Bridge", "99"],
+            (await ReadAsync(app, property.Id)).DriveTimes.Single().TolledRoads);
+    }
+
+    [Fact]
+    public async Task The_list_shows_the_monthly_driving_cost_beside_a_candidate_and_the_current_home()
     {
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
@@ -724,8 +886,8 @@ public class HomeSearchPagesTests
 
         var page = await client.GetStringAsync("/homes");
 
-        Assert.Contains("Fuel a month", page);
-        Assert.Contains("$78 a month in fuel, over 120 miles a week", page);
+        Assert.Contains("Driving a month", page);
+        Assert.Contains("$78 a month driving, over 120 miles a week", page);
         Assert.Contains("$39", page);
     }
 
@@ -740,11 +902,25 @@ public class HomeSearchPagesTests
         string name,
         decimal weight = 1m,
         string? address = null,
-        int trips = 0)
+        int trips = 0,
+        decimal carpool = 0m)
     {
         using var scope = app.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
-            .CreateDestinationAsync(new SearchDestinationRequest(name, address, weight, trips));
+            .CreateDestinationAsync(new SearchDestinationRequest(name, address, weight, trips, carpool));
+    }
+
+    private static async Task<TollRoadView> TollRoadAsync(AppFactory app, string road, decimal price)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
+            .CreateTollRoadAsync(new TollRoadRequest(road, price));
+    }
+
+    private static async Task<IReadOnlyList<TollRoadView>> TollRoadsAsync(AppFactory app)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<HomeSearchService>().ListTollRoadsAsync();
     }
 
     private static async Task<VehicleView> VehicleAsync(AppFactory app, string name, double mpg, decimal price)

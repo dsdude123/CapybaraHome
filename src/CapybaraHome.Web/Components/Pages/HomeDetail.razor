@@ -246,6 +246,18 @@ else
                                    value="@Typed(held?.Miles)" />
                         </div>
                     </div>
+                    @foreach (var toll in tollRoads)
+                    {
+                        <label class="row">
+                            <input type="checkbox" name="toll-@destination.Id" value="@toll.Id"
+                                   checked="@(held?.TolledRoads.Any(toll.Prices) == true)" style="width:auto;min-height:auto" />
+                            Crosses @toll.Road
+                        </label>
+                    }
+                    @if (held is { TolledRoads.Count: > 0 } && held.Source == DriveTimeSource.Measured)
+                    {
+                        <p class="task-meta">Tolled roads on the route: @string.Join(", ", held.TolledRoads)</p>
+                    }
                 }
                 <div class="row">
                     <button class="btn btn-primary btn-small" type="submit">Save the times</button>
@@ -282,20 +294,13 @@ else
     </section>
 
     <section class="card stack">
-        <h2 class="card-title">Fuel</h2>
-        @if (vehicles.Count == 0)
+        <h2 class="card-title">Driving cost</h2>
+        @if (!driving!.AnyDriving)
         {
             <p class="muted">
-                No cars yet. <a href="homes/settings">Add one with its average mpg and what a gallon
-                costs</a> and the week's fuel shows up here.
-            </p>
-        }
-        else if (!fuel!.AnyDriving)
-        {
-            <p class="muted">
-                Nothing to cost yet. Fuel counts the round trips a week set on each
+                Nothing to cost yet. This counts the round trips a week set on each
                 <a href="homes/settings">destination</a> — three for a three-day work week — against
-                the miles of each drive.
+                the miles and the tolls of each drive, less any carpool credit.
             </p>
         }
         else
@@ -304,29 +309,47 @@ else
                 <thead>
                     <tr>
                         <th scope="col">Drive</th>
-                        <th scope="col">One way</th>
-                        <th scope="col">Round trips a week</th>
                         <th scope="col">Miles a week</th>
+                        <th scope="col">Tolls a week</th>
+                        <th scope="col">Carpool credit</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var line in fuel.Lines)
+                    @foreach (var line in driving.Lines)
                     {
                         <tr>
-                            <td>@line.Name</td>
-                            <td>@Miles(line.Miles)</td>
-                            <td>@line.RoundTripsPerWeek</td>
+                            <td>
+                                @line.Name
+                                <br /><span class="muted">@line.RoundTripsPerWeek × @Miles(line.Miles) each way</span>
+                            </td>
                             <td>@Miles(line.MilesPerWeek)</td>
+                            <td>
+                                @Cents(line.TollsPerWeek)
+                                @if (line.Tolls.Count > 0)
+                                {
+                                    <br /><span class="muted">@string.Join(", ", line.Tolls.Select(t => t.Road))</span>
+                                }
+                            </td>
+                            <td>@Credit(line.CarpoolCreditPerWeek)</td>
                         </tr>
                     }
                     <tr>
-                        <td colspan="3"><strong>A week in all</strong></td>
-                        <td><strong>@Miles(fuel.MilesPerWeek)</strong></td>
+                        <td><strong>A week in all</strong></td>
+                        <td><strong>@Miles(driving.MilesPerWeek)</strong></td>
+                        <td><strong>@Cents(driving.TollsPerWeek)</strong></td>
+                        <td><strong>@Credit(driving.CarpoolCreditPerWeek)</strong></td>
                     </tr>
                 </tbody>
             </table>
 
-            @if (fuel.Vehicles.Count == 0)
+            @if (vehicles.Count == 0)
+            {
+                <p class="muted">
+                    No cars yet. <a href="homes/settings">Add one with its average mpg and what a
+                    gallon costs</a> and the fuel is costed here too.
+                </p>
+            }
+            else if (driving.Vehicles.Count == 0)
             {
                 <p class="muted">
                     None of the cars has both a mileage and a fuel price yet, so there is nothing to
@@ -339,31 +362,44 @@ else
                     <thead>
                         <tr>
                             <th scope="col">Car</th>
-                            <th scope="col">Gallons a week</th>
+                            <th scope="col">Fuel a week</th>
                             <th scope="col">A week</th>
                             <th scope="col">A month</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var cost in fuel.Vehicles)
+                        @foreach (var cost in driving.Vehicles)
                         {
                             <tr>
                                 <td>@cost.Name</td>
-                                <td>@Gallons(cost.GallonsPerWeek)</td>
+                                <td>
+                                    @Cents(cost.FuelPerWeek)
+                                    <br /><span class="muted">@Gallons(cost.GallonsPerWeek) gal</span>
+                                </td>
                                 <td>@Cents(cost.WeeklyCost)</td>
                                 <td>@Cents(cost.MonthlyCost)</td>
                             </tr>
                         }
                     </tbody>
                 </table>
+                <p class="muted">A week is the fuel and the tolls, less the carpool credit.</p>
             }
         }
 
-        @foreach (var name in fuel!.MissingMiles)
+        @foreach (var name in driving!.MissingMiles)
         {
             <p class="muted">
-                The drive to @name has no distance yet, so it adds nothing. Measure it or type the
-                miles in beside the minutes above.
+                The drive to @name has no distance yet, so its fuel is not counted. Measure it or type
+                the miles in beside the minutes above.
+            </p>
+        }
+
+        @foreach (var line in driving.Lines.Where(l => l.UnpricedTolledRoads.Count > 0))
+        {
+            <p class="notice">
+                The drive to @line.Name uses a tolled road nothing prices yet:
+                @string.Join(", ", line.UnpricedTolledRoads).
+                <a href="homes/settings">Add it as a toll road</a> to count it.
             </p>
         }
     </section>
@@ -488,7 +524,8 @@ else
     private IReadOnlyList<SearchDestinationView> destinations = [];
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
-    private PropertyFuelCost? fuel;
+    private PropertyDrivingCost? driving;
+    private IReadOnlyList<TollRoadView> tollRoads = [];
     private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private decimal priorityPoints;
     private List<string> problems = [];
@@ -507,7 +544,7 @@ else
         var scored = await Board.GetScoredAsync(Id);
         property = scored?.Property;
         score = scored?.Score;
-        fuel = scored?.Fuel;
+        driving = scored?.Driving;
 
         if (property is null)
         {
@@ -518,6 +555,7 @@ else
         destinations = await Search.ListDestinationsAsync();
         priorities = await Search.ListPrioritiesAsync();
         vehicles = await Search.ListVehiclesAsync();
+        tollRoads = await Search.ListTollRoadsAsync();
         settings = await Search.GetSettingsAsync();
         priorityPoints = priorities.Sum(p => Math.Abs(p.Points));
     }
@@ -556,7 +594,8 @@ else
                     ? typed
                     : (double?)null;
 
-                await Properties.SetDriveTimeAsync(Id, destination.Id, minutes, miles, DriveTimeSource.Manual);
+                await Properties.SetDriveTimeAsync(
+                    Id, destination.Id, minutes, miles, DriveTimeSource.Manual, Tolled(destination.Id));
             }
             else
             {
@@ -565,6 +604,22 @@ else
         }
 
         await LoadAsync();
+    }
+
+    // The ticked toll roads, plus any tolled road the route reported that no toll road prices, which
+    // has no box to tick and would otherwise be lost by saving the times.
+    private List<string> Tolled(int destinationId)
+    {
+        var ticked = HttpContext!.Request.Form[$"toll-{destinationId}"]
+            .Select(posted => int.TryParse(posted, out var id) ? tollRoads.FirstOrDefault(t => t.Id == id) : null)
+            .OfType<TollRoadView>()
+            .Select(t => t.Road);
+
+        var unpriced = property!.DriveTimes
+            .FirstOrDefault(d => d.DestinationId == destinationId)?.TolledRoads
+            .Where(road => !tollRoads.Any(t => t.Prices(road))) ?? [];
+
+        return [.. unpriced, .. ticked];
     }
 
     private async Task MeasureAsync()
@@ -619,10 +674,15 @@ else
     // The container has no locale, so a currency format renders the generic sign rather than a
     // dollar one; the weights are labelled per dollar, so the sign is written out here.
     private static string Money(decimal? value) =>
-        value is null ? "\u2014" : "$" + value.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        value is null
+            ? "\u2014"
+            : (value < 0 ? "\u2212$" : "$") + Math.Abs(value.Value).ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string Cents(decimal value) =>
-        "$" + value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+        (value < 0 ? "\u2212$" : "$") + Math.Abs(value).ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Credit(decimal value) =>
+        value == 0m ? "\u2014" : "\u2212" + Cents(value);
 
     private static string Miles(double? value) =>
         value is null

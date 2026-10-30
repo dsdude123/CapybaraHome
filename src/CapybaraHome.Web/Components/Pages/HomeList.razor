@@ -42,9 +42,9 @@ else
                 <span class="muted">@Money(board.Current.MonthlyTotal) a month</span>
             </div>
             <p class="task-meta">@Baseline(board.Current)</p>
-            @if (board.CurrentFuel is { } fuel && fuel.AnyDriving && fuel.LowestMonthlyCost is { } monthly)
+            @if (board.CurrentDriving is { } driving && driving.AnyDriving && driving.LowestMonthlyCost is { } monthly)
             {
-                <p class="task-meta">@Money(monthly) a month in fuel, over @MilesAWeek(fuel.MilesPerWeek)</p>
+                <p class="task-meta">@Money(monthly) a month driving, over @MilesAWeek(driving.MilesPerWeek)</p>
             }
         }
     </section>
@@ -73,9 +73,9 @@ else
                             var line = scored.Score.DriveTimeLines.FirstOrDefault(d => d.DestinationId == destination.Id);
                             <span><span class="muted">@destination.Name</span> @Minutes(line?.Minutes)</span>
                         }
-                        @if (scored.Fuel.LowestMonthlyCost is { } fuel && scored.Fuel.AnyDriving)
+                        @if (scored.Driving.LowestMonthlyCost is { } driving && scored.Driving.AnyDriving)
                         {
-                            <span><span class="muted">Fuel a month</span> @Money(fuel)</span>
+                            <span><span class="muted">Driving a month</span> @Money(driving)</span>
                         }
                         <span>
                             <span class="muted">Priorities</span>
@@ -108,7 +108,9 @@ else
     // The container has no locale, so a currency format renders the generic sign rather than a
     // dollar one; the weights are labelled per dollar, so the sign is written out here.
     private static string Money(decimal? value) =>
-        value is null ? "\u2014" : "$" + value.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        value is null
+            ? "\u2014"
+            : (value < 0 ? "\u2212$" : "$") + Math.Abs(value.Value).ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string Points(decimal value) =>
         (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);

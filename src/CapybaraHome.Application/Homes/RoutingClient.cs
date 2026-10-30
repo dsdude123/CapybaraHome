@@ -16,7 +16,8 @@ public record GeocodedPlace(string Label, double Latitude, double Longitude);
 /// <summary>How long a drive takes and how far it is.</summary>
 /// <param name="Minutes">The drive in minutes.</param>
 /// <param name="Miles">The drive in miles.</param>
-public record MeasuredDrive(double Minutes, double Miles);
+/// <param name="TolledRoads">Names of the roads on the route that are tolled, in route order.</param>
+public record MeasuredDrive(double Minutes, double Miles, IReadOnlyList<string> TolledRoads);
 
 /// <summary>
 /// Places addresses and measures drives through OpenRouteService. The hosted service at
@@ -92,6 +93,7 @@ public class RoutingClient(HttpClient http, HomeSearchService search)
                 new[] { fromLongitude, fromLatitude },
                 new[] { toLongitude, toLatitude },
             },
+            extra_info = new[] { "tollways" },
         };
 
         using var document = await ReadAsync(
@@ -113,7 +115,79 @@ public class RoutingClient(HttpClient http, HomeSearchService search)
             return null;
         }
 
-        return new MeasuredDrive(duration.GetDouble() / 60d, distance.GetDouble() / MetresPerMile);
+        return new MeasuredDrive(
+            duration.GetDouble() / 60d,
+            distance.GetDouble() / MetresPerMile,
+            TolledRoads(routes[0]));
+    }
+
+    /// <summary>
+    /// Names the roads of a route that run over a tolled stretch. The service marks the tolled
+    /// stretches as ranges of the route's points and names the roads only in the turn-by-turn
+    /// steps, which cover ranges of the same points, so a step whose range overlaps a tolled one
+    /// is a tolled road.
+    /// </summary>
+    private static IReadOnlyList<string> TolledRoads(JsonElement route)
+    {
+        var tolled = new List<(int From, int To)>();
+
+        if (route.TryGetProperty("extras", out var extras)
+            && extras.TryGetProperty("tollways", out var tollways)
+            && tollways.TryGetProperty("values", out var values)
+            && values.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var value in values.EnumerateArray())
+            {
+                if (value.ValueKind == JsonValueKind.Array
+                    && value.GetArrayLength() == 3
+                    && value[2].GetInt32() != 0)
+                {
+                    tolled.Add((value[0].GetInt32(), value[1].GetInt32()));
+                }
+            }
+        }
+
+        var names = new List<string>();
+        if (tolled.Count == 0 || !route.TryGetProperty("segments", out var segments))
+        {
+            return names;
+        }
+
+        foreach (var segment in segments.EnumerateArray())
+        {
+            if (!segment.TryGetProperty("steps", out var steps))
+            {
+                continue;
+            }
+
+            foreach (var step in steps.EnumerateArray())
+            {
+                if (!step.TryGetProperty("way_points", out var points)
+                    || points.GetArrayLength() != 2
+                    || !step.TryGetProperty("name", out var nameNode))
+                {
+                    continue;
+                }
+
+                var name = nameNode.GetString()?.Trim();
+
+                // The service writes "-" for a road it has no name for.
+                if (string.IsNullOrEmpty(name) || name == "-" || names.Contains(name))
+                {
+                    continue;
+                }
+
+                var from = points[0].GetInt32();
+                var to = points[1].GetInt32();
+
+                if (tolled.Any(range => from < range.To && range.From < to))
+                {
+                    names.Add(name);
+                }
+            }
+        }
+
+        return names;
     }
 
     private async Task<(string BaseUrl, string? Key)> ConnectionAsync(CancellationToken cancellationToken)

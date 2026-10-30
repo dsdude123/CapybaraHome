@@ -370,7 +370,7 @@ public static class ApiEndpoints
             }
 
             return await service.SetDriveTimeAsync(
-                id, destinationId, request.Minutes.Value, request.Miles, DriveTimeSource.Manual, cancellationToken)
+                id, destinationId, request.Minutes.Value, request.Miles, DriveTimeSource.Manual, request.TolledRoads, cancellationToken)
                     ? Results.NoContent()
                     : Results.NotFound();
         });
@@ -462,6 +462,39 @@ public static class ApiEndpoints
 
         search.MapDelete("/priorities/{id:int}", async (int id, HomeSearchService service, CancellationToken cancellationToken) =>
             await service.DeletePriorityAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        search.MapGet("/toll-roads", async (HomeSearchService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListTollRoadsAsync(cancellationToken)));
+
+        search.MapPost("/toll-roads", async (TollRoadRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateTollRoadAsync(request, cancellationToken);
+                return Results.Created($"/api/home-search/toll-roads/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapPut("/toll-roads/{id:int}", async (int id, TollRoadRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateTollRoadAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapDelete("/toll-roads/{id:int}", async (int id, HomeSearchService service, CancellationToken cancellationToken) =>
+            await service.DeleteTollRoadAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
 
         search.MapGet("/vehicles", async (HomeSearchService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.ListVehiclesAsync(cancellationToken)));

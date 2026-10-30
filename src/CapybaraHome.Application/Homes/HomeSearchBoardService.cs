@@ -3,8 +3,8 @@ namespace CapybaraHome.Application.Homes;
 /// <summary>A property with the score it earned.</summary>
 /// <param name="Property">The property.</param>
 /// <param name="Score">Its score, broken down.</param>
-/// <param name="Fuel">What the usual week's driving from it costs in fuel.</param>
-public record ScoredProperty(PropertyView Property, PropertyScore Score, PropertyFuelCost Fuel);
+/// <param name="Driving">What the usual week's driving from it costs.</param>
+public record ScoredProperty(PropertyView Property, PropertyScore Score, PropertyDrivingCost Driving);
 
 /// <summary>
 /// Everything a screen needs to show the search at once: the home lived in now, the candidates in
@@ -16,7 +16,8 @@ public record ScoredProperty(PropertyView Property, PropertyScore Score, Propert
 /// <param name="Destinations">The destinations drives are measured to.</param>
 /// <param name="Priorities">What a home has to do.</param>
 /// <param name="Vehicles">The cars the drives are made in.</param>
-/// <param name="CurrentFuel">What the current home's driving costs, or null when none is marked.</param>
+/// <param name="TollRoads">The toll roads and what each crossing costs.</param>
+/// <param name="CurrentDriving">What the current home's driving costs, or null when none is marked.</param>
 /// <param name="Settings">The weights the scores were worked out under.</param>
 public record HomeSearchBoard(
     PropertyView? Current,
@@ -25,7 +26,8 @@ public record HomeSearchBoard(
     IReadOnlyList<SearchDestinationView> Destinations,
     IReadOnlyList<SearchPriorityView> Priorities,
     IReadOnlyList<VehicleView> Vehicles,
-    PropertyFuelCost? CurrentFuel,
+    IReadOnlyList<TollRoadView> TollRoads,
+    PropertyDrivingCost? CurrentDriving,
     HomeSearchSettingsView Settings);
 
 /// <summary>Puts the properties, the setup and the scores together.</summary>
@@ -38,6 +40,7 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
         var destinations = await search.ListDestinationsAsync(cancellationToken);
         var priorities = await search.ListPrioritiesAsync(cancellationToken);
         var vehicles = await search.ListVehiclesAsync(cancellationToken);
+        var tollRoads = await search.ListTollRoadsAsync(cancellationToken);
         var settings = await search.GetSettingsAsync(cancellationToken);
 
         var current = all.FirstOrDefault(p => p.IsCurrent);
@@ -47,7 +50,7 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
             .Select(p => new ScoredProperty(
                 p,
                 PropertyScorer.Score(p, current, destinations, settings),
-                FuelCostCalculator.Cost(p, destinations, vehicles)))
+                DrivingCostCalculator.Cost(p, destinations, vehicles, tollRoads)))
             .OrderByDescending(scored => scored.Score.Total)
             .ThenBy(scored => scored.Property.Name)
             .ToList();
@@ -56,12 +59,12 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
             ? null
             : PropertyScorer.Score(current, current, destinations, settings);
 
-        var currentFuel = current is null
+        var currentDriving = current is null
             ? null
-            : FuelCostCalculator.Cost(current, destinations, vehicles);
+            : DrivingCostCalculator.Cost(current, destinations, vehicles, tollRoads);
 
         return new HomeSearchBoard(
-            current, candidates, currentScore, destinations, priorities, vehicles, currentFuel, settings);
+            current, candidates, currentScore, destinations, priorities, vehicles, tollRoads, currentDriving, settings);
     }
 
     /// <summary>Returns one property with its score, or null when no property has that id.</summary>
@@ -76,11 +79,12 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
         var current = await properties.GetCurrentAsync(cancellationToken);
         var destinations = await search.ListDestinationsAsync(cancellationToken);
         var vehicles = await search.ListVehiclesAsync(cancellationToken);
+        var tollRoads = await search.ListTollRoadsAsync(cancellationToken);
         var settings = await search.GetSettingsAsync(cancellationToken);
 
         return new ScoredProperty(
             property,
             PropertyScorer.Score(property, current, destinations, settings),
-            FuelCostCalculator.Cost(property, destinations, vehicles));
+            DrivingCostCalculator.Cost(property, destinations, vehicles, tollRoads));
     }
 }
