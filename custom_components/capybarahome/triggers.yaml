@@ -1,0 +1,7 @@
+task_completed:
+  fields:
+    category:
+      required: false
+      selector:
+        text:
+          multiple: true

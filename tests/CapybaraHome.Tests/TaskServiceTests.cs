@@ -286,4 +286,40 @@ public class TaskServiceTests
         Assert.Equal(4, await service.CountAsync(new TaskFilter(Statuses: [])));
         Assert.Equal(1, await service.CountAsync(new TaskFilter(Statuses: [TaskItemStatus.OnHold, TaskItemStatus.OnHold])));
     }
+
+    [Fact]
+    public async Task A_completed_since_filter_keeps_only_what_finished_after_that_moment()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+        var early = await service.CreateAsync(new CreateTaskRequest("Early"));
+        var late = await service.CreateAsync(new CreateTaskRequest("Late"));
+        await service.CreateAsync(new CreateTaskRequest("Still open"));
+
+        await service.UpdateAsync(early.Id, new UpdateTaskRequest(Status: TaskItemStatus.Done));
+        var between = db.Clock.GetUtcNow();
+        db.Clock.Advance(TimeSpan.FromMinutes(5));
+        await service.UpdateAsync(late.Id, new UpdateTaskRequest(Status: TaskItemStatus.Done));
+
+        Assert.Equal(["Late"], (await service.ListAsync(new TaskFilter(CompletedSince: between))).Select(t => t.Title));
+        Assert.Equal(1, await service.CountAsync(new TaskFilter(CompletedSince: between)));
+        Assert.Equal(2, await service.CountAsync(new TaskFilter(CompletedSince: between.AddMinutes(-1))));
+        Assert.Equal(0, await service.CountAsync(new TaskFilter(CompletedSince: db.Clock.GetUtcNow())));
+    }
+
+    [Fact]
+    public async Task Reopening_a_task_takes_it_back_out_of_a_completed_since_listing()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new TaskService(db.Context, db.Clock);
+        var since = db.Clock.GetUtcNow();
+        var task = await service.CreateAsync(new CreateTaskRequest("Rake the leaves"));
+        db.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        await service.UpdateAsync(task.Id, new UpdateTaskRequest(Status: TaskItemStatus.Done));
+        Assert.Equal(1, await service.CountAsync(new TaskFilter(CompletedSince: since)));
+
+        await service.UpdateAsync(task.Id, new UpdateTaskRequest(Status: TaskItemStatus.ToDo));
+        Assert.Equal(0, await service.CountAsync(new TaskFilter(CompletedSince: since)));
+    }
 }

@@ -7,3 +7,4 @@ docs/
 *.db-shm
 *.db-wal
 backups/
+custom_components/

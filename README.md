@@ -140,6 +140,17 @@ stored, so the secret is shown once and cannot be recovered. The same token work
 the REST API under `/api`. A token is how the connector signs in; it does not use the sign-in
 cookie and is not affected by an authenticator.
 
+## Home Assistant
+
+A HACS-installable custom integration lives in
+[`custom_components/capybarahome`](custom_components/capybarahome/README.md). It adds a
+`capybarahome.create_task` action and a `capybarahome.task_completed` trigger, and signs in
+with the same API tokens as the connector. Add this repository to HACS as a custom
+repository of type Integration to install it.
+
+The trigger is a poll: the integration asks once a minute for the tasks completed since its
+last question, which is what `GET /api/tasks?completedSince=` answers.
+
 ## Export, import and backups
 
 - `GET /api/export` downloads the whole database as one JSON document. Settings has the same

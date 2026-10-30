@@ -102,6 +102,30 @@ public class WebAppTests
     }
 
     [Fact]
+    public async Task A_listing_can_be_narrowed_to_what_was_completed_after_a_moment()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var created = await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Defrost the freezer"));
+        var task = await created.Content.ReadFromJsonAsync<TaskView>(Json);
+        await client.PostAsJsonAsync("/api/tasks", new CreateTaskRequest("Still open"));
+
+        var before = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var done = await client.PatchAsJsonAsync($"/api/tasks/{task!.Id}", new UpdateTaskRequest(Status: TaskItemStatus.Done), Json);
+        Assert.Equal(HttpStatusCode.OK, done.StatusCode);
+
+        var after = await client.GetFromJsonAsync<List<TaskView>>(Since(before), Json);
+        Assert.Equal(["Defrost the freezer"], after!.Select(t => t.Title));
+
+        var none = await client.GetFromJsonAsync<List<TaskView>>(Since(DateTimeOffset.UtcNow.AddMinutes(1)), Json);
+        Assert.Empty(none!);
+
+        static string Since(DateTimeOffset moment) =>
+            "/api/tasks?completedSince=" + Uri.EscapeDataString(moment.ToUniversalTime().ToString("O"));
+    }
+
+    [Fact]
     public async Task Statuses_travel_as_names()
     {
         await using var app = await AppFactory.CreateAsync();

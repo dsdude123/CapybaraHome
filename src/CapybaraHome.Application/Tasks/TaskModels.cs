@@ -36,6 +36,7 @@ public record TaskView(
 /// <param name="Overdue">When true, keep only tasks due before today and not done.</param>
 /// <param name="Limit">Maximum number of tasks to return.</param>
 /// <param name="Skip">Number of matching tasks to pass over before the first one returned.</param>
+/// <param name="CompletedSince">Keep only tasks completed strictly after this moment.</param>
 public record TaskFilter(
     string? Text = null,
     IReadOnlyCollection<TaskItemStatus>? Statuses = null,
@@ -44,7 +45,8 @@ public record TaskFilter(
     int? DueWithinDays = null,
     bool Overdue = false,
     int? Limit = null,
-    int Skip = 0);
+    int Skip = 0,
+    DateTimeOffset? CompletedSince = null);
 
 /// <summary>The orders a task listing can be read in. A task with no due date always sorts last.</summary>
 public enum TaskSort
