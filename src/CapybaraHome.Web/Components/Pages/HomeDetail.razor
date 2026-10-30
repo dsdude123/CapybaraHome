@@ -246,15 +246,7 @@ else
                                    value="@Typed(held?.Miles)" />
                         </div>
                     </div>
-                    @foreach (var toll in tollRoads)
-                    {
-                        <label class="row">
-                            <input type="checkbox" name="toll-@destination.Id" value="@toll.Id"
-                                   checked="@(held?.TolledRoads.Any(toll.Prices) == true)" style="width:auto;min-height:auto" />
-                            Crosses @toll.Road
-                        </label>
-                    }
-                    @if (held is { TolledRoads.Count: > 0 } && held.Source == DriveTimeSource.Measured)
+                    @if (held is { TolledRoads.Count: > 0 })
                     {
                         <p class="task-meta">Tolled roads on the route: @string.Join(", ", held.TolledRoads)</p>
                     }
@@ -525,7 +517,6 @@ else
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
     private PropertyDrivingCost? driving;
-    private IReadOnlyList<TollRoadView> tollRoads = [];
     private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private decimal priorityPoints;
     private List<string> problems = [];
@@ -555,7 +546,6 @@ else
         destinations = await Search.ListDestinationsAsync();
         priorities = await Search.ListPrioritiesAsync();
         vehicles = await Search.ListVehiclesAsync();
-        tollRoads = await Search.ListTollRoadsAsync();
         settings = await Search.GetSettingsAsync();
         priorityPoints = priorities.Sum(p => Math.Abs(p.Points));
     }
@@ -594,8 +584,11 @@ else
                     ? typed
                     : (double?)null;
 
+                // Tolls come only from a measured route, so retyping the time keeps the ones it found.
+                var tolled = property!.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id)?.TolledRoads;
+
                 await Properties.SetDriveTimeAsync(
-                    Id, destination.Id, minutes, miles, DriveTimeSource.Manual, Tolled(destination.Id));
+                    Id, destination.Id, minutes, miles, DriveTimeSource.Manual, tolled);
             }
             else
             {
@@ -604,22 +597,6 @@ else
         }
 
         await LoadAsync();
-    }
-
-    // The ticked toll roads, plus any tolled road the route reported that no toll road prices, which
-    // has no box to tick and would otherwise be lost by saving the times.
-    private List<string> Tolled(int destinationId)
-    {
-        var ticked = HttpContext!.Request.Form[$"toll-{destinationId}"]
-            .Select(posted => int.TryParse(posted, out var id) ? tollRoads.FirstOrDefault(t => t.Id == id) : null)
-            .OfType<TollRoadView>()
-            .Select(t => t.Road);
-
-        var unpriced = property!.DriveTimes
-            .FirstOrDefault(d => d.DestinationId == destinationId)?.TolledRoads
-            .Where(road => !tollRoads.Any(t => t.Prices(road))) ?? [];
-
-        return [.. unpriced, .. ticked];
     }
 
     private async Task MeasureAsync()

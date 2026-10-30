@@ -764,7 +764,7 @@ public class HomeSearchPagesTests
     }
 
     [Fact]
-    public async Task A_toll_ticked_on_a_typed_in_drive_is_charged_each_way_and_the_credit_comes_off()
+    public async Task A_toll_on_the_route_is_charged_each_way_and_the_credit_comes_off()
     {
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
@@ -772,35 +772,25 @@ public class HomeSearchPagesTests
         var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
         var work = await DestinationAsync(app, "Work", trips: 3, carpool: 5m);
         await VehicleAsync(app, "The hatchback", 30d, 4.50m);
-        var toll = await TollRoadAsync(app, "520", 4.50m);
+        await TollRoadAsync(app, "520", 4.50m);
         await TollRoadAsync(app, "99", 2.25m);
 
-        var page = await client.GetStringAsync($"/homes/{property.Id}");
-        Assert.Contains("Crosses 520", page);
-        Assert.Contains("Crosses 99", page);
-
-        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
-        [
-            new($"drive-{work.Id}", "20"),
-            new($"miles-{work.Id}", "10"),
-            new($"toll-{work.Id}", toll.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-        ]);
-
-        Assert.Equal(["520"], (await ReadAsync(app, property.Id)).DriveTimes.Single().TolledRoads);
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"]);
+        }
 
         var html = System.Net.WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+
+        // No box to tick: the tolls come from the route.
+        Assert.DoesNotContain("Crosses", html);
 
         // $9 of fuel and $27 of tolls, less three days of $5 credit.
         Assert.Contains("$27.00", html);
         Assert.Contains("\u2212$15.00", html);
         Assert.Contains("$21.00", html);
         Assert.Contains("$91.00", html);
-
-        // Saving with the box unticked takes the toll back off.
-        await PostAsync(client, $"/homes/{property.Id}", "property-drives",
-            new() { [$"drive-{work.Id}"] = "20", [$"miles-{work.Id}"] = "10" });
-
-        Assert.Empty((await ReadAsync(app, property.Id)).DriveTimes.Single().TolledRoads);
     }
 
     [Fact]
@@ -841,7 +831,7 @@ public class HomeSearchPagesTests
 
         var property = await CreateAsync(app, new CreatePropertyRequest("Driven", Address: "1221 1st Ave"));
         await DestinationAsync(app, "Work", address: "400 Broad St", trips: 3);
-        var toll = await TollRoadAsync(app, "99", 2.25m);
+        await TollRoadAsync(app, "99", 2.25m);
 
         await PostAsync(client, $"/homes/{property.Id}", "property-measure", []);
 
@@ -855,16 +845,12 @@ public class HomeSearchPagesTests
         Assert.Contains("Evergreen Point Floating Bridge.", html);
         Assert.Contains("$13.50", html);
 
-        // Saving the times by hand keeps the unpriced road, which has no box to tick.
-        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
-        [
-            new($"drive-{drive.DestinationId}", "20"),
-            new($"miles-{drive.DestinationId}", "10"),
-            new($"toll-{drive.DestinationId}", toll.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-        ]);
+        // Retyping the time by hand keeps the tolled roads the route found.
+        await PostAsync(client, $"/homes/{property.Id}", "property-drives",
+            new() { [$"drive-{drive.DestinationId}"] = "22", [$"miles-{drive.DestinationId}"] = "10" });
 
         Assert.Equal(
-            ["Evergreen Point Floating Bridge", "99"],
+            ["SR 99 Tunnel", "Evergreen Point Floating Bridge"],
             (await ReadAsync(app, property.Id)).DriveTimes.Single().TolledRoads);
     }
 

@@ -122,8 +122,8 @@ typed in beside the minutes. A measured route also names the tolled roads it use
 OpenRouteService marks from OpenStreetMap's toll tags without a price. A toll road under
 settings prices every tolled road whose name contains what you type, so `520` covers the
 SR 520 bridge, and each crossing is charged its peak toll in both directions. A tolled road
-the route used that nothing prices yet is named on the property's page; a drive typed in by
-hand has a box to tick for each toll road. Driving cost is shown, not scored — it is not part
+the route used that nothing prices yet is named on the property's page. Tolls come only from
+a measured route, so a drive typed in by hand carries none. Driving cost is shown, not scored — it is not part
 of the points.
 
 Pictures are kept as files rather than in the database, so an export stays a readable
