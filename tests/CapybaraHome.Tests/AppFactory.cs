@@ -1,5 +1,7 @@
+using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using CapybaraHome.Application.Reports;
 using CapybaraHome.Application.Users;
 using CapybaraHome.Web.Auth;
 using Microsoft.AspNetCore.Authentication;
@@ -72,6 +74,16 @@ public class AppFactory : WebApplicationFactory<Program>
         builder.UseSetting("ConnectionStrings:CapybaraHome", $"Data Source={databasePath}");
         builder.UseSetting("Backups:Enabled", "false");
 
+        // The report reads the open web. Here every one of its sources answers from inside the
+        // process, so a test is neither slow nor at the mercy of a news site, and a test that
+        // wants real answers registers its own handler afterwards.
+        builder.ConfigureServices(services =>
+        {
+            services.AddHttpClient<WeatherFeed>().ConfigurePrimaryHttpMessageHandler(() => new OfflineHandler());
+            services.AddHttpClient<CalendarFeed>().ConfigurePrimaryHttpMessageHandler(() => new OfflineHandler());
+            services.AddHttpClient<NewsFeed>().ConfigurePrimaryHttpMessageHandler(() => new OfflineHandler());
+        });
+
         if (configureServices is not null)
         {
             builder.ConfigureServices(configureServices);
@@ -114,6 +126,13 @@ public class AppFactory : WebApplicationFactory<Program>
                 File.Delete(path);
             }
         }
+    }
+
+    /// <summary>Refuses every request, so nothing a test runs reaches the network.</summary>
+    private sealed class OfflineHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
     }
 
     /// <summary>Signs every request in as the first account, so the pages under test can render.</summary>

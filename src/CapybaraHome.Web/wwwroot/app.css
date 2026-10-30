@@ -302,6 +302,17 @@ textarea {
     }
 }
 
+.due-today {
+    color: #a8641b;
+    font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+    .due-today {
+        color: #f5c08a;
+    }
+}
+
 .pill {
     background: var(--surface-sunken);
     border-radius: 999px;

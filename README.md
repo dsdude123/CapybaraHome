@@ -74,6 +74,13 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   executions, and an automation can skip its run while a task with the same title is still
   open. Times are the server's own clock, so in a container they follow `TZ`. A run missed
   while the app was down happens once when it is back.
+- **Morning report** (`/report`) — one page of the day: the forecast, the tasks due within a
+  week, what is planned to eat, the next thirty days of your calendars, the holidays, today's
+  fixtures and the headlines. **Download PDF** is exactly the sheet that is printed, and
+  **Print now** sends it to the printer straight away. **Report settings**
+  (`/report/settings`) turns the daily printing on and off, sets the time of day, names the
+  printer, the forecast service and the calendars to read, and keeps the task table to the
+  categories you tick.
 - **Grocery list** (`/grocery`) — the open shopping list. It stays open until you start a
   fresh one yourself, so something thought of mid-week has somewhere to go. **Generate**
   (`/grocery/generate`) asks about each frequent item and each ingredient of the planned
@@ -158,6 +165,30 @@ Backups__Destination=/data/backups
 Backups__Interval=24:00:00
 Backups__Keep=14
 ```
+
+## The morning report
+
+The report is built from this app's own tasks and meals, plus a forecast service, the
+calendar feeds you name, a local news page and a national wire. A source that cannot be read
+costs the report its own section and nothing else. It is laid out as a Letter-size PDF and
+sent to a printer over IPP.
+
+Nothing about it is configured on the host. A new installation has the schedule off and
+nothing filled in: `/report/settings` is where you turn the daily printing on and set the
+time of day, the printer's host, port, queue and whether it uses both sides of the paper, the
+forecast address, the calendars, and the categories the task table is kept to. Ticking no
+category carries every category, including any added later.
+
+A calendar is read as one of three kinds: **Upcoming events** are listed with their dates and
+places for the next 30 days, **Holidays** by name and date over the same window, and
+**Today only** entries under a heading of the calendar's name. A calendar can be switched off
+without being deleted.
+
+The time of day is the server's own clock, so in a container it follows `TZ`, and a morning
+the app was down for is missed rather than printed late. The page and the download are there
+whether or not the schedule is on; with no printer host nothing is printed at all. The
+forecast service is the one that answers with `period1Name` through `period4WindDirection`;
+with no address set the report leaves the weather out.
 
 ## Docker
 
