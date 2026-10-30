@@ -5,6 +5,7 @@ using CapybaraHome.Application.DataTransfer;
 using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
+using CapybaraHome.Application.Reports;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +35,8 @@ public static class DependencyInjection
         services.AddScoped<UserService>();
         services.AddScoped<ApiTokenService>();
         services.AddScoped<DataTransferService>();
+        services.AddScoped<DailyReportService>();
+        services.AddScoped<DailyReportSettingsService>();
         services.AddScoped<BackupWriter>();
         services.AddScoped<JiraImportService>();
         services.AddScoped<JiraMealImportService>();
@@ -45,6 +48,13 @@ public static class DependencyInjection
         // A route is one short call, and a page waits on one per destination, so the routing
         // service gets a short leash rather than the default minute.
         services.AddHttpClient<RoutingClient>(client => client.Timeout = TimeSpan.FromSeconds(20));
+
+        // The report's sources are read one after the other every morning, so each one is given
+        // the same short patience the script this was ported from had: none of them is worth
+        // holding the report up for.
+        services.AddHttpClient<WeatherFeed>(client => client.Timeout = TimeSpan.FromSeconds(10));
+        services.AddHttpClient<CalendarFeed>(client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<NewsFeed>(client => client.Timeout = TimeSpan.FromSeconds(15));
 
         return services;
     }

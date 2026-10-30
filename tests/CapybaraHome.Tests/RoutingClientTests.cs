@@ -72,8 +72,9 @@ public class RoutingClientTests
         Assert.Equal(HttpMethod.Post, http.Requests[0].Method);
         Assert.Contains("v2/directions/driving-car", http.Requests[0].RequestUri!.ToString());
 
-        Assert.Contains("[-122.3,47.6]", http.Bodies[0]);
-        Assert.Contains("\"extra_info\":[\"tollways\"]", http.Bodies[0]);
+        var body = System.Text.Encoding.UTF8.GetString(http.Bodies[0]);
+        Assert.Contains("[-122.3,47.6]", body);
+        Assert.Contains("\"extra_info\":[\"tollways\"]", body);
         Assert.Empty(drive.TolledRoads);
     }
 

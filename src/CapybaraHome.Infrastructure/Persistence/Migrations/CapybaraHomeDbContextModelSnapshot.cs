@@ -762,6 +762,92 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("MealVariantRemovals");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Reports.DailyReportSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("LastRunAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastRunError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("PrintBothSides")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PrinterHost")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PrinterPort")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PrinterQueue")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<TimeOnly>("TimeOfDay")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WeatherUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DailyReportSettings");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Reports.ReportCalendar", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind", "SortOrder");
+
+                    b.ToTable("ReportCalendars");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Reports.ReportCategory", b =>
+                {
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("CategoryId");
+
+                    b.ToTable("ReportCategories");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.Category", b =>
                 {
                     b.Property<int>("Id")
@@ -1184,6 +1270,17 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Ingredient");
 
                     b.Navigation("Variant");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Reports.ReportCategory", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Tasks.Category", "Category")
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Category");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskAutomation", b =>

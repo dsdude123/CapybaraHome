@@ -3,6 +3,7 @@ using CapybaraHome.Application;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.DataTransfer;
 using CapybaraHome.Application.Homes;
+using CapybaraHome.Application.Reports;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
 using CapybaraHome.Infrastructure;
@@ -12,6 +13,7 @@ using CapybaraHome.Web.Components;
 using CapybaraHome.Web.Endpoints;
 using CapybaraHome.Web.Jira;
 using CapybaraHome.Web.Mcp;
+using CapybaraHome.Web.Reports;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,6 +36,10 @@ builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(Backu
 builder.Services.Configure<PropertyPhotoOptions>(builder.Configuration.GetSection(PropertyPhotoOptions.SectionName));
 builder.Services.AddHostedService<ScheduledBackupService>();
 builder.Services.AddHostedService<TaskAutomationRunner>();
+
+builder.Services.AddScoped<DailyReportPrinting>();
+builder.Services.AddHttpClient<IppPrinter>(client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHostedService<DailyReportRunner>();
 
 // The wizard's pages render statically, so what step one learned is held here between posts.
 builder.Services.AddSingleton<JiraWizardStore>();
@@ -92,6 +98,7 @@ app.MapRazorComponents<App>()
 app.MapApi();
 app.MapSettings();
 app.MapHomeSearch();
+app.MapReport();
 app.MapMcp("/mcp").RequireAuthorization(AuthenticationSetup.ApiPolicyName);
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();

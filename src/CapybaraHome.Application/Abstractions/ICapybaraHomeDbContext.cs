@@ -2,6 +2,7 @@ using CapybaraHome.Domain.Dashboards;
 using CapybaraHome.Domain.Homes;
 using CapybaraHome.Domain.Grocery;
 using CapybaraHome.Domain.Meals;
+using CapybaraHome.Domain.Reports;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Domain.Users;
 using Microsoft.EntityFrameworkCore;
@@ -79,6 +80,15 @@ public interface ICapybaraHomeDbContext
 
     /// <summary>The scoring weights and the routing service the search uses.</summary>
     DbSet<HomeSearchSettings> HomeSearchSettings { get; }
+
+    /// <summary>The one row that says how the morning report is built and printed.</summary>
+    DbSet<DailyReportSettings> DailyReportSettings { get; }
+
+    /// <summary>Calendar feeds the morning report reads.</summary>
+    DbSet<ReportCalendar> ReportCalendars { get; }
+
+    /// <summary>Categories the morning report's task table is kept to.</summary>
+    DbSet<ReportCategory> ReportCategories { get; }
 
     /// <summary>How many of the planned meals are meant to be shared ones.</summary>
     DbSet<MealPlanSharedTarget> MealPlanSharedTargets { get; }
