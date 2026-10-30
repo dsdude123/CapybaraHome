@@ -16,6 +16,9 @@ public interface ICapybaraHomeDbContext
     /// <summary>Tasks.</summary>
     DbSet<TaskItem> Tasks { get; }
 
+    /// <summary>Rules that create tasks on a timer.</summary>
+    DbSet<TaskAutomation> TaskAutomations { get; }
+
     /// <summary>Meals.</summary>
     DbSet<Meal> Meals { get; }
 
@@ -36,6 +39,9 @@ public interface ICapybaraHomeDbContext
 
     /// <summary>How many meals each slot aims for.</summary>
     DbSet<MealPlanTarget> MealPlanTargets { get; }
+
+    /// <summary>How many of the planned meals are meant to be shared ones.</summary>
+    DbSet<MealPlanSharedTarget> MealPlanSharedTargets { get; }
 
     /// <summary>Shopping lists.</summary>
     DbSet<GroceryList> GroceryLists { get; }

@@ -1,0 +1,38 @@
+@* What a variant changes about its meal, spelled out so the variant does not have to be opened. *@
+
+<div class="task-meta variant-changes">
+    <span>@string.Join(" \u00b7 ", Parts())</span>
+</div>
+
+@code {
+    /// <summary>The meal the variant belongs to, which names the ingredients it leaves out.</summary>
+    [Parameter, EditorRequired]
+    public MealView Meal { get; set; } = default!;
+
+    /// <summary>The variant being described.</summary>
+    [Parameter, EditorRequired]
+    public MealVariantView Variant { get; set; } = default!;
+
+    /// <summary>What the variant changes, one phrase each, or a single phrase when it changes nothing.</summary>
+    private List<string> Parts()
+    {
+        var parts = new List<string>();
+
+        if (Variant.AddedIngredients.Count > 0)
+        {
+            parts.Add("Adds " + string.Join(", ", Variant.AddedIngredients.Select(MealVariants.Line)));
+        }
+
+        if (MealVariants.Removed(Meal, Variant) is { Count: > 0 } removed)
+        {
+            parts.Add("Leaves out " + string.Join(", ", removed.Select(MealVariants.Line)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(Variant.DirectionsModifications))
+        {
+            parts.Add("Changes the directions");
+        }
+
+        return parts.Count > 0 ? parts : ["Changes nothing yet"];
+    }
+}

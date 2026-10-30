@@ -208,35 +208,24 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
     }
 
     /// <summary>
-    /// Returns what the planning screens can choose from: every matching meal, and every variant
-    /// of those meals as a row of its own, since a variant is picked the same way a meal is.
-    /// The filter's limit counts rows, variants included, not meals.
+    /// Returns what the planning screens offer: one row per matching meal, never a row for a
+    /// variant. A meal with variants is planned by choosing one on the chooser screen, so a
+    /// variant of its own here would only repeat the meal under another name.
     /// </summary>
+    /// <param name="filter">Which meals to offer.</param>
+    /// <param name="sort">The order to read them in.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
     public async Task<IReadOnlyList<MealPlanOption>> ListOptionsAsync(
         MealFilter filter,
         MealSort sort = MealSort.LastCooked,
         CancellationToken cancellationToken = default)
     {
         var meals = await ListAsync(filter, sort, cancellationToken);
-        var options = new List<MealPlanOption>();
 
-        foreach (var meal in meals)
-        {
-            options.Add(new MealPlanOption(
-                meal.Id, null, meal.Name, meal.Status, meal.LastCookedAt, meal.Tags, meal.Variants.Count > 0));
-
-            options.AddRange(meal.Variants.Select(variant => new MealPlanOption(
-                meal.Id, variant.Id, $"{meal.Name} ({variant.Name})", meal.Status, meal.LastCookedAt, meal.Tags, true)));
-
-            // Expanding the meals can only add rows, so a meal query already cut to the limit
-            // holds enough of them; what it can do is overshoot, which is cut here.
-            if (filter.Limit is { } limit && options.Count >= limit)
-            {
-                return options.GetRange(0, limit);
-            }
-        }
-
-        return options;
+        return meals
+            .Select(meal => new MealPlanOption(
+                meal.Id, meal.Name, meal.Status, meal.LastCookedAt, meal.Tags, meal.Variants.Count > 0))
+            .ToList();
     }
 
     /// <summary>Returns the stored target for each slot, leaving out the slots nothing was stored for.</summary>
@@ -246,15 +235,59 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
             .ToDictionaryAsync(target => target.Slot, target => target.Count, cancellationToken);
     }
 
+    /// <summary>Returns the stored shared target, or null when nothing has been stored.</summary>
+    public async Task<int?> GetSharedTargetAsync(CancellationToken cancellationToken = default)
+    {
+        var stored = await context.MealPlanSharedTargets.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return stored?.Count;
+    }
+
     /// <summary>
     /// Stores how many meals each slot aims for, so the planning page opens on the last numbers
     /// used rather than the defaults. A slot left out of <paramref name="targets"/> goes back to
-    /// the default, since its row is removed.
+    /// the default, since its row is removed, and a null <paramref name="sharedTarget"/> does the
+    /// same for the shared count.
     /// </summary>
+    /// <param name="targets">How many meals each slot aims for.</param>
+    /// <param name="sharedTarget">How many of those are meant to be shared, or null for the default.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The shared target is more than the slot targets add up to: a shared meal is one of the
+    /// planned meals, so there cannot be more of them than there are meals planned for.
+    /// </exception>
     public async Task SaveTargetsAsync(
         IReadOnlyDictionary<MealSlot, int> targets,
+        int? sharedTarget = null,
         CancellationToken cancellationToken = default)
     {
+        var total = targets.Values.Sum(count => Math.Max(0, count));
+
+        if (sharedTarget is { } shared && Math.Max(0, shared) > total)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sharedTarget),
+                shared,
+                $"At most {total} of the planned meals can be shared ones.");
+        }
+
+        var storedShared = await context.MealPlanSharedTargets.ToListAsync(cancellationToken);
+
+        if (sharedTarget is { } wanted)
+        {
+            if (storedShared.FirstOrDefault() is { } row)
+            {
+                row.Count = Math.Max(0, wanted);
+            }
+            else
+            {
+                context.MealPlanSharedTargets.Add(new MealPlanSharedTarget { Count = Math.Max(0, wanted) });
+            }
+        }
+        else
+        {
+            context.MealPlanSharedTargets.RemoveRange(storedShared);
+        }
+
         var stored = await context.MealPlanTargets.ToListAsync(cancellationToken);
 
         foreach (var target in stored.Where(target => !targets.ContainsKey(target.Slot)))
@@ -469,9 +502,14 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         if (!string.IsNullOrWhiteSpace(filter.Text))
         {
             var text = filter.Text.Trim();
+            // A variant is not listed in its own right, so a match inside one counts as a match
+            // on the meal: searching for what a variant adds has to find the meal that holds it.
             query = query.Where(m => EF.Functions.Like(m.Name, $"%{text}%")
                 || (m.Directions != null && EF.Functions.Like(m.Directions, $"%{text}%"))
-                || m.Ingredients.Any(i => EF.Functions.Like(i.Item, $"%{text}%")));
+                || m.Ingredients.Any(i => EF.Functions.Like(i.Item, $"%{text}%"))
+                || m.Variants.Any(v => EF.Functions.Like(v.Name, $"%{text}%")
+                    || (v.DirectionsModifications != null && EF.Functions.Like(v.DirectionsModifications, $"%{text}%"))
+                    || v.AddedIngredients.Any(i => EF.Functions.Like(i.Item, $"%{text}%"))));
         }
 
         if (filter.Statuses is { Count: > 0 } statuses)

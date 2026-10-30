@@ -1,0 +1,95 @@
+@page "/automations"
+@inject TaskAutomationService Automations
+@inject TimeProvider Clock
+
+<PageTitle>Automations</PageTitle>
+
+<div class="page-head">
+    <h1>Automations</h1>
+    <a class="btn btn-primary btn-small" href="automations/new">Create</a>
+</div>
+
+<p class="muted">
+    An automation creates a task on a timer. Execution times are the server's own clock,
+    @DateNames.ZoneLabel(Automations.Zone).
+</p>
+
+@if (automations.Count == 0)
+{
+    <p class="muted">No automations yet.</p>
+}
+else
+{
+    <div class="card">
+        <ul class="task-list">
+            @foreach (var automation in automations)
+            {
+                <li>
+                    <div class="task-line">
+                        <a class="task-link" href="@($"automations/{automation.Id}")">@automation.Title</a>
+                        <span class="pill">@IntervalNames.Label(automation.IntervalUnit, automation.IntervalCount)</span>
+                        @if (!automation.IsEnabled)
+                        {
+                            <span class="pill">Paused</span>
+                        }
+                    </div>
+                    <div class="task-meta">
+                        <span>@(automation.CategoryName ?? "Uncategorized")</span>
+                        <span>@DueLabel(automation)</span>
+                        <span>@NextLabel(automation)</span>
+                        <span>@LastLabel(automation)</span>
+                    </div>
+                </li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<TaskAutomationView> automations = [];
+
+    /// <summary>Loads every automation.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        automations = await Automations.ListAsync();
+    }
+
+    /// <summary>Returns what the line says about the due date the created tasks get.</summary>
+    private static string DueLabel(TaskAutomationView automation) => automation.DueInDays switch
+    {
+        null => "No due date",
+        0 => "Due the day it is created",
+        1 => "Due the day after it is created",
+        { } days => $"Due {days} days after it is created",
+    };
+
+    /// <summary>Returns what the line says about the automation's next execution.</summary>
+    private string NextLabel(TaskAutomationView automation)
+    {
+        if (!automation.IsEnabled)
+        {
+            return "Paused, nothing scheduled";
+        }
+
+        if (automation.NextRunAt is not { } next)
+        {
+            return "No further executions";
+        }
+
+        return next <= Clock.GetUtcNow()
+            ? "Due, runs at the next check"
+            : $"Next {DateNames.LongWithTime(next, Automations.Zone)}";
+    }
+
+    /// <summary>Returns what the line says about the automation's last execution.</summary>
+    private string LastLabel(TaskAutomationView automation)
+    {
+        if (automation.LastRunAt is not { } last)
+        {
+            return "Never run";
+        }
+
+        var when = DateNames.LongWithTime(last, Automations.Zone);
+        return automation.LastRunSkipped ? $"Last run {when}, skipped" : $"Last run {when}";
+    }
+}

@@ -21,6 +21,7 @@ public static class ApiEndpoints
         var api = app.MapGroup("/api").RequireAuthorization(AuthenticationSetup.ApiPolicyName);
 
         MapTasks(api);
+        MapAutomations(api);
         MapCategories(api);
         MapMeals(api);
         MapMealTags(api);
@@ -79,6 +80,47 @@ public static class ApiEndpoints
         });
 
         tasks.MapDelete("/{id:int}", async (int id, TaskService service, CancellationToken cancellationToken) =>
+            await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+    }
+
+    private static void MapAutomations(IEndpointRouteBuilder api)
+    {
+        var automations = api.MapGroup("/automations");
+
+        automations.MapGet("/", async (TaskAutomationService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListAsync(cancellationToken)));
+
+        automations.MapGet("/{id:int}", async (int id, TaskAutomationService service, CancellationToken cancellationToken) =>
+            await service.GetAsync(id, cancellationToken) is { } automation ? Results.Ok(automation) : Results.NotFound());
+
+        automations.MapPost("/", async (CreateTaskAutomationRequest request, TaskAutomationService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateAsync(request, cancellationToken);
+                return Results.Created($"/api/automations/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        automations.MapPatch("/{id:int}", async (int id, UpdateTaskAutomationRequest request, TaskAutomationService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        automations.MapDelete("/{id:int}", async (int id, TaskAutomationService service, CancellationToken cancellationToken) =>
             await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
     }
 

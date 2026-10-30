@@ -18,6 +18,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Tasks.</summary>
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
 
+    /// <summary>Rules that create tasks on a timer.</summary>
+    public DbSet<TaskAutomation> TaskAutomations => Set<TaskAutomation>();
+
     /// <summary>Meals.</summary>
     public DbSet<Meal> Meals => Set<Meal>();
 
@@ -32,6 +35,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
 
     /// <summary>How many meals each slot aims for.</summary>
     public DbSet<MealPlanTarget> MealPlanTargets => Set<MealPlanTarget>();
+
+    /// <summary>How many of the planned meals are meant to be shared ones.</summary>
+    public DbSet<MealPlanSharedTarget> MealPlanSharedTargets => Set<MealPlanSharedTarget>();
 
     /// <summary>Lines the variants add to their meals' ingredient lists.</summary>
     public DbSet<MealVariantIngredient> MealVariantIngredients => Set<MealVariantIngredient>();

@@ -14,6 +14,9 @@
             <NavLink class="nav-link" href="tasks">Tasks</NavLink>
         </li>
         <li>
+            <NavLink class="nav-link" href="automations">Automations</NavLink>
+        </li>
+        <li>
             <a class="nav-link @(OnMeals ? "active" : null)" href="meals">Meals</a>
         </li>
         <li>
@@ -33,7 +36,6 @@
     <div class="nav-actions">
         <AuthorizeView>
             <Authorized>
-                <a class="btn btn-primary btn-small" href="tasks/new">Create</a>
                 <form method="post" action="sign-out">
                     <AntiforgeryToken />
                     <button class="btn btn-small" type="submit">Sign out</button>
