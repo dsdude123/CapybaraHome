@@ -55,7 +55,8 @@ builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithTools<TaskTools>()
     .WithTools<MealTools>()
-    .WithTools<HomeSearchTools>();
+    .WithTools<HomeSearchTools>()
+    .WithTools<GroceryTools>();
 
 var app = builder.Build();
 

@@ -2,6 +2,7 @@ using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.Homes;
 using CapybaraHome.Application.DataTransfer;
+using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Tasks;
@@ -28,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<HomeSearchService>();
         services.AddScoped<HomeSearchBoardService>();
         services.AddScoped<DriveTimeMeasurer>();
+        services.AddScoped<GroceryService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<UserService>();
         services.AddScoped<ApiTokenService>();

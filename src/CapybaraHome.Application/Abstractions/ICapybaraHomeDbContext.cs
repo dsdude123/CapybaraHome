@@ -1,5 +1,6 @@
 using CapybaraHome.Domain.Dashboards;
 using CapybaraHome.Domain.Homes;
+using CapybaraHome.Domain.Grocery;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Domain.Users;
@@ -81,6 +82,15 @@ public interface ICapybaraHomeDbContext
 
     /// <summary>How many of the planned meals are meant to be shared ones.</summary>
     DbSet<MealPlanSharedTarget> MealPlanSharedTargets { get; }
+
+    /// <summary>Shopping lists.</summary>
+    DbSet<GroceryList> GroceryLists { get; }
+
+    /// <summary>Things to buy on the shopping lists.</summary>
+    DbSet<GroceryItem> GroceryItems { get; }
+
+    /// <summary>Items asked about every time a list is generated.</summary>
+    DbSet<FrequentGroceryItem> FrequentGroceryItems { get; }
 
     /// <summary>Dashboard cards.</summary>
     DbSet<DashboardCard> DashboardCards { get; }

@@ -1,6 +1,7 @@
 using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Domain.Dashboards;
 using CapybaraHome.Domain.Homes;
+using CapybaraHome.Domain.Grocery;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Domain.Users;
@@ -83,6 +84,15 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
 
     /// <summary>The scoring weights and the routing service the search uses.</summary>
     public DbSet<HomeSearchSettings> HomeSearchSettings => Set<HomeSearchSettings>();
+
+    /// <summary>Shopping lists.</summary>
+    public DbSet<GroceryList> GroceryLists => Set<GroceryList>();
+
+    /// <summary>Things to buy on the shopping lists.</summary>
+    public DbSet<GroceryItem> GroceryItems => Set<GroceryItem>();
+
+    /// <summary>Items asked about every time a list is generated.</summary>
+    public DbSet<FrequentGroceryItem> FrequentGroceryItems => Set<FrequentGroceryItem>();
 
     /// <summary>Cards on the shared dashboard.</summary>
     public DbSet<DashboardCard> DashboardCards => Set<DashboardCard>();

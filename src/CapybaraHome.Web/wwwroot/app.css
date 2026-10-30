@@ -654,6 +654,35 @@ code.secret {
     margin-top: 0.3rem;
 }
 
+.print-page {
+    margin: 0 auto;
+    max-width: 48rem;
+    padding: var(--content-gutter);
+}
+
+/* The grocery sheet is ticked off with a pen, so its lines carry a box instead of a bullet. */
+.grocery-print-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.grocery-print-list > li {
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.print-box {
+    border: 1px solid currentColor;
+    border-radius: 0.2rem;
+    flex: 0 0 auto;
+    height: 0.95rem;
+    margin-top: 0.3rem;
+    width: 0.95rem;
+}
+
 /* The printed sheet is the page: everything that is only there to navigate goes. */
 @media print {
     :root {
@@ -667,6 +696,7 @@ code.secret {
 
     .app-header,
     .no-print,
+    .print-hide,
     .btn,
     form {
         display: none !important;
@@ -686,6 +716,15 @@ code.secret {
     .print-sheet li,
     .print-sheet p {
         break-inside: avoid;
+    }
+
+    .grocery-print-list > li {
+        border-color: #000000;
+        break-inside: avoid;
+    }
+
+    .muted {
+        color: #000000;
     }
 
     a[href]::after {

@@ -4,7 +4,7 @@ A home task planner, replacing a personal JIRA setup. One ASP.NET Core app serve
 web UI, a REST API and an MCP endpoint over a SQLite file, so the same data is reachable
 from a desktop browser, a phone and Claude mobile.
 
-Meal tracking is designed but not built yet; tasks come first.
+Tasks, meals and the grocery list all live here.
 
 ## Layout
 
@@ -80,7 +80,14 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   and the drive time and distance to each destination, with what a week of driving costs in
   fuel and tolls. **Search settings** (`/homes/settings`) holds the scoring weights, the
   destinations, the priorities, the cars and the toll roads.
-- **Settings** (`/settings`) — categories, the accounts, connector tokens, and the export,
+- **Grocery list** (`/grocery`) — the open shopping list. It stays open until you start a
+  fresh one yourself, so something thought of mid-week has somewhere to go. **Generate**
+  (`/grocery/generate`) asks about each frequent item and each ingredient of the planned
+  meals, one tick box apiece, and adds only what is ticked. **Print** (`/grocery/print`)
+  is the same list with nothing but the list on it, ready for paper; an earlier list is at
+  `/grocery/print/{id}`.
+- **Settings** (`/settings`) — categories, frequent grocery items, the accounts, connector
+  tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
   copies a JIRA Cloud project in.
 - **Your account** (`/account`) — your own password and your authenticator.
@@ -164,9 +171,12 @@ cookies the old one wrote, and everybody is signed out on every image pull.
 
 ## The Claude connector
 
-The app serves MCP over streamable HTTP at `/mcp`, with tools for the tasks, the meals and the
-home search: `search_tasks`, `get_task`, `create_task`, `update_task`, `list_categories`, the
-meal tools, and `get_home_search`, `get_property`, `add_property` and `add_property_note`.
+The app serves MCP over streamable HTTP at `/mcp`. It carries the task tools (`search_tasks`,
+`get_task`, `create_task`, `update_task`, `list_categories`), the meal tools (`search_meals`,
+`get_meal`, `create_meal`, `update_meal`, `create_meal_variant`, `list_meal_tags`), the
+home search tools (`get_home_search`, `get_property`, `add_property`, `add_property_note`) and
+the grocery tools (`get_grocery_list`, `add_grocery_item`, `remove_grocery_item`,
+`start_fresh_grocery_list`, `list_grocery_candidates`).
 
 Mint a token under Settings, then point a custom connector at `https://your-host/mcp` and
 send the token as `Authorization: Bearer <token>`. Only a SHA-256 hash of each token is
@@ -180,7 +190,8 @@ cookie and is not affected by an authenticator.
   link, and a file picker to load one back in.
 - `POST /api/import?mode=Merge|Replace` reads a document back. A merge matches categories by
   name, tasks by JIRA key and automations by title, so re-importing an export of this
-  installation updates rather than duplicates.
+  installation updates rather than duplicates. Grocery lists have no such key, so a merge
+  loads them only into an installation that holds none; frequent items are matched by name.
 - **Import from JIRA** (`/settings/jira`) is a four-step wizard: the address of your JIRA
   Cloud site, the email address of your Atlassian account and an API token; then the project
   to copy, chosen from the ones that account can see; then a confirmation with the issue
