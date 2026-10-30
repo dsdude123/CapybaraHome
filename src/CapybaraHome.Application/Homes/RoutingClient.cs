@@ -15,8 +15,8 @@ public record GeocodedPlace(string Label, double Latitude, double Longitude);
 
 /// <summary>How long a drive takes and how far it is.</summary>
 /// <param name="Minutes">The drive in minutes.</param>
-/// <param name="Kilometres">The drive in kilometres.</param>
-public record MeasuredDrive(double Minutes, double Kilometres);
+/// <param name="Miles">The drive in miles.</param>
+public record MeasuredDrive(double Minutes, double Miles);
 
 /// <summary>
 /// Places addresses and measures drives through OpenRouteService. The hosted service at
@@ -25,6 +25,9 @@ public record MeasuredDrive(double Minutes, double Kilometres);
 /// </summary>
 public class RoutingClient(HttpClient http, HomeSearchService search)
 {
+    /// <summary>Metres in a mile, which the service's distances are turned into.</summary>
+    private const double MetresPerMile = 1609.344d;
+
     /// <summary>Turns an address into coordinates, or returns null when the service found nothing.</summary>
     /// <param name="address">The address to look up.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -110,7 +113,7 @@ public class RoutingClient(HttpClient http, HomeSearchService search)
             return null;
         }
 
-        return new MeasuredDrive(duration.GetDouble() / 60d, distance.GetDouble() / 1000d);
+        return new MeasuredDrive(duration.GetDouble() / 60d, distance.GetDouble() / MetresPerMile);
     }
 
     private async Task<(string BaseUrl, string? Key)> ConnectionAsync(CancellationToken cancellationToken)

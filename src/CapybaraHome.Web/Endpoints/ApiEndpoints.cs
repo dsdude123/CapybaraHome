@@ -370,7 +370,7 @@ public static class ApiEndpoints
             }
 
             return await service.SetDriveTimeAsync(
-                id, destinationId, request.Minutes.Value, request.Kilometres, DriveTimeSource.Manual, cancellationToken)
+                id, destinationId, request.Minutes.Value, request.Miles, DriveTimeSource.Manual, cancellationToken)
                     ? Results.NoContent()
                     : Results.NotFound();
         });
@@ -462,6 +462,39 @@ public static class ApiEndpoints
 
         search.MapDelete("/priorities/{id:int}", async (int id, HomeSearchService service, CancellationToken cancellationToken) =>
             await service.DeletePriorityAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        search.MapGet("/vehicles", async (HomeSearchService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListVehiclesAsync(cancellationToken)));
+
+        search.MapPost("/vehicles", async (VehicleRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateVehicleAsync(request, cancellationToken);
+                return Results.Created($"/api/home-search/vehicles/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapPut("/vehicles/{id:int}", async (int id, VehicleRequest request, HomeSearchService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.UpdateVehicleAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        search.MapDelete("/vehicles/{id:int}", async (int id, HomeSearchService service, CancellationToken cancellationToken) =>
+            await service.DeleteVehicleAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
 
         // The routing key is write-only: the settings say whether one is held, never what it is.
         search.MapGet("/settings", async (HomeSearchService service, CancellationToken cancellationToken) =>

@@ -148,6 +148,7 @@ public class HomeSearchApiTests
 
         var scored = await client.GetFromJsonAsync<ScoredProperty>($"/api/properties/{property.Id}", Json);
         Assert.Equal(18.5d, scored!.Property.DriveTimes.Single().Minutes);
+        Assert.Equal(12.4d, scored.Property.DriveTimes.Single().Miles);
         Assert.True(scored.Property.Priorities.Single().Meets);
         Assert.Equal(10m, scored.Score.Priorities);
 
@@ -159,6 +160,38 @@ public class HomeSearchApiTests
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsJsonAsync(
             $"/api/properties/404/priorities/{priority.Id}", new PropertyPriorityRequest(true), Json)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Cars_are_listed_changed_and_deleted_over_the_api()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var vehicle = (await (await client.PostAsJsonAsync("/api/home-search/vehicles",
+            new VehicleRequest("The hatchback", 34.5d, 4.19m), Json)).Content.ReadFromJsonAsync<VehicleView>(Json))!;
+
+        Assert.Equal(34.5d, vehicle.MilesPerGallon);
+        Assert.Single((await client.GetFromJsonAsync<List<VehicleView>>("/api/home-search/vehicles", Json))!);
+
+        await client.PutAsJsonAsync($"/api/home-search/vehicles/{vehicle.Id}",
+            new VehicleRequest("The wagon", 30d, 4.05m), Json);
+
+        var held = await client.GetFromJsonAsync<List<VehicleView>>("/api/home-search/vehicles", Json);
+        Assert.Equal("The wagon", held!.Single().Name);
+        Assert.Equal(4.05m, held!.Single().FuelPricePerGallon);
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/home-search/vehicles",
+            new VehicleRequest("  "), Json)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync(
+            $"/api/home-search/vehicles/{vehicle.Id}", new VehicleRequest(""), Json)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.DeleteAsync($"/api/home-search/vehicles/{vehicle.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.DeleteAsync($"/api/home-search/vehicles/{vehicle.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsJsonAsync(
+            $"/api/home-search/vehicles/{vehicle.Id}", new VehicleRequest("Gone"), Json)).StatusCode);
     }
 
     [Fact]
@@ -177,12 +210,13 @@ public class HomeSearchApiTests
         Assert.Single((await client.GetFromJsonAsync<List<SearchPriorityView>>("/api/home-search/priorities", Json))!);
 
         await client.PutAsJsonAsync($"/api/home-search/destinations/{destination.Id}",
-            new SearchDestinationRequest("The office", null, 2m), Json);
+            new SearchDestinationRequest("The office", null, 2m, 3), Json);
         await client.PutAsJsonAsync($"/api/home-search/priorities/{priority.Id}",
             new SearchPriorityRequest("In-unit laundry", 12m), Json);
 
         var destinations = await client.GetFromJsonAsync<List<SearchDestinationView>>("/api/home-search/destinations", Json);
         Assert.Equal("The office", destinations!.Single().Name);
+        Assert.Equal(3, destinations!.Single().RoundTripsPerWeek);
 
         var priorities = await client.GetFromJsonAsync<List<SearchPriorityView>>("/api/home-search/priorities", Json);
         Assert.Equal(12m, priorities!.Single().Points);

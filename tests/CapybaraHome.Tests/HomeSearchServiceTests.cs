@@ -204,6 +204,67 @@ public class HomeSearchServiceTests
         Assert.False(cleared.CanMeasureDriveTimes);
     }
 
+    [Fact]
+    public async Task A_destination_keeps_how_many_round_trips_a_week_are_driven_to_it()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", "400 Broad St", 3m, 3));
+
+        Assert.Equal(3, work.RoundTripsPerWeek);
+
+        var fewer = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", "400 Broad St", 3m, 2));
+        Assert.Equal(2, fewer!.RoundTripsPerWeek);
+
+        // A negative count would owe miles back, so it is read as none.
+        var none = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", "400 Broad St", 3m, -4));
+        Assert.Equal(0, none!.RoundTripsPerWeek);
+    }
+
+    [Fact]
+    public async Task Cars_keep_the_order_they_were_added_in_and_can_be_changed_and_dropped()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var first = await service.CreateVehicleAsync(new VehicleRequest("  The hatchback  ", 34.5d, 4.19m));
+        await service.CreateVehicleAsync(new VehicleRequest("The truck", 18d, 4.39m));
+
+        var held = await service.ListVehiclesAsync();
+        Assert.Equal(["The hatchback", "The truck"], held.Select(v => v.Name));
+        Assert.Equal([0, 1], held.Select(v => v.SortOrder));
+        Assert.Equal(34.5d, held[0].MilesPerGallon);
+        Assert.Equal(4.19m, held[0].FuelPricePerGallon);
+        Assert.True(held[0].CanCost);
+
+        var changed = await service.UpdateVehicleAsync(first.Id, new VehicleRequest("The hatchback", 36d, 4.05m));
+        Assert.Equal(36d, changed!.MilesPerGallon);
+        Assert.Equal(4.05m, changed.FuelPricePerGallon);
+
+        Assert.True(await service.DeleteVehicleAsync(first.Id));
+        Assert.False(await service.DeleteVehicleAsync(first.Id));
+        Assert.Single(await service.ListVehiclesAsync());
+        Assert.Null(await service.UpdateVehicleAsync(first.Id, new VehicleRequest("Gone")));
+    }
+
+    [Fact]
+    public async Task A_car_needs_a_name_and_refuses_a_negative_mileage_or_price()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateVehicleAsync(new VehicleRequest("   ")));
+
+        var vehicle = await service.CreateVehicleAsync(new VehicleRequest("Car", -30d, -4m));
+        Assert.Equal(0d, vehicle.MilesPerGallon);
+        Assert.Equal(0m, vehicle.FuelPricePerGallon);
+        Assert.False(vehicle.CanCost);
+    }
+
     private static async Task<DateTimeOffset> UpdatedAtAsync(TestDatabase db) =>
         (await db.Context.HomeSearchSettings.FirstAsync()).UpdatedAt;
 }

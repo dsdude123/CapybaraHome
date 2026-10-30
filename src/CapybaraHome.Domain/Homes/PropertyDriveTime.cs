@@ -21,8 +21,8 @@ public class PropertyDriveTime
     /// <summary>How long the drive takes, in minutes.</summary>
     public double Minutes { get; set; }
 
-    /// <summary>How far the drive is, in kilometres, when the routing service said.</summary>
-    public double? Kilometres { get; set; }
+    /// <summary>How far the drive is, in miles, when it was measured or typed in.</summary>
+    public double? Miles { get; set; }
 
     /// <summary>Whether the time was measured or typed in.</summary>
     public DriveTimeSource Source { get; set; }

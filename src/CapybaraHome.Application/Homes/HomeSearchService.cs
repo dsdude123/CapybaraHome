@@ -16,7 +16,8 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         return await context.SearchDestinations.AsNoTracking()
             .OrderBy(d => d.SortOrder)
             .ThenBy(d => d.Id)
-            .Select(d => new SearchDestinationView(d.Id, d.Name, d.Address, d.Weight, d.Latitude, d.Longitude, d.SortOrder))
+            .Select(d => new SearchDestinationView(
+                d.Id, d.Name, d.Address, d.Weight, d.RoundTripsPerWeek, d.Latitude, d.Longitude, d.SortOrder))
             .ToListAsync(cancellationToken);
     }
 
@@ -44,6 +45,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             Name = name,
             Address = Blank(request.Address),
             Weight = request.Weight,
+            RoundTripsPerWeek = Trips(request.RoundTripsPerWeek),
             SortOrder = (last ?? -1) + 1,
         };
 
@@ -52,7 +54,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
 
         return new SearchDestinationView(
             destination.Id, destination.Name, destination.Address, destination.Weight,
-            destination.Latitude, destination.Longitude, destination.SortOrder);
+            destination.RoundTripsPerWeek, destination.Latitude, destination.Longitude, destination.SortOrder);
     }
 
     /// <summary>Renames a destination, or returns null when none has that id.</summary>
@@ -81,12 +83,13 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         destination.Name = Required(request.Name, "A destination needs a name.", nameof(request));
         destination.Address = address;
         destination.Weight = request.Weight;
+        destination.RoundTripsPerWeek = Trips(request.RoundTripsPerWeek);
 
         await context.SaveChangesAsync(cancellationToken);
 
         return new SearchDestinationView(
             destination.Id, destination.Name, destination.Address, destination.Weight,
-            destination.Latitude, destination.Longitude, destination.SortOrder);
+            destination.RoundTripsPerWeek, destination.Latitude, destination.Longitude, destination.SortOrder);
     }
 
     /// <summary>Records where a destination is. Returns false when none has that id.</summary>
@@ -197,6 +200,80 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         return true;
     }
 
+    /// <summary>Returns the cars, in order.</summary>
+    public async Task<IReadOnlyList<VehicleView>> ListVehiclesAsync(CancellationToken cancellationToken = default)
+    {
+        return await context.Vehicles.AsNoTracking()
+            .OrderBy(v => v.SortOrder)
+            .ThenBy(v => v.Id)
+            .Select(v => new VehicleView(v.Id, v.Name, v.MilesPerGallon, v.FuelPricePerGallon, v.SortOrder))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Adds a car and returns it as saved.</summary>
+    /// <exception cref="ArgumentException">The name is blank.</exception>
+    public async Task<VehicleView> CreateVehicleAsync(
+        VehicleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var name = Required(request.Name, "A car needs a name.", nameof(request));
+
+        var last = await context.Vehicles.AsNoTracking()
+            .OrderByDescending(v => v.SortOrder)
+            .Select(v => (int?)v.SortOrder)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var vehicle = new Vehicle
+        {
+            Name = name,
+            MilesPerGallon = Positive(request.MilesPerGallon),
+            FuelPricePerGallon = Positive(request.FuelPricePerGallon),
+            SortOrder = (last ?? -1) + 1,
+        };
+
+        context.Vehicles.Add(vehicle);
+        await context.SaveChangesAsync(cancellationToken);
+
+        return new VehicleView(
+            vehicle.Id, vehicle.Name, vehicle.MilesPerGallon, vehicle.FuelPricePerGallon, vehicle.SortOrder);
+    }
+
+    /// <summary>Changes a car, or returns null when none has that id.</summary>
+    /// <exception cref="ArgumentException">The name is blank.</exception>
+    public async Task<VehicleView?> UpdateVehicleAsync(
+        int id,
+        VehicleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var vehicle = await context.Vehicles.SingleOrDefaultAsync(v => v.Id == id, cancellationToken);
+        if (vehicle is null)
+        {
+            return null;
+        }
+
+        vehicle.Name = Required(request.Name, "A car needs a name.", nameof(request));
+        vehicle.MilesPerGallon = Positive(request.MilesPerGallon);
+        vehicle.FuelPricePerGallon = Positive(request.FuelPricePerGallon);
+        await context.SaveChangesAsync(cancellationToken);
+
+        return new VehicleView(
+            vehicle.Id, vehicle.Name, vehicle.MilesPerGallon, vehicle.FuelPricePerGallon, vehicle.SortOrder);
+    }
+
+    /// <summary>Deletes a car. Returns false when none has that id.</summary>
+    public async Task<bool> DeleteVehicleAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var vehicle = await context.Vehicles.SingleOrDefaultAsync(v => v.Id == id, cancellationToken);
+        if (vehicle is null)
+        {
+            return false;
+        }
+
+        context.Vehicles.Remove(vehicle);
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     /// <summary>Returns the weights and the routing service, with every weight at zero until they are set.</summary>
     public async Task<HomeSearchSettingsView> GetSettingsAsync(CancellationToken cancellationToken = default)
     {
@@ -278,6 +355,12 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         var trimmed = (value ?? string.Empty).Trim();
         return trimmed.Length > 0 ? trimmed : throw new ArgumentException(message, parameter);
     }
+
+    private static int Trips(int value) => value > 0 ? value : 0;
+
+    private static double Positive(double value) => value > 0d ? value : 0d;
+
+    private static decimal Positive(decimal value) => value > 0m ? value : 0m;
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

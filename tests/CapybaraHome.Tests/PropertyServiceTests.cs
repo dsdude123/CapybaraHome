@@ -277,7 +277,7 @@ public class PropertyServiceTests
 
         var held = (await service.GetAsync(property.Id))!.DriveTimes.Single();
         Assert.Equal(18.5d, held.Minutes);
-        Assert.Equal(12.4d, held.Kilometres);
+        Assert.Equal(12.4d, held.Miles);
         Assert.Equal(DriveTimeSource.Measured, held.Source);
         Assert.Equal("Work", held.DestinationName);
         Assert.Equal(db.Clock.GetUtcNow(), held.MeasuredAt);

@@ -227,16 +227,24 @@ else
                 @foreach (var destination in destinations)
                 {
                     var held = property.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id);
-                    <div class="choice-line">
-                        <label for="drive-@destination.Id">
-                            @destination.Name
-                            @if (held is not null)
-                            {
-                                <span class="muted">— @(held.Source == DriveTimeSource.Measured ? "measured" : "typed in")</span>
-                            }
-                        </label>
-                        <input id="drive-@destination.Id" type="number" step="0.1" name="drive-@destination.Id"
-                               value="@Typed(held?.Minutes)" placeholder="Minutes" />
+                    <p class="task-meta">
+                        <strong>@destination.Name</strong>
+                        @if (held is not null)
+                        {
+                            <span class="muted">— @(held.Source == DriveTimeSource.Measured ? "measured" : "typed in")</span>
+                        }
+                    </p>
+                    <div class="filters">
+                        <div class="field">
+                            <label for="drive-@destination.Id">Minutes</label>
+                            <input id="drive-@destination.Id" type="number" step="0.1" min="0" name="drive-@destination.Id"
+                                   value="@Typed(held?.Minutes)" />
+                        </div>
+                        <div class="field">
+                            <label for="miles-@destination.Id">Miles, one way</label>
+                            <input id="miles-@destination.Id" type="number" step="0.1" min="0" name="miles-@destination.Id"
+                                   value="@Typed(held?.Miles)" />
+                        </div>
                     </div>
                 }
                 <div class="row">
@@ -270,6 +278,93 @@ else
             {
                 <p class="error">@problem</p>
             }
+        }
+    </section>
+
+    <section class="card stack">
+        <h2 class="card-title">Fuel</h2>
+        @if (vehicles.Count == 0)
+        {
+            <p class="muted">
+                No cars yet. <a href="homes/settings">Add one with its average mpg and what a gallon
+                costs</a> and the week's fuel shows up here.
+            </p>
+        }
+        else if (!fuel!.AnyDriving)
+        {
+            <p class="muted">
+                Nothing to cost yet. Fuel counts the round trips a week set on each
+                <a href="homes/settings">destination</a> — three for a three-day work week — against
+                the miles of each drive.
+            </p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Drive</th>
+                        <th scope="col">One way</th>
+                        <th scope="col">Round trips a week</th>
+                        <th scope="col">Miles a week</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in fuel.Lines)
+                    {
+                        <tr>
+                            <td>@line.Name</td>
+                            <td>@Miles(line.Miles)</td>
+                            <td>@line.RoundTripsPerWeek</td>
+                            <td>@Miles(line.MilesPerWeek)</td>
+                        </tr>
+                    }
+                    <tr>
+                        <td colspan="3"><strong>A week in all</strong></td>
+                        <td><strong>@Miles(fuel.MilesPerWeek)</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            @if (fuel.Vehicles.Count == 0)
+            {
+                <p class="muted">
+                    None of the cars has both a mileage and a fuel price yet, so there is nothing to
+                    cost the miles with.
+                </p>
+            }
+            else
+            {
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Car</th>
+                            <th scope="col">Gallons a week</th>
+                            <th scope="col">A week</th>
+                            <th scope="col">A month</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var cost in fuel.Vehicles)
+                        {
+                            <tr>
+                                <td>@cost.Name</td>
+                                <td>@Gallons(cost.GallonsPerWeek)</td>
+                                <td>@Cents(cost.WeeklyCost)</td>
+                                <td>@Cents(cost.MonthlyCost)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+
+        @foreach (var name in fuel!.MissingMiles)
+        {
+            <p class="muted">
+                The drive to @name has no distance yet, so it adds nothing. Measure it or type the
+                miles in beside the minutes above.
+            </p>
         }
     </section>
 
@@ -392,6 +487,8 @@ else
     private PropertyScore? score;
     private IReadOnlyList<SearchDestinationView> destinations = [];
     private IReadOnlyList<SearchPriorityView> priorities = [];
+    private IReadOnlyList<VehicleView> vehicles = [];
+    private PropertyFuelCost? fuel;
     private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private decimal priorityPoints;
     private List<string> problems = [];
@@ -410,6 +507,7 @@ else
         var scored = await Board.GetScoredAsync(Id);
         property = scored?.Property;
         score = scored?.Score;
+        fuel = scored?.Fuel;
 
         if (property is null)
         {
@@ -419,6 +517,7 @@ else
         current = await Properties.GetCurrentAsync();
         destinations = await Search.ListDestinationsAsync();
         priorities = await Search.ListPrioritiesAsync();
+        vehicles = await Search.ListVehiclesAsync();
         settings = await Search.GetSettingsAsync();
         priorityPoints = priorities.Sum(p => Math.Abs(p.Points));
     }
@@ -452,7 +551,12 @@ else
 
             if (double.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var minutes) && minutes >= 0)
             {
-                await Properties.SetDriveTimeAsync(Id, destination.Id, minutes, null, DriveTimeSource.Manual);
+                var postedMiles = HttpContext.Request.Form[$"miles-{destination.Id}"].ToString();
+                var miles = double.TryParse(postedMiles, System.Globalization.CultureInfo.InvariantCulture, out var typed) && typed >= 0
+                    ? typed
+                    : (double?)null;
+
+                await Properties.SetDriveTimeAsync(Id, destination.Id, minutes, miles, DriveTimeSource.Manual);
             }
             else
             {
@@ -516,6 +620,17 @@ else
     // dollar one; the weights are labelled per dollar, so the sign is written out here.
     private static string Money(decimal? value) =>
         value is null ? "\u2014" : "$" + value.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Cents(decimal value) =>
+        "$" + value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Miles(double? value) =>
+        value is null
+            ? "\u2014"
+            : value.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " mi";
+
+    private static string Gallons(double value) =>
+        value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string Points(decimal value) =>
         (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);

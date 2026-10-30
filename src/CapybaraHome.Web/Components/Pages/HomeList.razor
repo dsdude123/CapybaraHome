@@ -42,6 +42,10 @@ else
                 <span class="muted">@Money(board.Current.MonthlyTotal) a month</span>
             </div>
             <p class="task-meta">@Baseline(board.Current)</p>
+            @if (board.CurrentFuel is { } fuel && fuel.AnyDriving && fuel.LowestMonthlyCost is { } monthly)
+            {
+                <p class="task-meta">@Money(monthly) a month in fuel, over @MilesAWeek(fuel.MilesPerWeek)</p>
+            }
         }
     </section>
 
@@ -68,6 +72,10 @@ else
                         {
                             var line = scored.Score.DriveTimeLines.FirstOrDefault(d => d.DestinationId == destination.Id);
                             <span><span class="muted">@destination.Name</span> @Minutes(line?.Minutes)</span>
+                        }
+                        @if (scored.Fuel.LowestMonthlyCost is { } fuel && scored.Fuel.AnyDriving)
+                        {
+                            <span><span class="muted">Fuel a month</span> @Money(fuel)</span>
                         }
                         <span>
                             <span class="muted">Priorities</span>
@@ -104,6 +112,9 @@ else
 
     private static string Points(decimal value) =>
         (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string MilesAWeek(double miles) =>
+        miles.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " miles a week";
 
     private static string Minutes(double? minutes) =>
         minutes is { } value

@@ -70,6 +70,9 @@ public interface ICapybaraHomeDbContext
     /// <summary>How the properties were marked against the priorities.</summary>
     DbSet<PropertyPriority> PropertyPriorities { get; }
 
+    /// <summary>The cars the drives are made in.</summary>
+    DbSet<Vehicle> Vehicles { get; }
+
     /// <summary>The scoring weights and the routing service the search uses.</summary>
     DbSet<HomeSearchSettings> HomeSearchSettings { get; }
 

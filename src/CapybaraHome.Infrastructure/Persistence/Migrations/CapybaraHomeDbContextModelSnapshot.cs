@@ -180,11 +180,11 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<int>("DestinationId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<double?>("Kilometres")
-                        .HasColumnType("REAL");
-
                     b.Property<DateTimeOffset>("MeasuredAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<double?>("Miles")
+                        .HasColumnType("REAL");
 
                     b.Property<double>("Minutes")
                         .HasColumnType("REAL");
@@ -373,6 +373,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("RoundTripsPerWeek")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("INTEGER");
 
@@ -404,6 +407,31 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("SearchPriorities");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.Vehicle", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("FuelPricePerGallon")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("MilesPerGallon")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Vehicles");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>

@@ -55,8 +55,8 @@ public class PropertyScorerTests
     {
         var destinations = new List<SearchDestinationView>
         {
-            new(1, "Work", null, 3m, null, null, 0),
-            new(2, "Gym", null, 1m, null, null, 1),
+            new(1, "Work", null, 3m, 0, null, null, 0),
+            new(2, "Gym", null, 1m, 0, null, null, 1),
         };
 
         var current = Property(1, "Now", drives: [(1, 30d), (2, 10d)]);
@@ -77,7 +77,7 @@ public class PropertyScorerTests
     [InlineData(false, false, 0)]
     public void A_drive_only_scores_when_both_ends_are_known(bool mine, bool theirs, decimal expected)
     {
-        var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, null, null, 0) };
+        var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, 0, null, null, 0) };
 
         var current = Property(1, "Now", drives: theirs ? [(1, 30d)] : []);
         var candidate = Property(2, "There", drives: mine ? [(1, 20d)] : []);
@@ -119,7 +119,7 @@ public class PropertyScorerTests
     [Fact]
     public void The_current_home_is_not_compared_with_itself()
     {
-        var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, null, null, 0) };
+        var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, 0, null, null, 0) };
         var current = Property(1, "Now", rent: 2000m, deposit: 500m, drives: [(1, 30d)], amenities: ["Deck"]);
 
         var score = PropertyScorer.Score(current, current, destinations, Weights);
@@ -146,7 +146,7 @@ public class PropertyScorerTests
     [Fact]
     public void The_total_is_every_component_added_up()
     {
-        var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, null, null, 0) };
+        var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, 0, null, null, 0) };
         var current = Property(1, "Now", rent: 2000m, deposit: 1000m, drives: [(1, 30d)]);
         var candidate = Property(
             2, "There", rent: 1900m, deposit: 800m, drives: [(1, 25d)],

@@ -24,6 +24,12 @@ public class SearchDestination
     /// <summary>Longitude the address was resolved to, or null when it has not been placed.</summary>
     public double? Longitude { get; set; }
 
+    /// <summary>
+    /// How many round trips a week are driven to it, which is what the fuel cost counts. Three
+    /// covers a three-day work week; zero leaves the destination out of the fuel cost.
+    /// </summary>
+    public int RoundTripsPerWeek { get; set; }
+
     /// <summary>Position in the list; lower sorts first.</summary>
     public int SortOrder { get; set; }
 

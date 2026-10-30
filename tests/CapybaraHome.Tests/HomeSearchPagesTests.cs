@@ -203,10 +203,11 @@ public class HomeSearchPagesTests
         var destination = await DestinationAsync(app, "Work", weight: 3m);
 
         var typed = await PostAsync(client, $"/homes/{property.Id}", "property-drives",
-            new() { [$"drive-{destination.Id}"] = "18.5" });
+            new() { [$"drive-{destination.Id}"] = "18.5", [$"miles-{destination.Id}"] = "12.4" });
 
         Assert.Contains("typed in", await typed.Content.ReadAsStringAsync());
         Assert.Equal(18.5d, (await ReadAsync(app, property.Id)).DriveTimes.Single().Minutes);
+        Assert.Equal(12.4d, (await ReadAsync(app, property.Id)).DriveTimes.Single().Miles);
 
         await PostAsync(client, $"/homes/{property.Id}", "property-drives",
             new() { [$"drive-{destination.Id}"] = string.Empty });
@@ -589,6 +590,145 @@ public class HomeSearchPagesTests
         return (await scope.ServiceProvider.GetRequiredService<PropertyService>().GetAsync(id))!;
     }
 
+    [Fact]
+    public async Task A_car_is_added_changed_and_deleted_from_the_settings_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var added = await PostAsync(client, "/homes/settings", "vehicle-new",
+            new() { ["name"] = "The hatchback", ["mpg"] = "34.5", ["price"] = "4.19" });
+
+        Assert.Contains("The hatchback", await added.Content.ReadAsStringAsync());
+
+        var id = (await VehiclesAsync(app)).Single().Id;
+
+        var changed = await PostAsync(client, "/homes/settings", $"vehicle-{id}",
+            new() { ["action"] = "save", ["name"] = "The wagon", ["mpg"] = "30", ["price"] = "4.05" });
+
+        Assert.Contains("The wagon", await changed.Content.ReadAsStringAsync());
+        Assert.Equal(30d, (await VehiclesAsync(app)).Single().MilesPerGallon);
+        Assert.Equal(4.05m, (await VehiclesAsync(app)).Single().FuelPricePerGallon);
+
+        var blank = await PostAsync(client, "/homes/settings", $"vehicle-{id}",
+            new() { ["action"] = "save", ["name"] = "  ", ["mpg"] = "30", ["price"] = "4" });
+
+        Assert.Contains("A car needs a name.", await blank.Content.ReadAsStringAsync());
+
+        var deleted = await PostAsync(client, "/homes/settings", $"vehicle-{id}", new() { ["action"] = "delete" });
+        Assert.Contains("No cars yet.", await deleted.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task A_blank_car_name_is_refused_when_one_is_being_added()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var vehicle = await PostAsync(client, "/homes/settings", "vehicle-new", new() { ["name"] = " " });
+        Assert.Contains("A car needs a name.", await vehicle.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task A_car_with_no_mileage_or_price_says_it_cannot_be_costed()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostAsync(client, "/homes/settings", "vehicle-new",
+            new() { ["name"] = "Unknown", ["mpg"] = string.Empty, ["price"] = string.Empty });
+
+        var page = await client.GetStringAsync("/homes/settings");
+        Assert.Contains("Needs both a mileage and a fuel price", page);
+    }
+
+    [Fact]
+    public async Task The_round_trips_a_week_are_saved_with_the_destination()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostAsync(client, "/homes/settings", "destination-new",
+            new() { ["name"] = "Work", ["weight"] = "3", ["trips"] = "3" });
+
+        Assert.Equal(3, (await DestinationsAsync(app)).Single().RoundTripsPerWeek);
+
+        var id = (await DestinationsAsync(app)).Single().Id;
+
+        await PostAsync(client, "/homes/settings", $"destination-{id}",
+            new() { ["action"] = "save", ["name"] = "Work", ["weight"] = "3", ["trips"] = "2" });
+
+        Assert.Equal(2, (await DestinationsAsync(app)).Single().RoundTripsPerWeek);
+    }
+
+    [Fact]
+    public async Task The_fuel_card_costs_a_three_day_work_week_in_each_car()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
+
+        await PostAsync(client, $"/homes/{property.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "20", [$"miles-{work.Id}"] = "10" });
+
+        var page = await client.GetStringAsync($"/homes/{property.Id}");
+
+        // Six one-way drives of ten miles, two gallons at $4.50, and the same week over a month.
+        Assert.Contains("60 mi", page);
+        Assert.Contains("$9.00", page);
+        Assert.Contains("$39.00", page);
+        Assert.Contains("The hatchback", page);
+    }
+
+    [Fact]
+    public async Task The_fuel_card_says_what_is_missing_rather_than_costing_nothing_quietly()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+
+        var noCars = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Contains("No cars yet.", noCars);
+
+        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
+        var noTrips = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Contains("Nothing to cost yet.", noTrips);
+
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        await PostAsync(client, $"/homes/{property.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "20" });
+
+        var noMiles = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Contains("The drive to Work has no distance yet", noMiles);
+    }
+
+    [Fact]
+    public async Task The_list_shows_the_monthly_fuel_beside_a_candidate_and_the_current_home()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var current = await CreateAsync(app, new CreatePropertyRequest("Now", IsCurrent: true));
+        var candidate = await CreateAsync(app, new CreatePropertyRequest("There"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
+
+        await PostAsync(client, $"/homes/{current.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "40", [$"miles-{work.Id}"] = "20" });
+        await PostAsync(client, $"/homes/{candidate.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "20", [$"miles-{work.Id}"] = "10" });
+
+        var page = await client.GetStringAsync("/homes");
+
+        Assert.Contains("Fuel a month", page);
+        Assert.Contains("$78 a month in fuel, over 120 miles a week", page);
+        Assert.Contains("$39", page);
+    }
+
     private static async Task<PropertyView> OneAsync(AppFactory app)
     {
         using var scope = app.Services.CreateScope();
@@ -599,11 +739,25 @@ public class HomeSearchPagesTests
         AppFactory app,
         string name,
         decimal weight = 1m,
-        string? address = null)
+        string? address = null,
+        int trips = 0)
     {
         using var scope = app.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
-            .CreateDestinationAsync(new SearchDestinationRequest(name, address, weight));
+            .CreateDestinationAsync(new SearchDestinationRequest(name, address, weight, trips));
+    }
+
+    private static async Task<VehicleView> VehicleAsync(AppFactory app, string name, double mpg, decimal price)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
+            .CreateVehicleAsync(new VehicleRequest(name, mpg, price));
+    }
+
+    private static async Task<IReadOnlyList<VehicleView>> VehiclesAsync(AppFactory app)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<HomeSearchService>().ListVehiclesAsync();
     }
 
     private static async Task<SearchPriorityView> PriorityAsync(AppFactory app, string name, decimal points)

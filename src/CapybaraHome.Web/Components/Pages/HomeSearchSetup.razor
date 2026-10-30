@@ -87,7 +87,8 @@
     <h2 class="card-title">Destinations</h2>
     <p class="muted">
         Where you drive to. The weight is how much that drive counts next to the others, so work,
-        driven to every day, is worth more than one.
+        driven to every day, is worth more than one. The round trips a week are what the fuel cost
+        counts, so a three-day work week is three.
     </p>
 
     @if (destinations.Count == 0)
@@ -115,6 +116,10 @@
                                 <label for="destination-weight-@destination.Id">Weight</label>
                                 <input id="destination-weight-@destination.Id" type="number" step="0.1" name="weight" value="@Typed(destination.Weight)" />
                             </div>
+                            <div class="field">
+                                <label for="destination-trips-@destination.Id">Round trips a week</label>
+                                <input id="destination-trips-@destination.Id" type="number" step="1" min="0" name="trips" value="@destination.RoundTripsPerWeek" />
+                            </div>
                         </div>
                         <div class="row">
                             <button class="btn btn-small" type="submit" name="action" value="save">Save</button>
@@ -141,6 +146,10 @@
             <div class="field">
                 <label for="new-destination-weight">Weight</label>
                 <input id="new-destination-weight" type="number" step="0.1" name="weight" value="@destinationWeight" />
+            </div>
+            <div class="field">
+                <label for="new-destination-trips">Round trips a week</label>
+                <input id="new-destination-trips" type="number" step="1" min="0" name="trips" value="@destinationTrips" />
             </div>
         </div>
         <div class="row">
@@ -217,6 +226,80 @@
     }
 </section>
 
+<section class="card stack">
+    <h2 class="card-title">Cars</h2>
+    <p class="muted">
+        What you drive, and what it costs to fuel. Each property's page then shows what its week of
+        round trips costs in each car.
+    </p>
+
+    @if (vehicles.Count == 0)
+    {
+        <p class="muted">No cars yet.</p>
+    }
+    else
+    {
+        <ul class="task-list">
+            @foreach (var vehicle in vehicles)
+            {
+                <li>
+                    <form method="post" @formname="@($"vehicle-{vehicle.Id}")" @onsubmit="() => SaveVehicleAsync(vehicle.Id)" class="stack">
+                        <AntiforgeryToken />
+                        <div class="filters">
+                            <div class="field">
+                                <label for="vehicle-name-@vehicle.Id">Car</label>
+                                <input id="vehicle-name-@vehicle.Id" type="text" name="name" value="@vehicle.Name" />
+                            </div>
+                            <div class="field">
+                                <label for="vehicle-mpg-@vehicle.Id">Average mpg</label>
+                                <input id="vehicle-mpg-@vehicle.Id" type="number" step="0.1" min="0" name="mpg" value="@Typed(vehicle.MilesPerGallon)" />
+                            </div>
+                            <div class="field">
+                                <label for="vehicle-price-@vehicle.Id">Fuel, a gallon</label>
+                                <input id="vehicle-price-@vehicle.Id" type="number" step="0.01" min="0" name="price" value="@Typed(vehicle.FuelPricePerGallon)" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <button class="btn btn-small" type="submit" name="action" value="save">Save</button>
+                            <button class="btn btn-small btn-danger" type="submit" name="action" value="delete">Delete</button>
+                        </div>
+                        @if (!vehicle.CanCost)
+                        {
+                            <p class="task-meta">Needs both a mileage and a fuel price before it can be costed</p>
+                        }
+                    </form>
+                </li>
+            }
+        </ul>
+    }
+
+    <form method="post" @formname="vehicle-new" @onsubmit="AddVehicleAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="filters">
+            <div class="field">
+                <label for="new-vehicle-name">New car</label>
+                <input id="new-vehicle-name" type="text" name="name" value="@vehicleName" />
+            </div>
+            <div class="field">
+                <label for="new-vehicle-mpg">Average mpg</label>
+                <input id="new-vehicle-mpg" type="number" step="0.1" min="0" name="mpg" value="@vehicleMpg" />
+            </div>
+            <div class="field">
+                <label for="new-vehicle-price">Fuel, a gallon</label>
+                <input id="new-vehicle-price" type="number" step="0.01" min="0" name="price" value="@vehiclePrice" />
+            </div>
+        </div>
+        <div class="row">
+            <button class="btn btn-primary btn-small" type="submit">Add the car</button>
+        </div>
+    </form>
+
+    @if (vehicleError is not null)
+    {
+        <p class="error">@vehicleError</p>
+    }
+</section>
+
 @code {
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -224,6 +307,7 @@
     private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private IReadOnlyList<SearchDestinationView> destinations = [];
     private IReadOnlyList<SearchPriorityView> priorities = [];
+    private IReadOnlyList<VehicleView> vehicles = [];
     private string? fees;
     private string? deposit;
     private string? drive;
@@ -234,10 +318,15 @@
     private string? destinationName;
     private string? destinationAddress;
     private string? destinationWeight;
+    private string? destinationTrips;
     private string? priorityName;
     private string? priorityPoints;
+    private string? vehicleName;
+    private string? vehicleMpg;
+    private string? vehiclePrice;
     private string? destinationError;
     private string? priorityError;
+    private string? vehicleError;
     private string? saved;
 
     /// <summary>Loads the weights, the service and the lists.</summary>
@@ -251,6 +340,7 @@
         settings = await Search.GetSettingsAsync();
         destinations = await Search.ListDestinationsAsync();
         priorities = await Search.ListPrioritiesAsync();
+        vehicles = await Search.ListVehiclesAsync();
 
         fees = Typed(settings.MonthlyFeePointsPerDollar);
         deposit = Typed(settings.DepositPointsPerDollar);
@@ -314,15 +404,20 @@
         destinationName = form["name"];
         destinationAddress = form["address"];
         destinationWeight = form["weight"];
+        destinationTrips = form["trips"];
 
         try
         {
             await Search.CreateDestinationAsync(new SearchDestinationRequest(
-                destinationName ?? string.Empty, destinationAddress, PropertyRows.Money(destinationWeight) ?? 1m));
+                destinationName ?? string.Empty,
+                destinationAddress,
+                PropertyRows.Money(destinationWeight) ?? 1m,
+                Trips(destinationTrips)));
 
             destinationName = null;
             destinationAddress = null;
             destinationWeight = null;
+            destinationTrips = null;
             destinationError = null;
         }
         catch (ArgumentException ex)
@@ -352,7 +447,10 @@
         try
         {
             await Search.UpdateDestinationAsync(id, new SearchDestinationRequest(
-                form["name"].ToString(), form["address"].ToString(), PropertyRows.Money(form["weight"]) ?? 1m));
+                form["name"].ToString(),
+                form["address"].ToString(),
+                PropertyRows.Money(form["weight"]) ?? 1m,
+                Trips(form["trips"])));
 
             destinationError = null;
         }
@@ -422,6 +520,80 @@
 
         await LoadAsync();
     }
+
+    private async Task AddVehicleAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        vehicleName = form["name"];
+        vehicleMpg = form["mpg"];
+        vehiclePrice = form["price"];
+
+        try
+        {
+            await Search.CreateVehicleAsync(new VehicleRequest(
+                vehicleName ?? string.Empty, Mileage(vehicleMpg), PropertyRows.Money(vehiclePrice) ?? 0m));
+
+            vehicleName = null;
+            vehicleMpg = null;
+            vehiclePrice = null;
+            vehicleError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            vehicleError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task SaveVehicleAsync(int id)
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+
+        if (form["action"] == "delete")
+        {
+            await Search.DeleteVehicleAsync(id);
+            await LoadAsync();
+            return;
+        }
+
+        try
+        {
+            await Search.UpdateVehicleAsync(id, new VehicleRequest(
+                form["name"].ToString(), Mileage(form["mpg"]), PropertyRows.Money(form["price"]) ?? 0m));
+
+            vehicleError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            vehicleError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static int Trips(string? posted) =>
+        int.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var trips) && trips > 0
+            ? trips
+            : 0;
+
+    private static double Mileage(string? posted) =>
+        double.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var mpg) && mpg > 0
+            ? mpg
+            : 0d;
+
+    private static string Typed(double value) =>
+        value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string Typed(decimal value) =>
         value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);

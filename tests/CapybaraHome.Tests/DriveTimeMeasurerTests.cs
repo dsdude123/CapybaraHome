@@ -33,7 +33,7 @@ public class DriveTimeMeasurerTests
 
         var drive = (await properties.GetAsync(property.Id))!.DriveTimes.Single();
         Assert.Equal(18.5d, drive.Minutes);
-        Assert.Equal(12.4d, drive.Kilometres);
+        Assert.Equal(7.705d, drive.Miles!.Value, 3);
         Assert.Equal(DriveTimeSource.Measured, drive.Source);
 
         Assert.Equal(47.61d, (await properties.GetAsync(property.Id))!.Latitude);

@@ -49,14 +49,14 @@ public record PropertyPhotoView(
 /// <param name="DestinationId">The destination driven to.</param>
 /// <param name="DestinationName">What that place is called.</param>
 /// <param name="Minutes">How long the drive takes.</param>
-/// <param name="Kilometres">How far it is, when the routing service said.</param>
+/// <param name="Miles">How far it is, when it was measured or typed in.</param>
 /// <param name="Source">Whether the time was measured or typed in.</param>
 /// <param name="MeasuredAt">When it was measured or last typed.</param>
 public record PropertyDriveTimeView(
     int DestinationId,
     string DestinationName,
     double Minutes,
-    double? Kilometres,
+    double? Miles,
     DriveTimeSource Source,
     DateTimeOffset MeasuredAt);
 
@@ -195,13 +195,19 @@ public record UpdatePropertyRequest(
 /// <param name="Name">What the place is called; required.</param>
 /// <param name="Address">Street address.</param>
 /// <param name="Weight">How much its drive counts next to the others.</param>
-public record SearchDestinationRequest(string Name, string? Address = null, decimal Weight = 1m);
+/// <param name="RoundTripsPerWeek">How many round trips a week are driven to it.</param>
+public record SearchDestinationRequest(
+    string Name,
+    string? Address = null,
+    decimal Weight = 1m,
+    int RoundTripsPerWeek = 0);
 
 /// <summary>A destination as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
 /// <param name="Name">What the place is called.</param>
 /// <param name="Address">Street address.</param>
 /// <param name="Weight">How much its drive counts next to the others.</param>
+/// <param name="RoundTripsPerWeek">How many round trips a week are driven to it.</param>
 /// <param name="Latitude">Latitude the address was resolved to, or null.</param>
 /// <param name="Longitude">Longitude the address was resolved to, or null.</param>
 /// <param name="SortOrder">Position in the list.</param>
@@ -210,9 +216,33 @@ public record SearchDestinationView(
     string Name,
     string? Address,
     decimal Weight,
+    int RoundTripsPerWeek,
     double? Latitude,
     double? Longitude,
     int SortOrder);
+
+/// <summary>Fields accepted when adding or changing a car.</summary>
+/// <param name="Name">What the car is called; required.</param>
+/// <param name="MilesPerGallon">Average miles it does to the gallon.</param>
+/// <param name="FuelPricePerGallon">What a gallon costs now.</param>
+public record VehicleRequest(string Name, double MilesPerGallon = 0d, decimal FuelPricePerGallon = 0m);
+
+/// <summary>A car as the API and the UI show it.</summary>
+/// <param name="Id">Primary key.</param>
+/// <param name="Name">What the car is called.</param>
+/// <param name="MilesPerGallon">Average miles it does to the gallon.</param>
+/// <param name="FuelPricePerGallon">What a gallon costs now.</param>
+/// <param name="SortOrder">Position in the list.</param>
+public record VehicleView(
+    int Id,
+    string Name,
+    double MilesPerGallon,
+    decimal FuelPricePerGallon,
+    int SortOrder)
+{
+    /// <summary>Whether the car can be costed, which needs both a mileage and a price.</summary>
+    public bool CanCost => MilesPerGallon > 0d && FuelPricePerGallon > 0m;
+}
 
 /// <summary>Fields accepted when creating or updating a priority.</summary>
 /// <param name="Name">What the priority is; required.</param>
@@ -288,5 +318,5 @@ public record PropertyPriorityRequest(bool? Meets);
 
 /// <summary>Fields accepted when recording a drive time by hand.</summary>
 /// <param name="Minutes">How long the drive takes, or null to forget the time held.</param>
-/// <param name="Kilometres">How far it is, when known.</param>
-public record PropertyDriveTimeRequest(double? Minutes, double? Kilometres = null);
+/// <param name="Miles">How far it is, when known.</param>
+public record PropertyDriveTimeRequest(double? Minutes, double? Miles = null);

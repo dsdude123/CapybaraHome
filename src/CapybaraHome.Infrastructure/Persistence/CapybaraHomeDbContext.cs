@@ -72,6 +72,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>How the properties were marked against the priorities.</summary>
     public DbSet<PropertyPriority> PropertyPriorities => Set<PropertyPriority>();
 
+    /// <summary>The cars the drives are made in.</summary>
+    public DbSet<Vehicle> Vehicles => Set<Vehicle>();
+
     /// <summary>The scoring weights and the routing service the search uses.</summary>
     public DbSet<HomeSearchSettings> HomeSearchSettings => Set<HomeSearchSettings>();
 

@@ -60,7 +60,7 @@ public class RoutingClientTests
     }
 
     [Fact]
-    public async Task A_route_comes_back_as_minutes_and_kilometres()
+    public async Task A_route_comes_back_as_minutes_and_miles()
     {
         await using var db = await TestDatabase.CreateAsync();
         var (client, http) = await ClientAsync(db, OneRoute);
@@ -68,7 +68,7 @@ public class RoutingClientTests
         var drive = await client.MeasureAsync(47.6d, -122.3d, 47.7d, -122.4d);
 
         Assert.Equal(18.5d, drive!.Minutes);
-        Assert.Equal(12.4d, drive.Kilometres);
+        Assert.Equal(7.705d, drive.Miles, 3);
         Assert.Equal(HttpMethod.Post, http.Requests[0].Method);
         Assert.Contains("v2/directions/driving-car", http.Requests[0].RequestUri!.ToString());
 
