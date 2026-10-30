@@ -63,6 +63,7 @@ public class TaskAutomationServiceTests
             TaskIntervalUnit.Days,
             1,
             new DateOnly(2026, 10, 18),
+            null,
             new TimeOnly(7, 0),
             category.Id));
 
@@ -341,7 +342,7 @@ public class TaskAutomationServiceTests
         await using var db = await TestDatabase.CreateAsync();
         var service = Service(db);
 
-        var preview = service.Preview(unit, count, new DateOnly(2026, 10, 20), new TimeOnly(6, 0));
+        var preview = service.Preview(unit, count, new DateOnly(2026, 10, 20), null, new TimeOnly(6, 0));
         Assert.Equal(TaskAutomationService.PreviewCount, preview.Count);
         Assert.All(preview, moment => Assert.True(moment > db.Clock.GetUtcNow()));
 
@@ -395,10 +396,95 @@ public class TaskAutomationServiceTests
         // Pacific is still ahead and is the first run; the one after it is thirteen days on.
         Assert.Equal(new DateOnly(2026, 10, 18), Local(created.NextRunAt!.Value));
 
-        var preview = service.Preview(TaskIntervalUnit.Days, 13, new DateOnly(2026, 10, 18), new TimeOnly(9, 0));
+        var preview = service.Preview(TaskIntervalUnit.Days, 13, new DateOnly(2026, 10, 18), null, new TimeOnly(9, 0));
         Assert.Equal(
             [new DateOnly(2026, 10, 18), new DateOnly(2026, 10, 31), new DateOnly(2026, 11, 13)],
             preview.Take(3).Select(Local));
+    }
+
+    [Theory]
+    [InlineData(DayOfWeek.Monday)]
+    [InlineData(DayOfWeek.Tuesday)]
+    [InlineData(DayOfWeek.Wednesday)]
+    [InlineData(DayOfWeek.Thursday)]
+    [InlineData(DayOfWeek.Friday)]
+    [InlineData(DayOfWeek.Saturday)]
+    [InlineData(DayOfWeek.Sunday)]
+    public async Task A_weekly_automation_runs_on_the_day_of_the_week_it_was_given(DayOfWeek day)
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = Service(db);
+
+        var created = await service.CreateAsync(new CreateTaskAutomationRequest(
+            $"Every {day}",
+            IntervalUnit: TaskIntervalUnit.Weeks,
+            IntervalCount: 1,
+            StartsOn: new DateOnly(2026, 10, 18),
+            WeekDay: day,
+            TimeOfDay: new TimeOnly(9, 0)));
+
+        Assert.Equal(day, created.WeekDay);
+        Assert.Equal(day, Local(created.NextRunAt!.Value).DayOfWeek);
+
+        var preview = service.Preview(
+            TaskIntervalUnit.Weeks, 1, new DateOnly(2026, 10, 18), day, new TimeOnly(9, 0));
+        Assert.All(preview, moment => Assert.Equal(day, Local(moment).DayOfWeek));
+    }
+
+    [Fact]
+    public async Task A_day_of_the_week_is_dropped_when_the_interval_is_not_counted_in_weeks()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = Service(db);
+
+        // Asked for on a monthly one, it is not stored at all.
+        var monthly = await service.CreateAsync(new CreateTaskAutomationRequest(
+            "Monthly",
+            IntervalUnit: TaskIntervalUnit.Months,
+            IntervalCount: 1,
+            StartsOn: new DateOnly(2026, 10, 18),
+            WeekDay: DayOfWeek.Thursday));
+
+        Assert.Null(monthly.WeekDay);
+
+        // Kept on a weekly one, and let go the moment that one stops being weekly.
+        var weekly = await service.CreateAsync(new CreateTaskAutomationRequest(
+            "Weekly",
+            IntervalUnit: TaskIntervalUnit.Weeks,
+            IntervalCount: 1,
+            StartsOn: new DateOnly(2026, 10, 18),
+            WeekDay: DayOfWeek.Thursday));
+
+        Assert.Equal(DayOfWeek.Thursday, weekly.WeekDay);
+
+        var moved = await service.UpdateAsync(weekly.Id, new UpdateTaskAutomationRequest(
+            IntervalUnit: TaskIntervalUnit.Months));
+        Assert.Null(moved!.WeekDay);
+    }
+
+    [Fact]
+    public async Task A_day_of_the_week_is_set_and_taken_off_again()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = Service(db);
+
+        var created = await service.CreateAsync(new CreateTaskAutomationRequest(
+            "Changeable",
+            IntervalUnit: TaskIntervalUnit.Weeks,
+            IntervalCount: 1,
+            StartsOn: new DateOnly(2026, 10, 18)));
+
+        // The 18th of October 2026 is a Sunday, so that is the day it keeps without being told one.
+        Assert.Null(created.WeekDay);
+        Assert.Equal(DayOfWeek.Sunday, Local(created.NextRunAt!.Value).DayOfWeek);
+
+        var pinned = await service.UpdateAsync(created.Id, new UpdateTaskAutomationRequest(WeekDay: DayOfWeek.Wednesday));
+        Assert.Equal(DayOfWeek.Wednesday, pinned!.WeekDay);
+        Assert.Equal(DayOfWeek.Wednesday, Local(pinned.NextRunAt!.Value).DayOfWeek);
+
+        var loosened = await service.UpdateAsync(created.Id, new UpdateTaskAutomationRequest(ClearWeekDay: true));
+        Assert.Null(loosened!.WeekDay);
+        Assert.Equal(DayOfWeek.Sunday, Local(loosened.NextRunAt!.Value).DayOfWeek);
     }
 
     private static TaskAutomationService Service(TestDatabase db)

@@ -262,11 +262,19 @@ public class DataTransferServiceTests
             TaskIntervalUnit.Days,
             13,
             new DateOnly(2026, 11, 2),
+            null,
             new TimeOnly(7, 30),
             category.Id,
             DueInDays: 3,
             SkipWhenOpenTaskExists: true,
             IsEnabled: false));
+
+        await automations.CreateAsync(new CreateTaskAutomationRequest(
+            "Put the bins out",
+            IntervalUnit: TaskIntervalUnit.Weeks,
+            IntervalCount: 1,
+            StartsOn: new DateOnly(2026, 11, 2),
+            WeekDay: DayOfWeek.Thursday));
 
         var json = await new DataTransferService(source.Context, source.Clock).ExportToJsonAsync();
 
@@ -274,10 +282,15 @@ public class DataTransferServiceTests
         var into = new DataTransferService(target.Context, target.Clock);
 
         var first = await into.ImportFromJsonAsync(json, ImportMode.Merge);
-        Assert.Equal(1, first.AutomationsAdded);
+        Assert.Equal(2, first.AutomationsAdded);
 
-        var restored = Assert.Single(await new TaskAutomationService(
-            target.Context, new TaskService(target.Context, target.Clock), target.Clock).ListAsync());
+        var all = await new TaskAutomationService(
+            target.Context, new TaskService(target.Context, target.Clock), target.Clock).ListAsync();
+        var restored = all.Single(a => a.Title == "Water the tomatoes");
+
+        // The day of the week rides along, and the one that never had it still has none.
+        Assert.Equal(DayOfWeek.Thursday, all.Single(a => a.Title == "Put the bins out").WeekDay);
+        Assert.Null(restored.WeekDay);
 
         Assert.Equal("Water the tomatoes", restored.Title);
         Assert.Equal("The ones in the greenhouse", restored.Notes);
@@ -292,8 +305,8 @@ public class DataTransferServiceTests
 
         var second = await into.ImportFromJsonAsync(json, ImportMode.Merge);
         Assert.Equal(0, second.AutomationsAdded);
-        Assert.Equal(1, second.AutomationsUpdated);
-        Assert.Single(target.Context.TaskAutomations);
+        Assert.Equal(2, second.AutomationsUpdated);
+        Assert.Equal(2, target.Context.TaskAutomations.Count());
     }
 
 }

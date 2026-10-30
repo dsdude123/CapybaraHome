@@ -1,9 +1,12 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
+using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Infrastructure.Persistence;
@@ -1617,8 +1620,9 @@ public class StaticRenderingTests
             ["form.IsEnabled"] = "true",
         });
 
+        // Saving a new automation goes back to the list, the same place saving an edit goes.
         Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
-        var editor = created.Headers.Location!.OriginalString;
+        Assert.Equal("/automations", created.Headers.Location!.AbsolutePath);
 
         int id;
         using (var scope = app.Services.CreateScope())
@@ -1644,7 +1648,7 @@ public class StaticRenderingTests
         Assert.Contains("Due 3 days after it is created", list);
         Assert.Contains("Never run", list);
 
-        var edited = await PostAsync(client, editor, "automation-editor", new()
+        var edited = await PostAsync(client, $"/automations/{id}", "automation-editor", new()
         {
             ["form.Action"] = "save",
             ["form.Title"] = "Take the bins out and rinse them",
@@ -1800,6 +1804,125 @@ public class StaticRenderingTests
             CreatedAt = createdAt,
             UpdatedAt = createdAt,
         };
+
+    [Theory]
+    [InlineData("Monday", DayOfWeek.Monday)]
+    [InlineData("Tuesday", DayOfWeek.Tuesday)]
+    [InlineData("Wednesday", DayOfWeek.Wednesday)]
+    [InlineData("Thursday", DayOfWeek.Thursday)]
+    [InlineData("Friday", DayOfWeek.Friday)]
+    [InlineData("Saturday", DayOfWeek.Saturday)]
+    [InlineData("Sunday", DayOfWeek.Sunday)]
+    [InlineData("", DayOfWeek.Friday)]
+    public async Task Every_day_of_the_week_can_be_picked_for_a_weekly_automation(string day, DayOfWeek runsOn)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        // The 30th of October 2026 is a Friday, so the empty option leaves the schedule there.
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = $"Chore for {(day.Length == 0 ? "no day" : day)}",
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "2",
+            ["form.StartsOn"] = "2026-10-30",
+            ["form.WeekDay"] = day,
+            ["form.TimeOfDay"] = "08:00",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, posted.StatusCode);
+
+        int id;
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var automation = await context.TaskAutomations.SingleAsync();
+            id = automation.Id;
+
+            Assert.Equal(day.Length == 0 ? null : Enum.Parse<DayOfWeek>(day), automation.WeekDay);
+        }
+
+        // Every date the editor previews falls on that day, whether it was picked or came from the
+        // start date, which is a Friday.
+        var editor = await client.GetStringAsync($"/automations/{id}");
+        var previewed = Regex.Matches(editor, @"([A-Z][a-z]+ \d{1,2}, \d{4}) at")
+            .Select(m => DateTime.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture))
+            .ToList();
+
+        Assert.Equal(TaskAutomationService.PreviewCount, previewed.Count);
+        Assert.All(previewed, moment => Assert.Equal(runsOn, moment.DayOfWeek));
+
+        var list = await client.GetStringAsync("/automations");
+        Assert.Contains(day.Length == 0 ? "Every 2 weeks" : $"Every 2 weeks on {day}", list);
+    }
+
+    [Fact]
+    public async Task A_day_of_the_week_cannot_be_picked_for_an_interval_that_is_not_weeks()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "preview",
+            ["form.Title"] = "Monthly",
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Months),
+            ["form.IntervalCount"] = "1",
+            ["form.StartsOn"] = "2026-10-30",
+            ["form.TimeOfDay"] = "08:00",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        var html = await posted.Content.ReadAsStringAsync();
+        var field = Regex.Match(html, """<select[^>]*id="automation-weekday"[^>]*>""").Value;
+
+        Assert.Contains("disabled", field);
+        Assert.Contains("weekly schedules only", html);
+    }
+
+    [Fact]
+    public async Task A_due_date_of_zero_days_saves_and_reads_back_as_the_same_day()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = "Same day chore",
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "1",
+            ["form.StartsOn"] = "2026-11-02",
+            ["form.TimeOfDay"] = "00:00",
+            ["form.DueInDays"] = "0",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, posted.StatusCode);
+
+        int id;
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var automation = await context.TaskAutomations.SingleAsync();
+            id = automation.Id;
+            Assert.Equal(0, automation.DueInDays);
+        }
+
+        // Zero is a due date, not the empty box that means no due date, so the editor has to show
+        // it back rather than read it as nothing set.
+        var editor = await client.GetStringAsync($"/automations/{id}");
+        var field = Regex.Match(editor, """<input[^>]*id="automation-due"[^>]*>""").Value;
+        Assert.Contains("value=\"0\"", field);
+
+        var list = await client.GetStringAsync("/automations");
+        Assert.Contains("Due the day it is created", list);
+    }
 
     [Fact]
     public async Task A_due_date_before_the_task_is_created_comes_back_as_an_error_on_the_editor()

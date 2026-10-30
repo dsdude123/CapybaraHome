@@ -149,6 +149,7 @@ public record TaskRecord(
 /// <param name="IntervalUnit">Unit the repeat interval is counted in.</param>
 /// <param name="IntervalCount">How many of that unit there are between runs.</param>
 /// <param name="StartsOn">Day the interval is counted from.</param>
+/// <param name="WeekDay">Day of the week a weekly schedule runs on, or null for the start date's own day.</param>
 /// <param name="TimeOfDay">Time of day each run happens at.</param>
 /// <param name="DueInDays">How many days after it is created the task is due, or null.</param>
 /// <param name="SkipWhenOpenTaskExists">Whether a run does nothing when a task with the same title is already open.</param>
@@ -164,6 +165,7 @@ public record TaskAutomationRecord(
     TaskIntervalUnit IntervalUnit,
     int IntervalCount,
     DateOnly StartsOn,
+    DayOfWeek? WeekDay,
     TimeOnly TimeOfDay,
     int? DueInDays,
     bool SkipWhenOpenTaskExists,

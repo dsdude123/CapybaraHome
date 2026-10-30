@@ -172,6 +172,63 @@ public class TaskAutomationScheduleTests
             unit, int.MaxValue, new DateOnly(2026, 10, 1), TimeOnly.MinValue, index, Pacific));
     }
 
+    [Theory]
+    [InlineData(DayOfWeek.Monday, "2026-11-02")]
+    [InlineData(DayOfWeek.Tuesday, "2026-11-03")]
+    [InlineData(DayOfWeek.Wednesday, "2026-11-04")]
+    [InlineData(DayOfWeek.Thursday, "2026-11-05")]
+    [InlineData(DayOfWeek.Friday, "2026-10-30")]
+    [InlineData(DayOfWeek.Saturday, "2026-10-31")]
+    [InlineData(DayOfWeek.Sunday, "2026-11-01")]
+    public void A_weekly_schedule_starts_on_the_first_of_its_day_on_or_after_the_start_date(DayOfWeek day, string expected)
+    {
+        // The 30th of October 2026 is a Friday, so Friday itself is the start date and every other
+        // day is the one that follows it.
+        var anchor = TaskAutomationSchedule.Anchor(TaskIntervalUnit.Weeks, new DateOnly(2026, 10, 30), day);
+
+        Assert.Equal(DateOnly.Parse(expected), anchor);
+        Assert.Equal(day, anchor.DayOfWeek);
+    }
+
+    [Fact]
+    public void A_weekly_schedule_keeps_its_day_every_time_it_repeats()
+    {
+        var upcoming = TaskAutomationSchedule.Upcoming(
+            TaskIntervalUnit.Weeks,
+            2,
+            TaskAutomationSchedule.Anchor(TaskIntervalUnit.Weeks, new DateOnly(2026, 10, 30), DayOfWeek.Sunday),
+            new TimeOnly(8, 0),
+            Instant(2026, 10, 30, 0, 0),
+            4,
+            Pacific);
+
+        Assert.All(upcoming, moment => Assert.Equal(
+            DayOfWeek.Sunday,
+            TimeZoneInfo.ConvertTime(moment, Pacific).DayOfWeek));
+        Assert.Equal(
+            [new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 15), new DateOnly(2026, 11, 29), new DateOnly(2026, 12, 13)],
+            upcoming.Select(m => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(m, Pacific).DateTime)));
+    }
+
+    [Theory]
+    [InlineData(TaskIntervalUnit.Days)]
+    [InlineData(TaskIntervalUnit.Months)]
+    [InlineData(TaskIntervalUnit.Years)]
+    public void A_day_of_the_week_does_nothing_to_an_interval_that_is_not_counted_in_weeks(TaskIntervalUnit unit)
+    {
+        var startsOn = new DateOnly(2026, 10, 30);
+
+        Assert.Equal(startsOn, TaskAutomationSchedule.Anchor(unit, startsOn, DayOfWeek.Sunday));
+    }
+
+    [Fact]
+    public void A_weekly_schedule_with_no_day_of_the_week_keeps_the_start_date()
+    {
+        var startsOn = new DateOnly(2026, 10, 30);
+
+        Assert.Equal(startsOn, TaskAutomationSchedule.Anchor(TaskIntervalUnit.Weeks, startsOn, null));
+    }
+
     private static DateTimeOffset Instant(int year, int month, int day, int hour, int minute) =>
         new(year, month, day, hour, minute, 0, TimeSpan.Zero);
 }
