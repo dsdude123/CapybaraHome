@@ -1,0 +1,114 @@
+@page "/meals/tags"
+@using CapybaraHome.Domain.Meals
+@inject MealTagService Tags
+
+<PageTitle>Meal tags</PageTitle>
+
+<div class="page-head">
+    <h1>Meal tags</h1>
+    <a class="btn btn-small" href="meals">Back to meals</a>
+</div>
+
+<form method="post" @formname="tag-create" @onsubmit="CreateAsync" class="card" style="margin-bottom:1rem">
+    <AntiforgeryToken />
+
+    <div class="filters">
+        <div class="field">
+            <label for="tag-name">New tag</label>
+            <input id="tag-name" type="text" name="name" value="@name" />
+        </div>
+        <div class="field">
+            <label for="tag-facet">Describes</label>
+            <select id="tag-facet" name="facet">
+                @foreach (var value in MealTagFacetNames.All)
+                {
+                    <option value="@value" selected="@(facet == value)">@MealTagFacetNames.Label(value)</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+
+    @if (created is not null)
+    {
+        <p class="notice">@created</p>
+    }
+
+    <button class="btn btn-primary btn-small" type="submit">Create</button>
+</form>
+
+@if (tags.Count == 0)
+{
+    <p class="muted">No tags yet.</p>
+}
+
+@foreach (var group in MealTagFacetNames.All)
+{
+    var choices = tags.Where(t => t.Facet == group).ToList();
+    if (choices.Count > 0)
+    {
+        <section class="card stack" style="margin-bottom:1rem">
+            <h2 class="card-title">@MealTagFacetNames.Label(group)</h2>
+            <ul class="task-list">
+                @foreach (var tag in choices)
+                {
+                    <li>
+                        <div class="task-line">
+                            <a class="task-link" href="meals/tags/@tag.Id">@tag.Name</a>
+                        </div>
+                        <div class="task-meta">
+                            <span>@tag.MealCount meal(s)</span>
+                        </div>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private IReadOnlyList<MealTagUsageView> tags = [];
+    private string? name;
+    private MealTagFacet facet = MealTagFacet.Trait;
+    private string? error;
+    private string? created;
+
+    /// <summary>Lists the tags, reading the create form back out of a post so a refused name is kept.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (HttpContext?.Request.Method == HttpMethods.Post)
+        {
+            name = HttpContext.Request.Form["name"];
+            facet = Enum.TryParse<MealTagFacet>(HttpContext.Request.Form["facet"], out var posted)
+                ? posted
+                : MealTagFacet.Trait;
+        }
+
+        tags = await Tags.ListUsageAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        error = null;
+        created = null;
+
+        try
+        {
+            var tag = await Tags.EnsureAsync(new MealTagRequest(name ?? string.Empty, facet));
+            created = $"\"{tag.Name}\" describes {MealTagFacetNames.Label(tag.Facet).ToLowerInvariant()}.";
+            name = null;
+            tags = await Tags.ListUsageAsync();
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

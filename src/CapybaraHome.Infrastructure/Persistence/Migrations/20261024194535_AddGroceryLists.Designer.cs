@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CapybaraHome.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CapybaraHomeDbContext))]
-    [Migration("20261027074432_AddDailyReportSettings")]
-    partial class AddDailyReportSettings
+    [Migration("20261024194535_AddGroceryLists")]
+    partial class AddGroceryLists
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -56,6 +56,86 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.HasIndex("SortOrder");
 
                     b.ToTable("DashboardCards", (string)null);
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.FrequentGroceryItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Item")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT")
+                        .UseCollation("NOCASE");
+
+                    b.Property<string>("Quantity")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Item")
+                        .IsUnique();
+
+                    b.HasIndex("SortOrder");
+
+                    b.ToTable("FrequentGroceryItems");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.GroceryItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GroceryListId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Item")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Quantity")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroceryListId", "SortOrder");
+
+                    b.ToTable("GroceryItems");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.GroceryList", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClosedAt");
+
+                    b.ToTable("GroceryLists");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
@@ -147,20 +227,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.HasIndex("MealId", "SortOrder");
 
                     b.ToTable("MealIngredients");
-                });
-
-            modelBuilder.Entity("CapybaraHome.Domain.Meals.MealPlanTarget", b =>
-                {
-                    b.Property<string>("Slot")
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Count")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Slot");
-
-                    b.ToTable("MealPlanTargets");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.MealTag", b =>
@@ -264,92 +330,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("MealVariantRemovals");
                 });
 
-            modelBuilder.Entity("CapybaraHome.Domain.Reports.DailyReportSettings", b =>
-                {
-                    b.Property<int>("Id")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("LastRunAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastRunError")
-                        .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("PrintBothSides")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("PrinterHost")
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("PrinterPort")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("PrinterQueue")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<TimeOnly>("TimeOfDay")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("WeatherUrl")
-                        .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("DailyReportSettings");
-                });
-
-            modelBuilder.Entity("CapybaraHome.Domain.Reports.ReportCalendar", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Url")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Kind", "SortOrder");
-
-                    b.ToTable("ReportCalendars");
-                });
-
-            modelBuilder.Entity("CapybaraHome.Domain.Reports.ReportCategory", b =>
-                {
-                    b.Property<int>("CategoryId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("CategoryId");
-
-                    b.ToTable("ReportCategories");
-                });
-
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.Category", b =>
                 {
                     b.Property<int>("Id")
@@ -373,67 +353,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.HasIndex("SortOrder");
 
                     b.ToTable("Categories");
-                });
-
-            modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskAutomation", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("CategoryId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("DueInDays")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("IntervalCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("IntervalUnit")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("LastRunAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("LastRunSkipped")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("SkipWhenOpenTaskExists")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateOnly>("StartsOn")
-                        .HasColumnType("TEXT");
-
-                    b.Property<TimeOnly>("TimeOfDay")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CategoryId");
-
-                    b.HasIndex("IsEnabled");
-
-                    b.ToTable("TaskAutomations");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskItem", b =>
@@ -608,6 +527,17 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.GroceryItem", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Grocery.GroceryList", "List")
+                        .WithMany("Items")
+                        .HasForeignKey("GroceryListId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("List");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
                 {
                     b.HasOne("CapybaraHome.Domain.Meals.MealVariant", "PlannedVariant")
@@ -670,27 +600,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Variant");
                 });
 
-            modelBuilder.Entity("CapybaraHome.Domain.Reports.ReportCategory", b =>
-                {
-                    b.HasOne("CapybaraHome.Domain.Tasks.Category", "Category")
-                        .WithMany()
-                        .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Category");
-                });
-
-            modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskAutomation", b =>
-                {
-                    b.HasOne("CapybaraHome.Domain.Tasks.Category", "Category")
-                        .WithMany()
-                        .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Category");
-                });
-
             modelBuilder.Entity("CapybaraHome.Domain.Tasks.TaskItem", b =>
                 {
                     b.HasOne("CapybaraHome.Domain.Tasks.Category", "Category")
@@ -723,6 +632,11 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TagsId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Grocery.GroceryList", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>

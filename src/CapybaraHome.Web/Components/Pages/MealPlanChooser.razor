@@ -17,16 +17,29 @@ else
     <form method="post" @formname="plan-choice" @onsubmit="PlanAsync" class="card stack">
         <AntiforgeryToken />
 
-        <div class="field">
-            <label for="choice">What to cook</label>
-            <select id="choice" name="variant-id">
-                <option value="">@meal.Name</option>
-                @foreach (var variant in meal.Variants)
-                {
-                    <option value="@variant.Id" selected="@(variant.Id == meal.PlannedVariantId)">@variant.Name</option>
-                }
-            </select>
-        </div>
+        <fieldset class="check-list">
+            <legend>What to cook</legend>
+            <div class="choice-line">
+                <label for="choice-meal">
+                    <input id="choice-meal" type="radio" name="variant-id" value="" checked="@(meal.PlannedVariantId is null)" />
+                    @meal.Name
+                </label>
+                <div class="task-meta variant-changes">
+                    <span>As written</span>
+                </div>
+            </div>
+            @foreach (var variant in meal.Variants)
+            {
+                <div class="choice-line">
+                    <label for="choice-@variant.Id">
+                        <input id="choice-@variant.Id" type="radio" name="variant-id" value="@variant.Id"
+                               checked="@(variant.Id == meal.PlannedVariantId)" />
+                        @variant.Name
+                    </label>
+                    <VariantChanges Meal="meal" Variant="variant" />
+                </div>
+            }
+        </fieldset>
 
         <label style="align-items:center;gap:0.5rem;display:flex">
             <input type="checkbox" name="shared" value="true" checked="@(meal.Status == MealStatus.PlannedShared)"

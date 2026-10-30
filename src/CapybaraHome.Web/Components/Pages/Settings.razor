@@ -2,6 +2,7 @@
 @inject CategoryService Categories
 @inject UserService Users
 @inject ApiTokenService Tokens
+@inject GroceryService Grocery
 @inject BackupWriter Backups
 @inject NavigationManager Navigation
 
@@ -129,6 +130,44 @@
 </section>
 
 <section class="card stack" style="margin-bottom:1rem">
+    <h2 class="card-title">Frequent grocery items</h2>
+    <p class="muted">Every one of these is offered each time a grocery list is generated.</p>
+
+    <table>
+        <thead>
+            <tr><th>Quantity</th><th>Item</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var item in frequentItems)
+            {
+                <tr>
+                    <td>@item.Quantity</td>
+                    <td>@item.Item</td>
+                    <td>
+                        <form method="post" @formname="@($"delete-frequent-{item.Id}")" @onsubmit="() => DeleteFrequentAsync(item.Id)">
+                            <AntiforgeryToken />
+                            <button class="btn btn-small btn-danger" type="submit">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <EditForm Model="frequentForm" FormName="add-frequent" OnValidSubmit="AddFrequentAsync">
+        <div class="row">
+            <InputText type="text" placeholder="Quantity" @bind-Value="frequentForm.Quantity" style="flex:0 1 8rem" />
+            <InputText type="text" placeholder="New frequent item" @bind-Value="frequentForm.Item" style="flex:1 1 12rem" />
+            <button class="btn" type="submit">Add</button>
+        </div>
+    </EditForm>
+    @if (frequentError is not null)
+    {
+        <p class="error">@frequentError</p>
+    }
+</section>
+
+<section class="card stack" style="margin-bottom:1rem">
     <h2 class="card-title">Connector tokens</h2>
     <p class="muted">
         A token lets the Claude connector reach this installation. Point the connector at
@@ -194,7 +233,7 @@
             <button class="btn" type="submit">Back up now</button>
         </form>
     </div>
-    <p class="muted">The export is one JSON file holding every category, task and dashboard card.</p>
+    <p class="muted">The export is one JSON file holding every category, task, meal, dashboard card and grocery list.</p>
 
     <form method="post" action="settings/import" enctype="multipart/form-data" class="stack">
         <AntiforgeryToken />
@@ -239,12 +278,14 @@
     private IReadOnlyList<CategoryView> categories = [];
     private IReadOnlyList<UserView> users = [];
     private IReadOnlyList<ApiTokenView> tokens = [];
+    private IReadOnlyList<FrequentGroceryItemView> frequentItems = [];
     private bool isFirstUser;
 
     private string? categoryError;
     private string? peopleError;
     private string? peopleMessage;
     private string? tokenError;
+    private string? frequentError;
     private string? mintedSecret;
     private string? dataMessage;
     private string? dataError;
@@ -261,6 +302,9 @@
     [SupplyParameterFromForm(Name = "resetForm")]
     private ResetForm? postedResetForm { get; set; }
 
+    [SupplyParameterFromForm(Name = "frequentForm")]
+    private FrequentForm? postedFrequentForm { get; set; }
+
     // A post binds only the form it came from, leaving the others null, so each one falls back
     // to empty values rather than handing EditForm a null model.
     private NameForm categoryForm => postedCategoryForm ??= new();
@@ -270,6 +314,8 @@
     private NewUserForm userForm => postedUserForm ??= new();
 
     private ResetForm resetForm => postedResetForm ??= new();
+
+    private FrequentForm frequentForm => postedFrequentForm ??= new();
 
     private static string McpUrl => "/mcp";
 
@@ -286,6 +332,7 @@
         categories = await Categories.ListAsync();
         users = await Users.ListAsync();
         tokens = await Tokens.ListAsync();
+        frequentItems = await Grocery.ListFrequentAsync();
 
         var state = AuthenticationState is null ? null : await AuthenticationState;
         isFirstUser = state?.User.IsFirstUser() ?? false;
@@ -321,6 +368,28 @@
     private async Task DeleteCategoryAsync(int id)
     {
         await Categories.DeleteAsync(id);
+        Reload();
+    }
+
+    private async Task AddFrequentAsync()
+    {
+        frequentError = null;
+        try
+        {
+            await Grocery.AddFrequentAsync(new GroceryItemInput(frequentForm.Item ?? string.Empty, frequentForm.Quantity));
+        }
+        catch (ArgumentException ex)
+        {
+            frequentError = ex.Message;
+            return;
+        }
+
+        Reload();
+    }
+
+    private async Task DeleteFrequentAsync(int id)
+    {
+        await Grocery.RemoveFrequentAsync(id);
         Reload();
     }
 
@@ -456,6 +525,16 @@
     {
         /// <summary>The name that was typed.</summary>
         public string? Name { get; set; }
+    }
+
+    /// <summary>What the add-a-frequent-item form posts back.</summary>
+    private class FrequentForm
+    {
+        /// <summary>How much is usually bought, as typed.</summary>
+        public string? Quantity { get; set; }
+
+        /// <summary>What the item is, as typed.</summary>
+        public string? Item { get; set; }
     }
 
     /// <summary>What the add-an-account form posts back.</summary>

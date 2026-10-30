@@ -1,5 +1,6 @@
 using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Domain.Dashboards;
+using CapybaraHome.Domain.Grocery;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Reports;
 using CapybaraHome.Domain.Tasks;
@@ -36,6 +37,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>How many meals each slot aims for.</summary>
     public DbSet<MealPlanTarget> MealPlanTargets => Set<MealPlanTarget>();
 
+    /// <summary>How many of the planned meals are meant to be shared ones.</summary>
+    public DbSet<MealPlanSharedTarget> MealPlanSharedTargets => Set<MealPlanSharedTarget>();
+
     /// <summary>Lines the variants add to their meals' ingredient lists.</summary>
     public DbSet<MealVariantIngredient> MealVariantIngredients => Set<MealVariantIngredient>();
 
@@ -50,6 +54,15 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
 
     /// <summary>Categories the morning report's task table is kept to.</summary>
     public DbSet<ReportCategory> ReportCategories => Set<ReportCategory>();
+
+    /// <summary>Shopping lists.</summary>
+    public DbSet<GroceryList> GroceryLists => Set<GroceryList>();
+
+    /// <summary>Things to buy on the shopping lists.</summary>
+    public DbSet<GroceryItem> GroceryItems => Set<GroceryItem>();
+
+    /// <summary>Items asked about every time a list is generated.</summary>
+    public DbSet<FrequentGroceryItem> FrequentGroceryItems => Set<FrequentGroceryItem>();
 
     /// <summary>Cards on the shared dashboard.</summary>
     public DbSet<DashboardCard> DashboardCards => Set<DashboardCard>();

@@ -15,6 +15,18 @@ public record MealIngredientView(int Id, string? Quantity, string Item, int Sort
 /// <param name="Facet">Which side of a meal the tag describes.</param>
 public record MealTagView(int Id, string Name, MealTagFacet Facet);
 
+/// <summary>A tag with the number of meals carrying it, for the screen that manages them.</summary>
+/// <param name="Id">Primary key.</param>
+/// <param name="Name">Display name.</param>
+/// <param name="Facet">Which side of a meal the tag describes.</param>
+/// <param name="MealCount">How many meals carry the tag.</param>
+public record MealTagUsageView(int Id, string Name, MealTagFacet Facet, int MealCount);
+
+/// <summary>A meal carrying a tag, named so a deletion can say what it will change.</summary>
+/// <param name="Id">Primary key of the meal.</param>
+/// <param name="Name">What the meal is called.</param>
+public record MealTagHolderView(int Id, string Name);
+
 /// <summary>A variant as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
 /// <param name="MealId">Meal the variant belongs to.</param>
@@ -156,17 +168,15 @@ public record UpdateMealRequest(
     string? ImportedText = null,
     bool? NeedsIngredientSplit = null);
 
-/// <summary>One thing the planning screens can put on the plan: a meal, or one of its variants.</summary>
+/// <summary>One meal the planning screens can put on the plan.</summary>
 /// <param name="MealId">The meal.</param>
-/// <param name="VariantId">The variant, or null for the meal itself.</param>
-/// <param name="Name">What to show: the meal's name, or the meal and the variant.</param>
+/// <param name="Name">What the meal is called.</param>
 /// <param name="Status">The meal's status, which its variants share.</param>
 /// <param name="LastCookedAt">Day the meal was last cooked, which its variants share.</param>
 /// <param name="Tags">The meal's tags.</param>
 /// <param name="HasVariants">Whether the meal has variants to choose between.</param>
 public record MealPlanOption(
     int MealId,
-    int? VariantId,
     string Name,
     MealStatus Status,
     DateOnly? LastCookedAt,

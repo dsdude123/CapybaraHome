@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CapybaraHome.Application.Categories;
+using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Web;
 using CapybaraHome.Domain.Tasks;
@@ -23,6 +24,8 @@ public class WebAppTests
     [InlineData("/board")]
     [InlineData("/tasks")]
     [InlineData("/tasks/new")]
+    [InlineData("/grocery")]
+    [InlineData("/grocery/generate")]
     [InlineData("/settings")]
     [InlineData("/account")]
     [InlineData("/Error")]
@@ -35,6 +38,40 @@ public class WebAppTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("CapybaraHome", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task The_grocery_api_carries_a_list_from_nothing_to_a_fresh_start()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.GetAsync("/api/grocery")).StatusCode);
+
+        var frequent = await client.PostAsJsonAsync("/api/grocery/frequent", new GroceryItemInput("milk", "2 pints"));
+        Assert.Equal(HttpStatusCode.Created, frequent.StatusCode);
+        Assert.Single(await client.GetFromJsonAsync<List<FrequentGroceryItemView>>("/api/grocery/frequent", Json) ?? []);
+
+        var candidates = await client.GetFromJsonAsync<GroceryCandidates>("/api/grocery/candidates", Json);
+        Assert.Equal("milk", candidates!.Groups.Single().Candidates.Single().Item);
+
+        var added = await client.PostAsJsonAsync("/api/grocery/items", new GroceryItemInput("bin bags"));
+        Assert.Equal(HttpStatusCode.Created, added.StatusCode);
+
+        var list = await client.GetFromJsonAsync<GroceryListView>("/api/grocery", Json);
+        var item = Assert.Single(list!.Items);
+        Assert.Equal("bin bags", item.Item);
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/grocery/items", new GroceryItemInput(" "))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/grocery/items/{item.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"/api/grocery/items/{item.Id}")).StatusCode);
+
+        var fresh = await client.PostAsync("/api/grocery/lists", null);
+        Assert.Equal(HttpStatusCode.Created, fresh.StatusCode);
+
+        var lists = await client.GetFromJsonAsync<List<GroceryListView>>("/api/grocery/lists?includeClosed=true", Json);
+        Assert.Equal(2, lists!.Count);
+        Assert.Single(await client.GetFromJsonAsync<List<GroceryListView>>("/api/grocery/lists", Json) ?? []);
     }
 
     [Fact]

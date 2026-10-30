@@ -1,0 +1,33 @@
+<fieldset class="check-list">
+    <legend>@Legend</legend>
+    @if (Rows.Count == 0)
+    {
+        <p class="muted">@EmptyText</p>
+    }
+    @for (var index = 0; index < Rows.Count; index++)
+    {
+        var row = Rows[index];
+        var position = index + 1;
+        <div class="ingredient-line">
+            <input type="text" name="quantity" value="@row.Quantity" aria-label="@($"Quantity for ingredient {position}")" placeholder="Quantity" />
+            <input type="text" name="item" value="@row.Item" aria-label="@($"Ingredient {position}")" placeholder="Ingredient" />
+            <button class="btn btn-small btn-danger" type="submit" name="action" value="@IngredientRow.RemoveAction(index)"
+                    aria-label="@($"Remove ingredient {position}")">Remove</button>
+        </div>
+    }
+    <button class="btn btn-small" type="submit" name="action" value="add-row" style="margin-top:0.5rem">Add an ingredient</button>
+</fieldset>
+
+@code {
+    /// <summary>What the list of ingredients is called on this editor.</summary>
+    [Parameter]
+    public string Legend { get; set; } = "Ingredients";
+
+    /// <summary>What to say when there are no lines yet.</summary>
+    [Parameter]
+    public string EmptyText { get; set; } = "No ingredients yet.";
+
+    /// <summary>The lines to render, in order.</summary>
+    [Parameter]
+    public IReadOnlyList<IngredientRow> Rows { get; set; } = [];
+}

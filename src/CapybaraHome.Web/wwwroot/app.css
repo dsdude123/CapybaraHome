@@ -464,17 +464,27 @@ textarea {
     width: 1px;
 }
 
+/* Quantity, ingredient and Remove stay on one line at every width: stacked, a list of a few
+   ingredients fills a phone screen with boxes. */
 .ingredient-line {
+    align-items: center;
     display: grid;
-    gap: 0.5rem;
-    grid-template-columns: 1fr;
+    gap: 0.4rem;
+    grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr) auto;
     margin-bottom: 0.5rem;
 }
 
 @media (min-width: 36rem) {
     .ingredient-line {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+        gap: 0.5rem;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
     }
+}
+
+.tag-choices {
+    display: grid;
+    gap: 0 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 }
 
 .board {
@@ -574,4 +584,100 @@ code.secret {
     display: block;
     overflow-wrap: anywhere;
     padding: 0.5rem;
+}
+
+/* One choice of the planning chooser: the name, then what the variant changes. */
+.choice-line {
+    margin-bottom: 0.6rem;
+}
+
+.variant-changes {
+    margin-top: 0.15rem;
+}
+
+.directions {
+    white-space: pre-wrap;
+}
+
+.print-list {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.print-page {
+    margin: 0 auto;
+    max-width: 48rem;
+    padding: var(--content-gutter);
+}
+
+/* The grocery sheet is ticked off with a pen, so its lines carry a box instead of a bullet. */
+.grocery-print-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.grocery-print-list > li {
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.print-box {
+    border: 1px solid currentColor;
+    border-radius: 0.2rem;
+    flex: 0 0 auto;
+    height: 0.95rem;
+    margin-top: 0.3rem;
+    width: 0.95rem;
+}
+
+/* The printed sheet is the page: everything that is only there to navigate goes. */
+@media print {
+    :root {
+        color-scheme: light;
+    }
+
+    body {
+        background: #ffffff;
+        color: #000000;
+    }
+
+    .app-header,
+    .no-print,
+    .print-hide,
+    .btn,
+    form {
+        display: none !important;
+    }
+
+    .content {
+        max-width: none;
+        padding: 0;
+    }
+
+    .print-sheet h2 {
+        break-after: avoid;
+        font-size: 1.1rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .print-sheet li,
+    .print-sheet p {
+        break-inside: avoid;
+    }
+
+    .grocery-print-list > li {
+        border-color: #000000;
+        break-inside: avoid;
+    }
+
+    .muted {
+        color: #000000;
+    }
+
+    a[href]::after {
+        content: "";
+    }
 }
