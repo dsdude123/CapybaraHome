@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Dashboards;
+using CapybaraHome.Domain.Grocery;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,7 @@ public enum ImportMode
     /// <summary>Add and update by JIRA key, category name and tag name, leaving anything else in place.</summary>
     Merge,
 
-    /// <summary>Delete every task, automation, category, card and meal first, then load the document.</summary>
+    /// <summary>Delete every task, automation, category, card, meal and grocery list first, then load the document.</summary>
     Replace,
 }
 
@@ -28,6 +29,8 @@ public enum ImportMode
 /// <param name="MealsUpdated">Meals matched by JIRA key and overwritten.</param>
 /// <param name="AutomationsAdded">Task automations created.</param>
 /// <param name="AutomationsUpdated">Task automations matched by title and overwritten.</param>
+/// <param name="GroceryListsAdded">Grocery lists created.</param>
+/// <param name="FrequentItemsAdded">Frequent grocery items created.</param>
 public record ImportSummary(
     int CategoriesAdded,
     int TasksAdded,
@@ -36,7 +39,9 @@ public record ImportSummary(
     int MealsAdded = 0,
     int MealsUpdated = 0,
     int AutomationsAdded = 0,
-    int AutomationsUpdated = 0);
+    int AutomationsUpdated = 0,
+    int GroceryListsAdded = 0,
+    int FrequentItemsAdded = 0);
 
 /// <summary>Exports the whole database to one JSON document and reads it back.</summary>
 public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider clock)
@@ -96,13 +101,28 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 a.CreatedAt, a.UpdatedAt))
             .ToListAsync(cancellationToken);
 
+        var groceryLists = await context.GroceryLists.AsNoTracking()
+            .OrderBy(l => l.Id)
+            .Select(l => new GroceryListRecord(
+                l.StartedAt,
+                l.ClosedAt,
+                l.Items.OrderBy(i => i.SortOrder).ThenBy(i => i.Id)
+                    .Select(i => new GroceryItemRecord(i.Quantity, i.Item, i.Source, i.SortOrder)).ToList()))
+            .ToListAsync(cancellationToken);
+
+        var frequentItems = await context.FrequentGroceryItems.AsNoTracking()
+            .OrderBy(f => f.SortOrder).ThenBy(f => f.Id)
+            .Select(f => new FrequentGroceryItemRecord(f.Quantity, f.Item, f.SortOrder))
+            .ToListAsync(cancellationToken);
+
         var cards = await context.DashboardCards.AsNoTracking()
             .OrderBy(c => c.SortOrder)
             .Select(c => new DashboardCardRecord(c.Title, c.Kind, c.CategoryId, c.Status, c.DueWithinDays, c.SortOrder))
             .ToListAsync(cancellationToken);
 
         return new BackupDocument(
-            BackupDocument.CurrentFormatVersion, clock.GetUtcNow(), categories, tasks, cards, meals, tags, automations);
+            BackupDocument.CurrentFormatVersion, clock.GetUtcNow(), categories, tasks, cards, meals, tags, automations,
+            groceryLists, frequentItems);
     }
 
     /// <summary>Serializes an export to JSON.</summary>
@@ -138,6 +158,8 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
     {
         if (mode == ImportMode.Replace)
         {
+            context.GroceryLists.RemoveRange(await context.GroceryLists.ToListAsync(cancellationToken));
+            context.FrequentGroceryItems.RemoveRange(await context.FrequentGroceryItems.ToListAsync(cancellationToken));
             context.DashboardCards.RemoveRange(await context.DashboardCards.ToListAsync(cancellationToken));
             context.TaskAutomations.RemoveRange(await context.TaskAutomations.ToListAsync(cancellationToken));
             context.Meals.RemoveRange(await context.Meals.Include(m => m.Tags).ToListAsync(cancellationToken));
@@ -244,10 +266,11 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
 
         var (mealsAdded, mealsUpdated) = await ImportMealsAsync(document, cancellationToken);
         var (automationsAdded, automationsUpdated) = await ImportAutomationsAsync(document, categoryIdByExportedId, cancellationToken);
+        var (listsAdded, frequentAdded) = await ImportGroceryAsync(document, cancellationToken);
 
         return new ImportSummary(
             categoriesAdded, tasksAdded, tasksUpdated, cardsAdded,
-            mealsAdded, mealsUpdated, automationsAdded, automationsUpdated);
+            mealsAdded, mealsUpdated, automationsAdded, automationsUpdated, listsAdded, frequentAdded);
     }
 
     /// <summary>
@@ -319,6 +342,68 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
 
         await context.SaveChangesAsync(cancellationToken);
         return (added, updated);
+    }
+
+    /// <summary>
+    /// Loads the grocery lists and frequent items in <paramref name="document"/>. Frequent items are
+    /// matched by name, and the lists are loaded only into an installation that holds none, because
+    /// nothing identifies a list: merging an export into a house that is already shopping would
+    /// otherwise leave two open lists.
+    /// </summary>
+    private async Task<(int ListsAdded, int FrequentAdded)> ImportGroceryAsync(
+        BackupDocument document,
+        CancellationToken cancellationToken)
+    {
+        var frequentAdded = 0;
+        var heldByItem = await context.FrequentGroceryItems
+            .ToDictionaryAsync(f => f.Item, f => f, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        foreach (var record in document.FrequentGroceryItems ?? [])
+        {
+            if (heldByItem.TryGetValue(record.Item, out var held))
+            {
+                held.Quantity = record.Quantity;
+                held.SortOrder = record.SortOrder;
+                continue;
+            }
+
+            var item = new FrequentGroceryItem { Item = record.Item, Quantity = record.Quantity, SortOrder = record.SortOrder };
+            context.FrequentGroceryItems.Add(item);
+            heldByItem[record.Item] = item;
+            frequentAdded++;
+        }
+
+        var listsAdded = 0;
+        if (document.GroceryLists is { Count: > 0 } lists && !await context.GroceryLists.AnyAsync(cancellationToken))
+        {
+            // Only one list may be open, and the database holds that, so a document carrying
+            // several open ones leaves the newest open and closes the rest as it replaced them.
+            var newestOpen = lists.Where(l => l.ClosedAt is null).Max(l => (DateTimeOffset?)l.StartedAt);
+
+            foreach (var record in lists)
+            {
+                context.GroceryLists.Add(new GroceryList
+                {
+                    StartedAt = record.StartedAt,
+                    ClosedAt = record.ClosedAt
+                        ?? (record.StartedAt == newestOpen ? null : newestOpen),
+                    Items = record.Items
+                        .Select(i => new GroceryItem
+                        {
+                            Quantity = i.Quantity,
+                            Item = i.Item,
+                            Source = i.Source,
+                            SortOrder = i.SortOrder,
+                        })
+                        .ToList(),
+                });
+
+                listsAdded++;
+            }
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+        return (listsAdded, frequentAdded);
     }
 
     /// <summary>

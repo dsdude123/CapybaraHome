@@ -52,7 +52,8 @@ if (!string.IsNullOrWhiteSpace(keyPath))
 builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithTools<TaskTools>()
-    .WithTools<MealTools>();
+    .WithTools<MealTools>()
+    .WithTools<GroceryTools>();
 
 var app = builder.Build();
 
