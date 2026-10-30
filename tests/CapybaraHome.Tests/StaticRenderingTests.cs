@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.RegularExpressions;
 using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
@@ -1800,6 +1801,43 @@ public class StaticRenderingTests
             CreatedAt = createdAt,
             UpdatedAt = createdAt,
         };
+
+    [Fact]
+    public async Task A_due_date_of_zero_days_saves_and_reads_back_as_the_same_day()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = "Same day chore",
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "1",
+            ["form.StartsOn"] = "2026-11-02",
+            ["form.TimeOfDay"] = "00:00",
+            ["form.DueInDays"] = "0",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, posted.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            Assert.Equal(0, (await context.TaskAutomations.SingleAsync()).DueInDays);
+        }
+
+        // Zero is a due date, not the empty box that means no due date, so the editor has to show
+        // it back rather than read it as nothing set.
+        var editor = await client.GetStringAsync(posted.Headers.Location!.OriginalString);
+        var field = Regex.Match(editor, """<input[^>]*id="automation-due"[^>]*>""").Value;
+        Assert.Contains("value=\"0\"", field);
+
+        var list = await client.GetStringAsync("/automations");
+        Assert.Contains("Due the day it is created", list);
+    }
 
     [Fact]
     public async Task A_due_date_before_the_task_is_created_comes_back_as_an_error_on_the_editor()
