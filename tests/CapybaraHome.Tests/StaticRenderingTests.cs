@@ -6,6 +6,7 @@ using CapybaraHome.Application.Meals;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Infrastructure.Persistence;
+using CapybaraHome.Web;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -1157,6 +1158,191 @@ public class StaticRenderingTests
 
         Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
         Assert.Contains("An automation needs a title", html);
+    }
+
+    [Fact]
+    public async Task Every_kind_of_close_operation_is_added_from_the_task_editor_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var taskId = await CreateTaskAsync(client, "Close the pool");
+
+        var chooser = await client.GetStringAsync($"/tasks/{taskId}/operations/new");
+        foreach (var kind in CloseOperationNames.AllKinds)
+        {
+            Assert.Contains(CloseOperationNames.Label(kind), chooser);
+        }
+
+        var createTask = await PostAsync(client, $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.CreateTask}", "operation-editor", new()
+        {
+            ["form.FollowUpTitle"] = "Open the pool",
+            ["form.DueDateMode"] = nameof(TaskDueDateMode.InMonths),
+            ["form.DueDateValue"] = "7",
+            ["form.CarryOperationsForward"] = "true",
+            ["form.IsEnabled"] = "true",
+            ["form.Action"] = "save",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, createTask.StatusCode);
+
+        var webhook = await PostAsync(client, $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.Webhook}", "operation-editor", new()
+        {
+            ["form.WebhookUrl"] = "https://hooks.example.com/pool",
+            ["form.WebhookMethod"] = nameof(TaskWebhookMethod.Post),
+            ["form.IsEnabled"] = "true",
+            ["form.Action"] = "save",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, webhook.StatusCode);
+
+        var editor = await client.GetStringAsync($"/tasks/{taskId}");
+        Assert.Contains("Open the pool", editor);
+        Assert.Contains("due 7 months after it is completed", editor);
+        Assert.Contains("POST https://hooks.example.com/pool", editor);
+
+        // Each one opens again on its own fields rather than on the chooser.
+        foreach (var operation in await OperationsAsync(app, taskId))
+        {
+            var page = await client.GetStringAsync($"/tasks/{taskId}/operations/{operation.Id}");
+            Assert.Contains(CloseOperationNames.Label(operation.Kind), page);
+            Assert.DoesNotContain("<!--Blazor:", page);
+        }
+    }
+
+    [Fact]
+    public async Task Every_due_date_option_previews_and_saves_from_the_operation_editor()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var taskId = await CreateTaskAsync(client, "Rotate the compost");
+        var path = $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.CreateTask}";
+
+        foreach (var mode in CloseOperationNames.AllDueDateModes)
+        {
+            var previewed = await PostAsync(client, path, "operation-editor", new()
+            {
+                ["form.DueDateMode"] = mode.ToString(),
+                ["form.DueDateValue"] = "2",
+                ["form.DueDateOn"] = "2027-01-15",
+                ["form.IsEnabled"] = "true",
+                ["form.Action"] = "preview",
+            });
+
+            var html = await previewed.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.OK, previewed.StatusCode);
+            Assert.Contains(CloseOperationNames.Label(mode), html);
+            Assert.Contains(
+                mode == TaskDueDateMode.None ? "would have no due date" : "would be due",
+                html);
+
+            var saved = await PostAsync(client, path, "operation-editor", new()
+            {
+                ["form.DueDateMode"] = mode.ToString(),
+                ["form.DueDateValue"] = "2",
+                ["form.DueDateOn"] = "2027-01-15",
+                ["form.IsEnabled"] = "true",
+                ["form.Action"] = "save",
+            });
+
+            Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+        }
+
+        var operations = await OperationsAsync(app, taskId);
+        Assert.Equal(CloseOperationNames.AllDueDateModes, operations.Select(o => o.DueDateMode).ToArray());
+    }
+
+    [Fact]
+    public async Task A_URL_the_server_may_not_call_comes_back_on_the_operation_editor()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var taskId = await CreateTaskAsync(client, "Prod the metadata service");
+
+        var refused = await PostAsync(client, $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.Webhook}", "operation-editor", new()
+        {
+            ["form.WebhookUrl"] = "http://169.254.169.254/latest/meta-data/",
+            ["form.WebhookMethod"] = nameof(TaskWebhookMethod.Post),
+            ["form.IsEnabled"] = "true",
+            ["form.Action"] = "save",
+        });
+
+        var html = await refused.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, refused.StatusCode);
+        Assert.Contains("cannot be called", html);
+        Assert.Empty(await OperationsAsync(app, taskId));
+    }
+
+    [Fact]
+    public async Task Completing_a_task_on_the_board_runs_its_operations()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var taskId = await CreateTaskAsync(client, "Service the bike");
+
+        await PostAsync(client, $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.CreateTask}", "operation-editor", new()
+        {
+            ["form.DueDateMode"] = nameof(TaskDueDateMode.InWeeks),
+            ["form.DueDateValue"] = "12",
+            ["form.CarryOperationsForward"] = "true",
+            ["form.IsEnabled"] = "true",
+            ["form.Action"] = "save",
+        });
+
+        await PostAsync(client, $"/tasks/{taskId}/operations/new?kind={TaskCloseOperationKind.Webhook}", "operation-editor", new()
+        {
+            ["form.WebhookUrl"] = "https://hooks.example.com/bike",
+            ["form.WebhookMethod"] = nameof(TaskWebhookMethod.Post),
+            ["form.IsEnabled"] = "true",
+            ["form.Action"] = "save",
+        });
+
+        var moved = await PostAsync(client, "/board", $"move-{taskId}-{TaskItemStatus.Done}", []);
+        Assert.Equal(HttpStatusCode.Redirect, moved.StatusCode);
+
+        var board = await client.GetStringAsync("/board");
+        Assert.Contains("Service the bike", board);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+
+            // The follow-up task is there, due the twelve weeks out the rule asked for, and the
+            // webhook call is queued rather than sent while the move was being saved.
+            var followUp = await context.Tasks.SingleAsync(t => t.Id != taskId);
+            Assert.Equal("Service the bike", followUp.Title);
+            Assert.Equal(TaskItemStatus.ToDo, followUp.Status);
+            Assert.NotNull(followUp.DueDate);
+            Assert.Equal(2, await context.TaskCloseOperations.CountAsync(o => o.TaskId == followUp.Id));
+
+            var queued = await context.TaskCloseOperationRuns
+                .SingleAsync(r => r.Kind == TaskCloseOperationKind.Webhook);
+            Assert.Equal(TaskCloseRunStatus.Pending, queued.Status);
+        }
+
+        // The run and what it did show on the task that was closed.
+        var closed = await client.GetStringAsync($"/tasks/{taskId}");
+        Assert.Contains("Last run done", closed);
+        Assert.Contains(CloseOperationNames.Label(TaskCloseRunStatus.Pending).ToLowerInvariant(), closed);
+    }
+
+    private static async Task<int> CreateTaskAsync(HttpClient client, string title)
+    {
+        var created = await PostAsync(client, "/tasks/new", "task-editor", new()
+        {
+            ["form.Title"] = title,
+            ["form.Status"] = nameof(TaskItemStatus.ToDo),
+            ["form.CategoryId"] = string.Empty,
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
+        return int.Parse(created.Headers.Location!.OriginalString.Split('/').Last());
+    }
+
+    private static async Task<IReadOnlyList<Application.Tasks.TaskCloseOperationView>> OperationsAsync(AppFactory app, int taskId)
+    {
+        using var scope = app.Services.CreateScope();
+        var operations = scope.ServiceProvider.GetRequiredService<Application.Tasks.TaskCloseOperationService>();
+        return await operations.ListAsync(taskId);
     }
 
     private static IEnumerable<string> Forms(string html)

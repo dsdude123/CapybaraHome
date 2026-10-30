@@ -21,6 +21,7 @@ public static class ApiEndpoints
 
         MapTasks(api);
         MapAutomations(api);
+        MapCloseOperations(api);
         MapCategories(api);
         MapMeals(api);
         MapMealTags(api);
@@ -120,6 +121,78 @@ public static class ApiEndpoints
 
         automations.MapDelete("/{id:int}", async (int id, TaskAutomationService service, CancellationToken cancellationToken) =>
             await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+    }
+
+    private static void MapCloseOperations(IEndpointRouteBuilder api)
+    {
+        var operations = api.MapGroup("/tasks/{taskId:int}/operations");
+
+        operations.MapGet("/", async (int taskId, TaskCloseOperationService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListAsync(taskId, cancellationToken)));
+
+        operations.MapPost("/", async (
+            int taskId,
+            CreateTaskCloseOperationRequest request,
+            TaskCloseOperationService service,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var created = await service.CreateAsync(taskId, request, cancellationToken);
+                return Results.Created($"/api/tasks/{taskId}/operations/{created.Id}", created);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        operations.MapGet("/{id:int}", async (
+            int taskId,
+            int id,
+            TaskCloseOperationService service,
+            CancellationToken cancellationToken) =>
+            await service.GetAsync(id, cancellationToken) is { } operation && operation.TaskId == taskId
+                ? Results.Ok(operation)
+                : Results.NotFound());
+
+        operations.MapPatch("/{id:int}", async (
+            int taskId,
+            int id,
+            UpdateTaskCloseOperationRequest request,
+            TaskCloseOperationService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (await service.GetAsync(id, cancellationToken) is not { } existing || existing.TaskId != taskId)
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                return await service.UpdateAsync(id, request, cancellationToken) is { } updated
+                    ? Results.Ok(updated)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        operations.MapDelete("/{id:int}", async (
+            int taskId,
+            int id,
+            TaskCloseOperationService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (await service.GetAsync(id, cancellationToken) is not { } existing || existing.TaskId != taskId)
+            {
+                return Results.NotFound();
+            }
+
+            return await service.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound();
+        });
     }
 
     private static void MapMeals(IEndpointRouteBuilder api)

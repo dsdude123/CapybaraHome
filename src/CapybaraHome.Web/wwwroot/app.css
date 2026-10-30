@@ -564,3 +564,7 @@ code.secret {
     overflow-wrap: anywhere;
     padding: 0.5rem;
 }
+
+.inline-form {
+    margin-inline-start: auto;
+}

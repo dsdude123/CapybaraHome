@@ -24,7 +24,7 @@ public record BackupDocument(
     IReadOnlyList<TaskAutomationRecord>? TaskAutomations = null)
 {
     /// <summary>The version this build writes.</summary>
-    public const int CurrentFormatVersion = 3;
+    public const int CurrentFormatVersion = 4;
 
     /// <summary>The oldest version this build still reads, from before meals existed.</summary>
     public const int OldestReadableFormatVersion = 1;
@@ -104,6 +104,7 @@ public record CategoryRecord(int Id, string Name, string? ColorHex, int SortOrde
 /// <param name="JiraKey">Key of the JIRA issue it came from, or null.</param>
 /// <param name="CreatedAt">When it was created.</param>
 /// <param name="UpdatedAt">When it last changed.</param>
+/// <param name="CloseOperations">What runs when it is completed. Absent from a document before version 4.</param>
 public record TaskRecord(
     int Id,
     string Title,
@@ -114,7 +115,34 @@ public record TaskRecord(
     DateTimeOffset? CompletedAt,
     string? JiraKey,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<TaskCloseOperationRecord>? CloseOperations = null);
+
+/// <summary>
+/// One of a task's close operations in an export. The runs they have already had are history
+/// rather than configuration, so they are not carried.
+/// </summary>
+/// <param name="Kind">What it does.</param>
+/// <param name="SortOrder">Position in the task's list.</param>
+/// <param name="IsEnabled">Whether it runs at all.</param>
+/// <param name="WebhookUrl">URL a webhook calls, or null.</param>
+/// <param name="WebhookMethod">Method it is sent with.</param>
+/// <param name="FollowUpTitle">Title given to the created task, or null.</param>
+/// <param name="DueDateMode">How the created task's due date is worked out.</param>
+/// <param name="DueDateValue">How many days, weeks, months or years later it is due.</param>
+/// <param name="DueDateOn">Day it is due when that is picked by hand.</param>
+/// <param name="CarryOperationsForward">Whether the created task gets a copy of these operations.</param>
+public record TaskCloseOperationRecord(
+    TaskCloseOperationKind Kind,
+    int SortOrder,
+    bool IsEnabled,
+    string? WebhookUrl,
+    TaskWebhookMethod WebhookMethod,
+    string? FollowUpTitle,
+    TaskDueDateMode DueDateMode,
+    int? DueDateValue,
+    DateOnly? DueDateOn,
+    bool CarryOperationsForward);
 
 /// <summary>A task automation in an export.</summary>
 /// <param name="Title">Title it gives the tasks it creates.</param>

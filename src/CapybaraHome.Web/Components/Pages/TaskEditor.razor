@@ -1,6 +1,7 @@
 @page "/tasks/new"
 @page "/tasks/{Id:int}"
 @inject TaskService Tasks
+@inject TaskCloseOperationService CloseOperations
 @inject CategoryService Categories
 @inject NavigationManager Navigation
 
@@ -61,6 +62,46 @@
 
 @if (Id is not null)
 {
+    <div class="card" style="margin:0.75rem 0">
+        <div class="card-head">
+            <h2 class="card-title">When this task is done</h2>
+            <a class="btn btn-small" href="@($"tasks/{Id}/operations/new")">Add an operation</a>
+        </div>
+
+        @if (operations.Count == 0)
+        {
+            <p class="muted">Nothing happens beyond the task being marked done.</p>
+        }
+        else
+        {
+            <ul class="task-list">
+                @foreach (var operation in operations)
+                {
+                    <li>
+                        <div class="task-line">
+                            <a class="task-link" href="@($"tasks/{Id}/operations/{operation.Id}")">@CloseOperationNames.Label(operation.Kind)</a>
+                            @if (!operation.IsEnabled)
+                            {
+                                <span class="pill">Paused</span>
+                            }
+                            <form method="post" class="inline-form" @formname="@($"operation-delete-{operation.Id}")" @onsubmit="() => RemoveOperationAsync(operation.Id)">
+                                <AntiforgeryToken />
+                                <button class="btn btn-small btn-danger" type="submit">Remove</button>
+                            </form>
+                        </div>
+                        <div class="task-meta">
+                            <span>@Summary(operation)</span>
+                            @if (operation.LastRun is { } run)
+                            {
+                                <span>Last run @RunLine(run)</span>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+
     <form method="post" @formname="task-delete" @onsubmit="DeleteAsync" style="margin-top:0.75rem">
         <AntiforgeryToken />
         <button class="btn btn-danger" type="submit">Delete</button>
@@ -77,12 +118,14 @@
 
     private TaskForm form = new();
     private IReadOnlyList<CategoryView> categories = [];
+    private IReadOnlyList<TaskCloseOperationView> operations = [];
     private string? error;
 
     /// <summary>Loads the categories and, when editing, fills the form from the task.</summary>
     protected override async Task OnParametersSetAsync()
     {
         categories = await Categories.ListAsync();
+        operations = Id is null ? [] : await CloseOperations.ListAsync(Id.Value);
 
         // A post carries the edited values; anything else means the form is being opened fresh.
         if (postedForm is not null)
@@ -145,6 +188,28 @@
         {
             error = ex.Message;
         }
+    }
+
+    /// <summary>Returns what the operation's last run says, with its detail when it has one.</summary>
+    private static string RunLine(TaskCloseRunView run)
+    {
+        var status = CloseOperationNames.Label(run.Status).ToLowerInvariant();
+        return run.Detail is { Length: > 0 } detail ? $"{status}: {detail}" : status;
+    }
+
+    /// <summary>Returns the line that says what an operation will do.</summary>
+    private string Summary(TaskCloseOperationView operation) => operation.Kind switch
+    {
+        TaskCloseOperationKind.Webhook =>
+            $"{operation.WebhookMethod.ToString().ToUpperInvariant()} {operation.WebhookUrl}",
+        _ =>
+            $"Creates \u201c{operation.FollowUpTitle ?? form.Title}\u201d, {CloseOperationNames.DueDateSummary(operation.DueDateMode, operation.DueDateValue, operation.DueDateOn)}",
+    };
+
+    private async Task RemoveOperationAsync(int operationId)
+    {
+        await CloseOperations.DeleteAsync(operationId);
+        operations = await CloseOperations.ListAsync(Id!.Value);
     }
 
     private async Task DeleteAsync()
