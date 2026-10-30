@@ -1,0 +1,63 @@
+@* A meal laid out to be printed and cooked from: the ingredients, then the directions. *@
+
+<article class="print-sheet">
+    <h1>@Title</h1>
+
+    @if (Tags.Count > 0)
+    {
+        <p class="muted">@string.Join(" · ", Tags.Select(t => t.Name))</p>
+    }
+
+    <h2>Ingredients</h2>
+    @if (Ingredients.Count == 0)
+    {
+        <p class="muted">None listed.</p>
+    }
+    else
+    {
+        <ul class="print-list">
+            @foreach (var ingredient in Ingredients)
+            {
+                <li>@MealVariants.Line(ingredient)</li>
+            }
+        </ul>
+    }
+
+    <h2>Directions</h2>
+    @if (string.IsNullOrWhiteSpace(Directions))
+    {
+        <p class="muted">None written.</p>
+    }
+    else
+    {
+        <p class="directions">@Directions</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(VariantDirections))
+    {
+        <h2>Changes for this variant</h2>
+        <p class="directions">@VariantDirections</p>
+    }
+</article>
+
+@code {
+    /// <summary>What the sheet is headed with: the meal, or the meal and the variant.</summary>
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>The meal's tags, shown under the heading.</summary>
+    [Parameter]
+    public IReadOnlyList<MealTagView> Tags { get; set; } = [];
+
+    /// <summary>The ingredients to cook from, already adjusted for a variant.</summary>
+    [Parameter]
+    public IReadOnlyList<MealIngredientView> Ingredients { get; set; } = [];
+
+    /// <summary>The meal's directions.</summary>
+    [Parameter]
+    public string? Directions { get; set; }
+
+    /// <summary>What the variant changes about the directions, or null when the meal itself is printed.</summary>
+    [Parameter]
+    public string? VariantDirections { get; set; }
+}

@@ -6,6 +6,7 @@ using CapybaraHome.Application.Meals;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Infrastructure.Persistence;
+using CapybaraHome.Web;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -46,6 +47,9 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
+    [InlineData("/meals/1/print")]
+    [InlineData("/meals/1/variants/1/print")]
+    [InlineData("/meals/tags")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -70,6 +74,9 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
+    [InlineData("/meals/1/print")]
+    [InlineData("/meals/1/variants/1/print")]
+    [InlineData("/meals/tags")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -88,6 +95,47 @@ public class StaticRenderingTests
             var tokens = System.Text.RegularExpressions.Regex.Matches(form, "__RequestVerificationToken").Count;
             Assert.True(tokens == 1, $"A form on {path} carries {tokens} antiforgery tokens.");
         }
+    }
+
+    [Theory]
+    [InlineData("/tasks", "tasks/new")]
+    [InlineData("/board", "tasks/new")]
+    [InlineData("/automations", "automations/new")]
+    [InlineData("/meals", "meals/new")]
+    [InlineData("/meals/plan", "meals/new")]
+    public async Task Every_list_page_offers_its_own_create_link(string path, string href)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var head = PageHead(await client.GetStringAsync(path));
+
+        Assert.Contains($"href=\"{href}\"", head);
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/board")]
+    [InlineData("/tasks")]
+    [InlineData("/tasks/new")]
+    [InlineData("/automations")]
+    [InlineData("/automations/new")]
+    [InlineData("/meals")]
+    [InlineData("/meals/new")]
+    [InlineData("/meals/plan")]
+    [InlineData("/settings")]
+    [InlineData("/settings/jira")]
+    [InlineData("/account")]
+    public async Task The_nav_bar_offers_no_create_link_of_its_own(string path)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var nav = Nav(await client.GetStringAsync(path));
+
+        // One create button in the header meant the Meals page showed a Create for tasks next to
+        // its own; creating now belongs to the page being looked at.
+        Assert.DoesNotContain("/new\"", nav);
     }
 
     [Fact]
@@ -411,8 +459,6 @@ public class StaticRenderingTests
             new("item", "first item"),
             new("quantity", string.Empty),
             new("item", "second item"),
-            new("quantity", string.Empty),
-            new("item", string.Empty),
             new("new-tags", "quick, oven"),
             new("new-tag-facet", nameof(MealTagFacet.Effort)),
         ]);
@@ -467,7 +513,7 @@ public class StaticRenderingTests
 
         var posted = await PostManyAsync(client, "/meals/new", "meal-editor",
         [
-            new("action", "add-rows"),
+            new("action", "add-row"),
             new("name", "Half typed"),
             new("status", nameof(MealStatus.Pooled)),
             new("directions", "so far"),
@@ -490,6 +536,457 @@ public class StaticRenderingTests
         using var scope = app.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
         Assert.Empty(context.Meals);
+    }
+
+    [Fact]
+    public async Task A_meal_saved_without_a_name_says_so_on_the_editor()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var refused = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "save"),
+            new("name", "   "),
+            new("status", nameof(MealStatus.Pooled)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("quantity", "1 tin"),
+            new("item", "an item"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        var html = await refused.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, refused.StatusCode);
+        Assert.Contains("class=\"error\"", html);
+        Assert.Contains("an item", html);
+
+        using var scope = app.Services.CreateScope();
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>().Meals);
+    }
+
+    [Fact]
+    public async Task A_variant_editor_handles_a_meal_with_no_ingredients_a_blank_name_and_a_meal_that_is_gone()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        Assert.Contains("That meal is gone.", await client.GetStringAsync("/meals/404/variants/new"));
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A meal"))).Id;
+        }
+
+        var blank = await client.GetStringAsync($"/meals/{mealId}/variants/new");
+        Assert.Contains("The meal has no ingredients to leave out.", blank);
+
+        var refused = await PostManyAsync(client, $"/meals/{mealId}/variants/new", "variant-editor",
+        [
+            new("action", "save"),
+            new("name", "  "),
+            new("directions", string.Empty),
+            new("quantity", "1 tin"),
+            new("item", "an extra"),
+        ]);
+
+        var html = await refused.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, refused.StatusCode);
+        Assert.Contains("class=\"error\"", html);
+        Assert.Contains("an extra", html);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            Assert.Empty((await meals.GetAsync(mealId))!.Variants);
+        }
+    }
+
+    [Fact]
+    public async Task A_fresh_meal_editor_offers_one_ingredient_line_and_an_edited_one_only_its_own()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        Assert.Equal(1, Inputs(await client.GetStringAsync("/meals/new"), "item"));
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("A meal", Ingredients:
+                [new MealIngredientInput("first"), new MealIngredientInput("second")]));
+            mealId = meal.Id;
+        }
+
+        var editor = await client.GetStringAsync($"/meals/{mealId}");
+        Assert.Equal(2, Inputs(editor, "item"));
+        Assert.Equal(2, Inputs(editor, "quantity"));
+    }
+
+    [Fact]
+    public async Task Adding_and_removing_an_ingredient_line_keeps_the_rest_of_the_list()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var added = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "add-row"),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("directions", string.Empty),
+            new("quantity", "1 tin"),
+            new("item", "an item"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        var withTwo = await added.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, added.StatusCode);
+        Assert.Equal(2, Inputs(withTwo, "item"));
+
+        var removed = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", IngredientRow.RemoveAction(0)),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("directions", string.Empty),
+            new("quantity", "1 tin"),
+            new("item", "the first"),
+            new("quantity", "2 tins"),
+            new("item", "the second"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        var withOne = await removed.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
+        Assert.Equal(1, Inputs(withOne, "item"));
+        Assert.Contains("the second", withOne);
+        Assert.DoesNotContain("the first", withOne);
+
+        // The line was dropped in the editor only; nothing was written.
+        using var scope = app.Services.CreateScope();
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>().Meals);
+    }
+
+    [Fact]
+    public async Task Tags_of_several_facets_are_added_without_leaving_the_meal_editor()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var first = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "add-tags"),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("directions", "Cook it"),
+            new("quantity", "1 tin"),
+            new("item", "an item"),
+            new("new-tags", "an effort tag"),
+            new("new-tag-facet", nameof(MealTagFacet.Effort)),
+        ]);
+
+        var afterEffort = await first.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Contains("Added 1 tag(s).", afterEffort);
+        Assert.Contains("Effort", afterEffort);
+
+        // What was typed elsewhere survives, and the box is emptied for the next facet.
+        Assert.Contains("A meal", afterEffort);
+        Assert.Contains("an item", afterEffort);
+        Assert.DoesNotContain("value=\"an effort tag\"", afterEffort);
+
+        int effortId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            effortId = Assert.Single(await tags.ListAsync()).Id;
+        }
+
+        var second = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "add-tags"),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("directions", "Cook it"),
+            new("quantity", "1 tin"),
+            new("item", "an item"),
+            new("tag", effortId.ToString()),
+            new("new-tags", "a cuisine tag"),
+            new("new-tag-facet", nameof(MealTagFacet.Cuisine)),
+        ]);
+
+        var afterCuisine = await second.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Contains("Added 1 tag(s).", afterCuisine);
+        Assert.Contains("Cuisine", afterCuisine);
+
+        int cuisineId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            cuisineId = (await tags.ListAsync()).Single(t => t.Facet == MealTagFacet.Cuisine).Id;
+        }
+
+        var saved = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "save"),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("last-cooked", string.Empty),
+            new("directions", "Cook it"),
+            new("quantity", "1 tin"),
+            new("item", "an item"),
+            new("tag", effortId.ToString()),
+            new("tag", cuisineId.ToString()),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = Assert.Single(await meals.ListAsync(new MealFilter()));
+            Assert.Equal(
+                [MealTagFacet.Cuisine, MealTagFacet.Effort],
+                (await meals.GetAsync(meal.Id))!.Tags.Select(t => t.Facet).Order());
+        }
+    }
+
+    [Fact]
+    public async Task A_blank_tag_is_refused_by_the_meal_editor_without_losing_what_was_typed()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "add-tags"),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an item"),
+            new("new-tags", ","),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        var html = await posted.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("Added 0 tag(s).", html);
+        Assert.Contains("an item", html);
+    }
+
+    [Theory]
+    [InlineData(nameof(MealTagFacet.Cuisine), "Cuisine")]
+    [InlineData(nameof(MealTagFacet.Protein), "Protein")]
+    [InlineData(nameof(MealTagFacet.Effort), "Effort")]
+    [InlineData(nameof(MealTagFacet.Appliance), "Appliance")]
+    [InlineData(nameof(MealTagFacet.Trait), "Trait")]
+    public async Task A_tag_is_created_in_every_facet_the_page_offers(string facet, string heading)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var created = await PostAsync(client, "/meals/tags", "tag-create", new()
+        {
+            ["name"] = "a tag",
+            ["facet"] = facet,
+        });
+
+        var html = await created.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        Assert.Contains(heading, html);
+        Assert.Contains("0 meal(s)", html);
+
+        using var scope = app.Services.CreateScope();
+        var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+        var tag = Assert.Single(await tags.ListUsageAsync());
+        Assert.Equal(facet, tag.Facet.ToString());
+    }
+
+    [Fact]
+    public async Task The_tag_page_refuses_a_blank_name_and_counts_the_meals_carrying_each_tag()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var refused = await PostAsync(client, "/meals/tags", "tag-create", new()
+        {
+            ["name"] = "   ",
+            ["facet"] = nameof(MealTagFacet.Trait),
+        });
+
+        var error = await refused.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, refused.StatusCode);
+        Assert.Contains("A tag needs a name.", error);
+        Assert.Contains("No tags yet.", error);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var tag = await tags.EnsureAsync(new MealTagRequest("a tag", MealTagFacet.Trait));
+            await meals.CreateAsync(new CreateMealRequest("A meal", TagIds: [tag.Id]));
+        }
+
+        Assert.Contains("1 meal(s)", await client.GetStringAsync("/meals/tags"));
+    }
+
+    [Fact]
+    public async Task A_tag_is_renamed_and_moved_to_another_facet_without_a_circuit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int tagId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            tagId = (await tags.EnsureAsync(new MealTagRequest("mistyped", MealTagFacet.Trait))).Id;
+            await tags.EnsureAsync(new MealTagRequest("taken", MealTagFacet.Trait));
+        }
+
+        var saved = await PostAsync(client, $"/meals/tags/{tagId}", "tag-editor", new()
+        {
+            ["action"] = "save",
+            ["name"] = "corrected",
+            ["facet"] = nameof(MealTagFacet.Appliance),
+        });
+
+        var html = await saved.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.Contains("Saved.", html);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            var tag = await tags.GetAsync(tagId);
+            Assert.Equal("corrected", tag!.Name);
+            Assert.Equal(MealTagFacet.Appliance, tag.Facet);
+        }
+
+        // A name another tag already carries is refused rather than breaking the unique index.
+        var clash = await PostAsync(client, $"/meals/tags/{tagId}", "tag-editor", new()
+        {
+            ["action"] = "save",
+            ["name"] = "TAKEN",
+            ["facet"] = nameof(MealTagFacet.Appliance),
+        });
+
+        var refused = await clash.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, clash.StatusCode);
+        Assert.Contains("Another tag is already called", refused);
+
+        var blank = await PostAsync(client, $"/meals/tags/{tagId}", "tag-editor", new()
+        {
+            ["action"] = "save",
+            ["name"] = "  ",
+            ["facet"] = nameof(MealTagFacet.Appliance),
+        });
+
+        Assert.Contains("A tag needs a name.", await blank.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Deleting_a_tag_names_the_meals_it_will_change_before_it_goes()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int tagId;
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            tagId = (await tags.EnsureAsync(new MealTagRequest("a tag", MealTagFacet.Trait))).Id;
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A meal", TagIds: [tagId]))).Id;
+        }
+
+        var asked = await PostAsync(client, $"/meals/tags/{tagId}", "tag-editor", new()
+        {
+            ["action"] = "delete",
+            ["name"] = "a tag",
+            ["facet"] = nameof(MealTagFacet.Trait),
+        });
+
+        var warning = await asked.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, asked.StatusCode);
+        Assert.Contains("takes it off 1 meal(s)", warning);
+        Assert.Contains("A meal", warning);
+        Assert.Contains("delete-confirmed", warning);
+
+        // Asking and then thinking better of it leaves the tag alone.
+        var kept = await PostAsync(client, $"/meals/tags/{tagId}", "tag-editor", new()
+        {
+            ["action"] = "cancel-delete",
+            ["name"] = "a tag",
+            ["facet"] = nameof(MealTagFacet.Trait),
+        });
+
+        Assert.DoesNotContain("delete-confirmed", await kept.Content.ReadAsStringAsync());
+
+        var gone = await PostAsync(client, $"/meals/tags/{tagId}", "tag-editor", new()
+        {
+            ["action"] = "delete-confirmed",
+            ["name"] = "a tag",
+            ["facet"] = nameof(MealTagFacet.Trait),
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, gone.StatusCode);
+        Assert.EndsWith("/meals/tags", gone.Headers.Location!.OriginalString);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            Assert.Empty(await tags.ListUsageAsync());
+            Assert.Empty((await meals.GetAsync(mealId))!.Tags);
+        }
+    }
+
+    [Fact]
+    public async Task A_tag_that_no_meal_carries_says_so_before_it_is_deleted()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int tagId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+            tagId = (await tags.EnsureAsync(new MealTagRequest("a tag", MealTagFacet.Trait))).Id;
+        }
+
+        var asked = await PostAsync(client, $"/meals/tags/{tagId}", "tag-editor", new()
+        {
+            ["action"] = "delete",
+            ["name"] = "a tag",
+            ["facet"] = nameof(MealTagFacet.Trait),
+        });
+
+        Assert.Contains("No meal carries it.", await asked.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task A_tag_that_is_already_gone_shows_a_page_rather_than_an_error()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var html = await client.GetStringAsync("/meals/tags/404");
+
+        Assert.Contains("That tag is gone.", html);
+        Assert.DoesNotContain("<!--Blazor:", html);
     }
 
     [Fact]
@@ -531,8 +1028,9 @@ public class StaticRenderingTests
         // The meal page lists the variant it now carries.
         var mealPage = await client.GetStringAsync($"/meals/{mealId}");
         Assert.Contains("A variant", mealPage);
-        Assert.Contains("1 added", mealPage);
-        Assert.Contains("1 removed", mealPage);
+        Assert.Contains("Adds 1 tin an extra", mealPage);
+        Assert.Contains("Leaves out second", mealPage);
+        Assert.Contains("Changes the directions", mealPage);
 
         int variantId;
         using (var scope = app.Services.CreateScope())
@@ -628,10 +1126,9 @@ public class StaticRenderingTests
         Assert.Contains("Dinner 0 of 2", page);
         Assert.Contains("A plain meal", page);
 
-        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}-base",
+        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}",
         [
             new("meal-id", mealId.ToString()),
-            new("variant-id", string.Empty),
             new("slot", nameof(MealSlot.Dinner)),
             new("shared", "true"),
         ]);
@@ -737,10 +1234,9 @@ public class StaticRenderingTests
         var page = await client.GetStringAsync("/meals/plan");
         Assert.Contains($"value=\"{slot}\"", page);
 
-        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}-base",
+        var planned = await PostManyAsync(client, "/meals/plan", $"search-{mealId}",
         [
             new("meal-id", mealId.ToString()),
-            new("variant-id", string.Empty),
             new("slot", slot.ToString()),
         ]);
 
@@ -964,7 +1460,7 @@ public class StaticRenderingTests
         // The planning page sends a meal with variants to the chooser rather than planning it flat.
         var page = await client.GetStringAsync("/meals/plan");
         Assert.Contains($"meals/plan/choose/{mealId}", page);
-        Assert.Contains("A meal with variants (A variant)", page);
+        Assert.DoesNotContain("A meal with variants (A variant)", page);
 
         var chosen = await PostManyAsync(client, $"/meals/plan/choose/{mealId}", "plan-choice",
         [
@@ -1347,6 +1843,137 @@ public class StaticRenderingTests
         Assert.Contains("An automation needs a title", html);
     }
 
+    [Fact]
+    public async Task The_planning_page_lists_a_meal_once_however_many_variants_it_has()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var seeded = await SeedVariantAsync(app);
+
+        var plan = await client.GetStringAsync("/meals/plan");
+
+        Assert.Contains("A meal", plan);
+        Assert.DoesNotContain("A meal (A variant)", plan);
+        Assert.Contains($"meals/plan/choose/{seeded.MealId}", plan);
+    }
+
+    [Fact]
+    public async Task A_planned_variant_links_to_the_variant_and_to_its_printable_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var seeded = await SeedVariantAsync(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            await meals.PlanAsync(seeded.MealId, MealSlot.Dinner, seeded.VariantId);
+        }
+
+        var plan = await client.GetStringAsync("/meals/plan");
+
+        Assert.Contains($"href=\"meals/{seeded.MealId}/variants/{seeded.VariantId}\"", plan);
+        Assert.Contains($"href=\"meals/{seeded.MealId}/variants/{seeded.VariantId}/print\"", plan);
+    }
+
+    [Fact]
+    public async Task The_chooser_and_the_meal_editor_spell_out_what_each_variant_changes()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var seeded = await SeedVariantAsync(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            await meals.CreateVariantAsync(seeded.MealId, new MealVariantRequest("A plain variant"));
+        }
+
+        foreach (var path in new[] { $"/meals/plan/choose/{seeded.MealId}", $"/meals/{seeded.MealId}" })
+        {
+            var html = await client.GetStringAsync(path);
+
+            Assert.Contains("Adds 2 cups walnuts", html);
+            Assert.Contains("Leaves out 1 tin butter", html);
+            Assert.Contains("Changes the directions", html);
+
+            // The arm for a variant that holds nothing yet, which is what a half-filled one shows.
+            Assert.Contains("Changes nothing yet", html);
+        }
+    }
+
+    [Fact]
+    public async Task The_printed_variant_carries_the_meals_directions_and_its_adjusted_ingredients()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+        var seeded = await SeedVariantAsync(app);
+
+        var meal = await client.GetStringAsync($"/meals/{seeded.MealId}/print");
+
+        Assert.Contains("1 kg flour", meal);
+        Assert.Contains("1 tin butter", meal);
+        Assert.Contains("Mix it.", meal);
+        Assert.Contains("A label", meal);
+
+        var variant = await client.GetStringAsync($"/meals/{seeded.MealId}/variants/{seeded.VariantId}/print");
+
+        Assert.Contains("A meal (A variant)", variant);
+        Assert.Contains("1 kg flour", variant);
+        Assert.Contains("2 cups walnuts", variant);
+        Assert.DoesNotContain("butter", variant);
+        Assert.Contains("Mix it.", variant);
+        Assert.Contains("Bake it longer.", variant);
+    }
+
+    [Fact]
+    public async Task A_meal_with_nothing_written_down_still_prints()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        int variantId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A bare meal"))).Id;
+            variantId = (await meals.CreateVariantAsync(mealId, new MealVariantRequest("A bare variant")))!.Id;
+        }
+
+        var meal = await client.GetStringAsync($"/meals/{mealId}/print");
+        Assert.Contains("None listed.", meal);
+        Assert.Contains("None written.", meal);
+
+        var variant = await client.GetStringAsync($"/meals/{mealId}/variants/{variantId}/print");
+        Assert.Contains("None listed.", variant);
+        Assert.Contains("None written.", variant);
+        Assert.DoesNotContain("Changes for this variant", variant);
+    }
+
+    // A meal with two ingredients, a tag and a variant that adds one ingredient, leaves one out
+    // and changes the directions: enough for every arm the variant screens can show.
+    private static async Task<(int MealId, int VariantId)> SeedVariantAsync(AppFactory app)
+    {
+        using var scope = app.Services.CreateScope();
+        var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+        var tags = scope.ServiceProvider.GetRequiredService<MealTagService>();
+
+        var tag = await tags.EnsureAsync(new MealTagRequest("A label", MealTagFacet.Trait));
+        var meal = await meals.CreateAsync(new CreateMealRequest(
+            "A meal",
+            "Mix it.",
+            MealStatus.Available,
+            Ingredients: [new MealIngredientInput("flour", "1 kg"), new MealIngredientInput("butter", "1 tin")],
+            TagIds: [tag.Id]));
+
+        var butter = meal.Ingredients.Single(i => i.Item == "butter");
+        var variant = await meals.CreateVariantAsync(meal.Id, new MealVariantRequest(
+            "A variant", "Bake it longer.", [new MealIngredientInput("walnuts", "2 cups")], [butter.Id]));
+
+        return (meal.Id, variant!.Id);
+    }
+
     private static IEnumerable<string> Forms(string html)
     {
         foreach (var match in System.Text.RegularExpressions.Regex.Matches(html, "<form[\\s>].*?</form>",
@@ -1354,6 +1981,21 @@ public class StaticRenderingTests
         {
             yield return match.Value;
         }
+    }
+
+    private static string PageHead(string html) => Between(html, "<div class=\"page-head\">", "</div>");
+
+    private static string Nav(string html) => Between(html, "<nav class=\"nav-bar\"", "</nav>");
+
+    private static string Between(string html, string open, string close)
+    {
+        var start = html.IndexOf(open, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"The page has no {open} in it.");
+
+        var end = html.IndexOf(close, start, StringComparison.Ordinal);
+        Assert.True(end > start, $"The {open} on the page is never closed.");
+
+        return html[start..end];
     }
 
     private static HttpClient Client(AppFactory app) =>
@@ -1402,6 +2044,9 @@ public class StaticRenderingTests
 
         return await client.PostAsync("/settings/import", form);
     }
+
+    private static int Inputs(string html, string name) =>
+        System.Text.RegularExpressions.Regex.Matches(html, $"name=\"{name}\"").Count;
 
     // The page carries the token in a hidden field, which is also what sets the matching cookie.
     private static async Task<string> TokenAsync(HttpClient client, string path) =>

@@ -1,0 +1,165 @@
+@page "/meals/tags/{Id:int}"
+@using CapybaraHome.Domain.Meals
+@inject MealTagService Tags
+@inject NavigationManager Navigation
+
+<PageTitle>Edit a tag</PageTitle>
+
+<h1>Edit a tag</h1>
+
+@if (tag is null)
+{
+    <p class="muted">That tag is gone.</p>
+    <a class="btn" href="meals/tags">Back to tags</a>
+}
+else
+{
+    <form method="post" @formname="tag-editor" @onsubmit="SubmitAsync">
+        <AntiforgeryToken />
+
+        @* The browser submits a form's first submit button when Enter is pressed in a text box, so
+           Save goes first and hidden: without it Enter would press Delete instead. *@
+        <button type="submit" name="action" value="save" hidden></button>
+
+        <div class="filters">
+            <div class="field">
+                <label for="tag-name">Name</label>
+                <input id="tag-name" type="text" name="name" value="@name" />
+            </div>
+            <div class="field">
+                <label for="tag-facet">Describes</label>
+                <select id="tag-facet" name="facet">
+                    @foreach (var value in MealTagFacetNames.All)
+                    {
+                        <option value="@value" selected="@(facet == value)">@MealTagFacetNames.Label(value)</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <p class="muted">On @holders.Count meal(s).</p>
+
+        @if (error is not null)
+        {
+            <p class="error">@error</p>
+        }
+
+        @if (saved)
+        {
+            <p class="notice">Saved.</p>
+        }
+
+        @if (confirming)
+        {
+            <div class="notice">
+                @if (holders.Count == 0)
+                {
+                    <p>Deleting "@tag.Name" cannot be undone. No meal carries it.</p>
+                }
+                else
+                {
+                    <p>Deleting "@tag.Name" takes it off @holders.Count meal(s):</p>
+                    <ul>
+                        @foreach (var holder in holders)
+                        {
+                            <li>@holder.Name</li>
+                        }
+                    </ul>
+                }
+                <div class="row">
+                    <button class="btn btn-danger btn-small" type="submit" name="action" value="delete-confirmed">Delete anyway</button>
+                    <button class="btn btn-small" type="submit" name="action" value="cancel-delete">Keep it</button>
+                </div>
+            </div>
+        }
+
+        <div class="row" style="margin-top:0.75rem">
+            <button class="btn btn-primary" type="submit" name="action" value="save">Save</button>
+            <a class="btn" href="meals/tags">Back to tags</a>
+            @if (!confirming)
+            {
+                <button class="btn btn-danger" type="submit" name="action" value="delete">Delete</button>
+            }
+        </div>
+    </form>
+}
+
+@code {
+    /// <summary>Id of the tag being edited.</summary>
+    [Parameter]
+    public int Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private MealTagView? tag;
+    private IReadOnlyList<MealTagHolderView> holders = [];
+    private string? name;
+    private MealTagFacet facet = MealTagFacet.Trait;
+    private string? error;
+    private bool confirming;
+    private bool saved;
+
+    /// <summary>
+    /// Loads the tag and the meals carrying it. A post carries the edited values, and the step it
+    /// asked for has to be decided here so the confirmation form is rendered before it is handled.
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        tag = await Tags.GetAsync(Id);
+        if (tag is null)
+        {
+            return;
+        }
+
+        holders = await Tags.HoldersAsync(Id);
+
+        if (HttpContext?.Request.Method == HttpMethods.Post)
+        {
+            name = HttpContext.Request.Form["name"];
+            facet = Enum.TryParse<MealTagFacet>(HttpContext.Request.Form["facet"], out var posted)
+                ? posted
+                : MealTagFacet.Trait;
+            confirming = HttpContext.Request.Form["action"] == "delete";
+            return;
+        }
+
+        name = tag.Name;
+        facet = tag.Facet;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (HttpContext is null || tag is null)
+        {
+            return;
+        }
+
+        var action = HttpContext.Request.Form["action"].ToString();
+
+        switch (action)
+        {
+            case "delete":
+                return;
+
+            case "cancel-delete":
+                confirming = false;
+                return;
+
+            case "delete-confirmed":
+                await Tags.DeleteAsync(Id);
+                Navigation.NavigateTo("meals/tags");
+                return;
+        }
+
+        try
+        {
+            tag = await Tags.UpdateAsync(Id, new MealTagRequest(name ?? string.Empty, facet)) ?? tag;
+            saved = true;
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

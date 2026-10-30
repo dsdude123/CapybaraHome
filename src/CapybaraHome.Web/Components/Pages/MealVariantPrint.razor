@@ -1,0 +1,44 @@
+@page "/meals/{MealId:int}/variants/{Id:int}/print"
+@inject MealService Meals
+
+<PageTitle>@(variant is null ? "Print a variant" : $"{meal!.Name} ({variant.Name})")</PageTitle>
+
+@if (meal is null || variant is null)
+{
+    <p class="muted">That variant is gone. <a href="meals">Back to meals</a>.</p>
+}
+else
+{
+    <div class="row no-print" style="margin-bottom:0.75rem">
+        <a class="btn btn-small" href="meals/@MealId/variants/@Id">Back to the variant</a>
+        <span class="muted">Print this page from your browser.</span>
+    </div>
+
+    @* The sheet is the meal's, not the variant's: a variant holds only what it changes, and what
+       is carried to the kitchen has to be the whole recipe. *@
+    <RecipeSheet Title="@($"{meal.Name} ({variant.Name})")"
+                 Tags="meal.Tags"
+                 Ingredients="MealVariants.Ingredients(meal, variant)"
+                 Directions="@meal.Directions"
+                 VariantDirections="@variant.DirectionsModifications" />
+}
+
+@code {
+    /// <summary>Id of the meal the variant belongs to.</summary>
+    [Parameter]
+    public int MealId { get; set; }
+
+    /// <summary>Id of the variant being printed.</summary>
+    [Parameter]
+    public int Id { get; set; }
+
+    private MealView? meal;
+    private MealVariantView? variant;
+
+    /// <summary>Loads the meal and the variant to print.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        meal = await Meals.GetAsync(MealId);
+        variant = meal?.Variants.SingleOrDefault(v => v.Id == Id);
+    }
+}

@@ -1,0 +1,29 @@
+@page "/meals/{Id:int}/print"
+@inject MealService Meals
+
+<PageTitle>@(meal?.Name ?? "Print a meal")</PageTitle>
+
+@if (meal is null)
+{
+    <p class="muted">That meal is gone. <a href="meals">Back to meals</a>.</p>
+}
+else
+{
+    <div class="row no-print" style="margin-bottom:0.75rem">
+        <a class="btn btn-small" href="meals/@meal.Id">Back to the meal</a>
+        <span class="muted">Print this page from your browser.</span>
+    </div>
+
+    <RecipeSheet Title="@meal.Name" Tags="meal.Tags" Ingredients="meal.Ingredients" Directions="@meal.Directions" />
+}
+
+@code {
+    /// <summary>Id of the meal being printed.</summary>
+    [Parameter]
+    public int Id { get; set; }
+
+    private MealView? meal;
+
+    /// <summary>Loads the meal to print.</summary>
+    protected override async Task OnParametersSetAsync() => meal = await Meals.GetAsync(Id);
+}

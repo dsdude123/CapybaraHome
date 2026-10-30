@@ -228,11 +228,12 @@
     private RenderFragment PlannedRow(MealView meal) =>
         @<li>
             <div class="task-line">
-                <a class="task-link" href="meals/@meal.Id">@(meal.PlannedVariantName is { } variant ? $"{meal.Name} ({variant})" : meal.Name)</a>
+                <a class="task-link" href="@PlannedLink(meal)">@(meal.PlannedVariantName is { } variant ? $"{meal.Name} ({variant})" : meal.Name)</a>
                 <span class="pill">@MealStatusNames.Label(meal.Status)</span>
             </div>
             <div class="task-meta">
                 <span>@DateNames.LastCooked(meal.LastCookedAt)</span>
+                <a href="@(PlannedLink(meal) + "/print")">Print</a>
             </div>
             <form method="post" @formname="@($"move-{meal.Id}")" @onsubmit="MoveAsync" class="row plan-controls">
                 <AntiforgeryToken />
@@ -273,10 +274,9 @@
             return;
         }
 
-        var variantId = int.TryParse(form["variant-id"], out var variant) ? variant : (int?)null;
         var slot = Enum.TryParse<MealSlot>(form["slot"], out var posted) ? posted : MealSlot.Dinner;
 
-        await Meals.PlanAsync(mealId, slot, variantId, form["shared"] == "true");
+        await Meals.PlanAsync(mealId, slot, shared: form["shared"] == "true");
         Navigation.NavigateTo(Navigation.Uri);
     }
 
@@ -403,6 +403,12 @@
 
     /// <summary>Returns a link to this page with the search cleared.</summary>
     private static string PlanLink() => "meals/plan";
+
+    /// <summary>Where a planned row points: the variant that was planned, or the meal itself.</summary>
+    private static string PlannedLink(MealView meal) =>
+        meal.PlannedVariantId is { } variantId
+            ? $"meals/{meal.Id}/variants/{variantId}"
+            : $"meals/{meal.Id}";
 
     private string ChooseLink(MealPlanOption option) =>
         $"meals/plan/choose/{option.MealId}?slot={nextSlot}&return={Uri.EscapeDataString(PlanLink())}";
