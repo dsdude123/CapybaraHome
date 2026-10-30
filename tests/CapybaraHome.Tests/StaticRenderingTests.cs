@@ -1618,8 +1618,9 @@ public class StaticRenderingTests
             ["form.IsEnabled"] = "true",
         });
 
+        // Saving a new automation goes back to the list, the same place saving an edit goes.
         Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
-        var editor = created.Headers.Location!.OriginalString;
+        Assert.Equal("/automations", created.Headers.Location!.AbsolutePath);
 
         int id;
         using (var scope = app.Services.CreateScope())
@@ -1645,7 +1646,7 @@ public class StaticRenderingTests
         Assert.Contains("Due 3 days after it is created", list);
         Assert.Contains("Never run", list);
 
-        var edited = await PostAsync(client, editor, "automation-editor", new()
+        var edited = await PostAsync(client, $"/automations/{id}", "automation-editor", new()
         {
             ["form.Action"] = "save",
             ["form.Title"] = "Take the bins out and rinse them",
@@ -1823,15 +1824,18 @@ public class StaticRenderingTests
 
         Assert.Equal(HttpStatusCode.Redirect, posted.StatusCode);
 
+        int id;
         using (var scope = app.Services.CreateScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
-            Assert.Equal(0, (await context.TaskAutomations.SingleAsync()).DueInDays);
+            var automation = await context.TaskAutomations.SingleAsync();
+            id = automation.Id;
+            Assert.Equal(0, automation.DueInDays);
         }
 
         // Zero is a due date, not the empty box that means no due date, so the editor has to show
         // it back rather than read it as nothing set.
-        var editor = await client.GetStringAsync(posted.Headers.Location!.OriginalString);
+        var editor = await client.GetStringAsync($"/automations/{id}");
         var field = Regex.Match(editor, """<input[^>]*id="automation-due"[^>]*>""").Value;
         Assert.Contains("value=\"0\"", field);
 

@@ -195,7 +195,7 @@
         {
             if (Id is null)
             {
-                var created = await Automations.CreateAsync(new CreateTaskAutomationRequest(
+                await Automations.CreateAsync(new CreateTaskAutomationRequest(
                     form.Title ?? string.Empty,
                     form.Notes,
                     form.IntervalUnit,
@@ -207,7 +207,7 @@
                     form.SkipWhenOpenTaskExists,
                     form.IsEnabled));
 
-                Navigation.NavigateTo($"automations/{created.Id}");
+                Navigation.NavigateTo("automations");
                 return;
             }
 
