@@ -1,0 +1,36 @@
+create_task:
+  fields:
+    title:
+      required: true
+      example: Bleed the radiators
+      selector:
+        text:
+    notes:
+      required: false
+      selector:
+        text:
+          multiline: true
+    category:
+      required: false
+      example: House
+      selector:
+        text:
+    due_date:
+      required: false
+      selector:
+        date:
+    status:
+      required: false
+      default: ToDo
+      selector:
+        select:
+          options:
+            - ToDo
+            - InProgress
+            - OnHold
+            - Done
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: capybarahome
