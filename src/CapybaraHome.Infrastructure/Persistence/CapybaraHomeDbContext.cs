@@ -36,6 +36,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>How many meals each slot aims for.</summary>
     public DbSet<MealPlanTarget> MealPlanTargets => Set<MealPlanTarget>();
 
+    /// <summary>How many of the planned meals are meant to be shared ones.</summary>
+    public DbSet<MealPlanSharedTarget> MealPlanSharedTargets => Set<MealPlanSharedTarget>();
+
     /// <summary>Lines the variants add to their meals' ingredient lists.</summary>
     public DbSet<MealVariantIngredient> MealVariantIngredients => Set<MealVariantIngredient>();
 

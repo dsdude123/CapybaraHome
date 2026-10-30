@@ -76,6 +76,9 @@ public interface ICapybaraHomeDbContext
     /// <summary>The scoring weights and the routing service the search uses.</summary>
     DbSet<HomeSearchSettings> HomeSearchSettings { get; }
 
+    /// <summary>How many of the planned meals are meant to be shared ones.</summary>
+    DbSet<MealPlanSharedTarget> MealPlanSharedTargets { get; }
+
     /// <summary>Dashboard cards.</summary>
     DbSet<DashboardCard> DashboardCards { get; }
 
