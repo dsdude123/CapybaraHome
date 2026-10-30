@@ -27,7 +27,7 @@ else
                 <li>
                     <div class="task-line">
                         <a class="task-link" href="@($"automations/{automation.Id}")">@automation.Title</a>
-                        <span class="pill">@IntervalNames.Label(automation.IntervalUnit, automation.IntervalCount)</span>
+                        <span class="pill">@IntervalNames.Label(automation.IntervalUnit, automation.IntervalCount, automation.WeekDay)</span>
                         @if (!automation.IsEnabled)
                         {
                             <span class="pill">Paused</span>

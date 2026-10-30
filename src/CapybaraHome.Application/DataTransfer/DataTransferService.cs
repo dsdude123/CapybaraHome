@@ -96,7 +96,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         var automations = await context.TaskAutomations.AsNoTracking()
             .OrderBy(a => a.Id)
             .Select(a => new TaskAutomationRecord(
-                a.Title, a.Notes, a.CategoryId, a.IntervalUnit, a.IntervalCount, a.StartsOn, a.TimeOfDay, a.DueInDays,
+                a.Title, a.Notes, a.CategoryId, a.IntervalUnit, a.IntervalCount, a.StartsOn, a.WeekDay, a.TimeOfDay, a.DueInDays,
                 a.SkipWhenOpenTaskExists, a.IsEnabled, a.LastRunAt, a.LastRunSkipped,
                 a.CreatedAt, a.UpdatedAt))
             .ToListAsync(cancellationToken);
@@ -306,6 +306,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 existing.IntervalUnit = record.IntervalUnit;
                 existing.IntervalCount = Math.Max(TaskAutomationSchedule.MinimumIntervalCount, record.IntervalCount);
                 existing.StartsOn = record.StartsOn;
+                existing.WeekDay = WeekDayOf(record);
                 existing.TimeOfDay = record.TimeOfDay;
                 existing.DueInDays = record.DueInDays;
                 existing.SkipWhenOpenTaskExists = record.SkipWhenOpenTaskExists;
@@ -325,6 +326,7 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
                 IntervalUnit = record.IntervalUnit,
                 IntervalCount = Math.Max(TaskAutomationSchedule.MinimumIntervalCount, record.IntervalCount),
                 StartsOn = record.StartsOn,
+                WeekDay = WeekDayOf(record),
                 TimeOfDay = record.TimeOfDay,
                 DueInDays = record.DueInDays,
                 SkipWhenOpenTaskExists = record.SkipWhenOpenTaskExists,
@@ -343,6 +345,14 @@ public class DataTransferService(ICapybaraHomeDbContext context, TimeProvider cl
         await context.SaveChangesAsync(cancellationToken);
         return (added, updated);
     }
+
+    /// <summary>
+    /// The day of the week an imported automation runs on. A day only means something on a weekly
+    /// interval, so one carried by any other unit, as an export written by hand can be, is dropped
+    /// rather than stored where nothing would read it.
+    /// </summary>
+    private static DayOfWeek? WeekDayOf(TaskAutomationRecord record) =>
+        record.IntervalUnit == TaskIntervalUnit.Weeks ? record.WeekDay : null;
 
     /// <summary>
     /// Loads the grocery lists and frequent items in <paramref name="document"/>. Frequent items are

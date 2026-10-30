@@ -12,6 +12,20 @@ public static class TaskAutomationSchedule
     /// <summary>The smallest interval an automation can repeat on.</summary>
     public const int MinimumIntervalCount = 1;
 
+    /// <summary>
+    /// Returns the day a schedule is really counted from: the first <paramref name="weekDay"/> on
+    /// or after <paramref name="startsOn"/> when one is asked for, so that "every two weeks on a
+    /// Thursday" needs no arithmetic from the person setting it up. Only weeks are counted in days
+    /// of the week, so every other unit keeps the start date it was given.
+    /// </summary>
+    /// <param name="unit">Unit the interval is counted in.</param>
+    /// <param name="startsOn">Day the person chose to count from.</param>
+    /// <param name="weekDay">Day of the week to run on, or null for the start date's own day.</param>
+    public static DateOnly Anchor(TaskIntervalUnit unit, DateOnly startsOn, DayOfWeek? weekDay) =>
+        unit == TaskIntervalUnit.Weeks && weekDay is { } day
+            ? startsOn.AddDays(((int)day - (int)startsOn.DayOfWeek + 7) % 7)
+            : startsOn;
+
     /// <summary>Returns the moment of the <paramref name="index"/>th occurrence, counting the start date as zero.</summary>
     /// <param name="unit">Unit the interval is counted in.</param>
     /// <param name="count">How many of <paramref name="unit"/> there are between runs.</param>

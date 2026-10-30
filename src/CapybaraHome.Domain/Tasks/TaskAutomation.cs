@@ -31,6 +31,13 @@ public class TaskAutomation
     /// <summary>Day the interval is counted from. The first run is on this day.</summary>
     public DateOnly StartsOn { get; set; }
 
+    /// <summary>
+    /// Day of the week a weekly schedule runs on, or null to run on whichever day
+    /// <see cref="StartsOn"/> falls on. Only weeks are counted in days of the week, so it is null
+    /// on every other unit.
+    /// </summary>
+    public DayOfWeek? WeekDay { get; set; }
+
     /// <summary>Time of day each run happens at, in the server's time zone. Midnight unless changed.</summary>
     public TimeOnly TimeOfDay { get; set; }
 

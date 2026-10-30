@@ -58,6 +58,7 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             IntervalUnit = request.IntervalUnit,
             IntervalCount = request.IntervalCount,
             StartsOn = request.StartsOn == default ? Today() : request.StartsOn,
+            WeekDay = request.IntervalUnit == TaskIntervalUnit.Weeks ? request.WeekDay : null,
             TimeOfDay = request.TimeOfDay,
             DueInDays = request.DueInDays,
             SkipWhenOpenTaskExists = request.SkipWhenOpenTaskExists,
@@ -125,6 +126,22 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
             automation.StartsOn = startsOn;
         }
 
+        if (request.ClearWeekDay)
+        {
+            automation.WeekDay = null;
+        }
+        else if (request.WeekDay is { } weekDay)
+        {
+            automation.WeekDay = weekDay;
+        }
+
+        // A day of the week only means something while the interval is counted in weeks, so one
+        // left behind by a change of unit goes rather than waiting to surprise a later change back.
+        if (automation.IntervalUnit != TaskIntervalUnit.Weeks)
+        {
+            automation.WeekDay = null;
+        }
+
         if (request.TimeOfDay is { } timeOfDay)
         {
             automation.TimeOfDay = timeOfDay;
@@ -176,17 +193,25 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
     /// <param name="unit">Unit the interval would be counted in.</param>
     /// <param name="count">How many of that unit there would be between runs.</param>
     /// <param name="startsOn">Day the interval would be counted from.</param>
+    /// <param name="weekDay">Day of the week a weekly schedule would run on, or null for the start date's own day.</param>
     /// <param name="timeOfDay">Time of day it would run at.</param>
     /// <param name="after">Moment to count from, or null for now.</param>
     public IReadOnlyList<DateTimeOffset> Preview(
         TaskIntervalUnit unit,
         int count,
         DateOnly startsOn,
+        DayOfWeek? weekDay,
         TimeOnly timeOfDay,
         DateTimeOffset? after = null)
     {
         return TaskAutomationSchedule.Upcoming(
-            unit, count, startsOn, timeOfDay, after ?? clock.GetUtcNow(), PreviewCount, Zone);
+            unit,
+            count,
+            TaskAutomationSchedule.Anchor(unit, startsOn, weekDay),
+            timeOfDay,
+            after ?? clock.GetUtcNow(),
+            PreviewCount,
+            Zone);
     }
 
     /// <summary>
@@ -268,7 +293,7 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
     private DateTimeOffset? NextRunAt(TaskAutomation automation) => TaskAutomationSchedule.NextAfter(
         automation.IntervalUnit,
         automation.IntervalCount,
-        automation.StartsOn,
+        TaskAutomationSchedule.Anchor(automation.IntervalUnit, automation.StartsOn, automation.WeekDay),
         automation.TimeOfDay,
         automation.LastRunAt ?? automation.CreatedAt,
         Zone);
@@ -324,6 +349,7 @@ public class TaskAutomationService(ICapybaraHomeDbContext context, TaskService t
         automation.IntervalUnit,
         automation.IntervalCount,
         automation.StartsOn,
+        automation.WeekDay,
         automation.TimeOfDay,
         automation.DueInDays,
         automation.SkipWhenOpenTaskExists,

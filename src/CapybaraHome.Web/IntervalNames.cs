@@ -32,12 +32,29 @@ public static class IntervalNames
         _ => "day",
     };
 
+    /// <summary>Every day of the week, in the order the picker offers them.</summary>
+    public static readonly DayOfWeek[] WeekDays =
+    [
+        DayOfWeek.Monday,
+        DayOfWeek.Tuesday,
+        DayOfWeek.Wednesday,
+        DayOfWeek.Thursday,
+        DayOfWeek.Friday,
+        DayOfWeek.Saturday,
+        DayOfWeek.Sunday,
+    ];
+
     /// <summary>
     /// Returns how often an automation runs, as the lists show it: "Every week" for an interval
-    /// of one, and "Every 13 days" for any other.
+    /// of one, "Every 13 days" for any other, and "Every 2 weeks on Thursday" when a weekly one
+    /// is pinned to a day.
     /// </summary>
     /// <param name="unit">Unit the interval is counted in.</param>
     /// <param name="count">How many of that unit there are between runs.</param>
-    public static string Label(TaskIntervalUnit unit, int count) =>
-        count <= 1 ? $"Every {SingularLabel(unit)}" : $"Every {count} {UnitLabel(unit)}";
+    /// <param name="weekDay">Day of the week a weekly schedule runs on, or null for none.</param>
+    public static string Label(TaskIntervalUnit unit, int count, DayOfWeek? weekDay = null)
+    {
+        var every = count <= 1 ? $"Every {SingularLabel(unit)}" : $"Every {count} {UnitLabel(unit)}";
+        return unit == TaskIntervalUnit.Weeks && weekDay is { } day ? $"{every} on {day}" : every;
+    }
 }

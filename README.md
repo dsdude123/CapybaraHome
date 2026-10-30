@@ -69,8 +69,10 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   task at `/tasks/{id}`.
 - **Automations** (`/automations`) — tasks created on a timer, repeating every *N* days, weeks,
   months or years for any *N*, counted from a start date, at a time of day that defaults to
-  midnight. **Due in** optionally dates each created task a number of days from the day it is
-  created; leave it empty for a task with no due date. The editor previews the next five
+  midnight. A weekly one can be pinned to a day of the week, which moves it to the first of
+  those on or after the start date. **Due in** optionally dates each created task a number of
+  days from the day it is created, 0 for the same day; leave it empty for a task with no due
+  date. The editor previews the next five
   executions, and an automation can skip its run while a task with the same title is still
   open. Times are the server's own clock, so in a container they follow `TZ`. A run missed
   while the app was down happens once when it is back.

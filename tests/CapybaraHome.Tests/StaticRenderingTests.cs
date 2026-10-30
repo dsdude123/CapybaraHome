@@ -1,10 +1,12 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Jira;
 using CapybaraHome.Application.Meals;
+using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Infrastructure.Persistence;
@@ -1802,6 +1804,85 @@ public class StaticRenderingTests
             CreatedAt = createdAt,
             UpdatedAt = createdAt,
         };
+
+    [Theory]
+    [InlineData("Monday", DayOfWeek.Monday)]
+    [InlineData("Tuesday", DayOfWeek.Tuesday)]
+    [InlineData("Wednesday", DayOfWeek.Wednesday)]
+    [InlineData("Thursday", DayOfWeek.Thursday)]
+    [InlineData("Friday", DayOfWeek.Friday)]
+    [InlineData("Saturday", DayOfWeek.Saturday)]
+    [InlineData("Sunday", DayOfWeek.Sunday)]
+    [InlineData("", DayOfWeek.Friday)]
+    public async Task Every_day_of_the_week_can_be_picked_for_a_weekly_automation(string day, DayOfWeek runsOn)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        // The 30th of October 2026 is a Friday, so the empty option leaves the schedule there.
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "save",
+            ["form.Title"] = $"Chore for {(day.Length == 0 ? "no day" : day)}",
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Weeks),
+            ["form.IntervalCount"] = "2",
+            ["form.StartsOn"] = "2026-10-30",
+            ["form.WeekDay"] = day,
+            ["form.TimeOfDay"] = "08:00",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        Assert.Equal(HttpStatusCode.Redirect, posted.StatusCode);
+
+        int id;
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            var automation = await context.TaskAutomations.SingleAsync();
+            id = automation.Id;
+
+            Assert.Equal(day.Length == 0 ? null : Enum.Parse<DayOfWeek>(day), automation.WeekDay);
+        }
+
+        // Every date the editor previews falls on that day, whether it was picked or came from the
+        // start date, which is a Friday.
+        var editor = await client.GetStringAsync($"/automations/{id}");
+        var previewed = Regex.Matches(editor, @"([A-Z][a-z]+ \d{1,2}, \d{4}) at")
+            .Select(m => DateTime.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture))
+            .ToList();
+
+        Assert.Equal(TaskAutomationService.PreviewCount, previewed.Count);
+        Assert.All(previewed, moment => Assert.Equal(runsOn, moment.DayOfWeek));
+
+        var list = await client.GetStringAsync("/automations");
+        Assert.Contains(day.Length == 0 ? "Every 2 weeks" : $"Every 2 weeks on {day}", list);
+    }
+
+    [Fact]
+    public async Task A_day_of_the_week_cannot_be_picked_for_an_interval_that_is_not_weeks()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
+        {
+            ["form.Action"] = "preview",
+            ["form.Title"] = "Monthly",
+            ["form.IntervalUnit"] = nameof(TaskIntervalUnit.Months),
+            ["form.IntervalCount"] = "1",
+            ["form.StartsOn"] = "2026-10-30",
+            ["form.TimeOfDay"] = "08:00",
+            ["form.CategoryId"] = string.Empty,
+            ["form.IsEnabled"] = "true",
+        });
+
+        var html = await posted.Content.ReadAsStringAsync();
+        var field = Regex.Match(html, """<select[^>]*id="automation-weekday"[^>]*>""").Value;
+
+        Assert.Contains("disabled", field);
+        Assert.Contains("weekly schedules only", html);
+    }
 
     [Fact]
     public async Task A_due_date_of_zero_days_saves_and_reads_back_as_the_same_day()

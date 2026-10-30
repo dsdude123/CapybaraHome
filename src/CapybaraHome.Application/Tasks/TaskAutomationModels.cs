@@ -11,6 +11,7 @@ namespace CapybaraHome.Application.Tasks;
 /// <param name="IntervalUnit">Unit the repeat interval is counted in.</param>
 /// <param name="IntervalCount">How many of that unit there are between runs.</param>
 /// <param name="StartsOn">Day the interval is counted from.</param>
+/// <param name="WeekDay">Day of the week a weekly schedule runs on, or null for the start date's own day.</param>
 /// <param name="TimeOfDay">Time of day each run happens at, in the server's time zone.</param>
 /// <param name="DueInDays">How many days after it is created the task is due, or null for no due date.</param>
 /// <param name="SkipWhenOpenTaskExists">Whether a run does nothing when a task with the same title is already open.</param>
@@ -29,6 +30,7 @@ public record TaskAutomationView(
     TaskIntervalUnit IntervalUnit,
     int IntervalCount,
     DateOnly StartsOn,
+    DayOfWeek? WeekDay,
     TimeOnly TimeOfDay,
     int? DueInDays,
     bool SkipWhenOpenTaskExists,
@@ -45,6 +47,7 @@ public record TaskAutomationView(
 /// <param name="IntervalUnit">Unit the repeat interval is counted in.</param>
 /// <param name="IntervalCount">How many of that unit there are between runs.</param>
 /// <param name="StartsOn">Day to count the interval from.</param>
+/// <param name="WeekDay">Day of the week a weekly schedule runs on, or null for the start date's own day.</param>
 /// <param name="TimeOfDay">Time of day to run at; midnight when left out.</param>
 /// <param name="CategoryId">Category to file the tasks under, or null.</param>
 /// <param name="DueInDays">How many days after it is created each task is due, or null for no due date.</param>
@@ -56,6 +59,7 @@ public record CreateTaskAutomationRequest(
     TaskIntervalUnit IntervalUnit = TaskIntervalUnit.Weeks,
     int IntervalCount = 1,
     DateOnly StartsOn = default,
+    DayOfWeek? WeekDay = null,
     TimeOnly TimeOfDay = default,
     int? CategoryId = null,
     int? DueInDays = null,
@@ -68,6 +72,8 @@ public record CreateTaskAutomationRequest(
 /// <param name="IntervalUnit">New unit for the repeat interval.</param>
 /// <param name="IntervalCount">New number of units between runs.</param>
 /// <param name="StartsOn">New start date.</param>
+/// <param name="WeekDay">New day of the week for a weekly schedule.</param>
+/// <param name="ClearWeekDay">When true, goes back to running on the start date's own day.</param>
 /// <param name="TimeOfDay">New time of day.</param>
 /// <param name="CategoryId">New category.</param>
 /// <param name="ClearCategory">When true, removes the category.</param>
@@ -81,6 +87,8 @@ public record UpdateTaskAutomationRequest(
     TaskIntervalUnit? IntervalUnit = null,
     int? IntervalCount = null,
     DateOnly? StartsOn = null,
+    DayOfWeek? WeekDay = null,
+    bool ClearWeekDay = false,
     TimeOnly? TimeOfDay = null,
     int? CategoryId = null,
     bool ClearCategory = false,

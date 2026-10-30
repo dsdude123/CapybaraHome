@@ -12,6 +12,7 @@ public class TaskAutomationConfiguration : IEntityTypeConfiguration<TaskAutomati
     {
         builder.Property(a => a.Title).IsRequired().HasMaxLength(500);
         builder.Property(a => a.IntervalUnit).HasConversion<string>().HasMaxLength(20);
+        builder.Property(a => a.WeekDay).HasConversion<string?>().HasMaxLength(20);
 
         builder.HasIndex(a => a.IsEnabled);
 
