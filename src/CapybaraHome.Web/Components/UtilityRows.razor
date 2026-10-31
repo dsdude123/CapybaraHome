@@ -1,0 +1,35 @@
+<fieldset class="check-list">
+    <legend>Utilities</legend>
+    @if (Rows.Count == 0)
+    {
+        <p class="muted">No utilities yet.</p>
+    }
+    @for (var index = 0; index < Rows.Count; index++)
+    {
+        var row = Rows[index];
+        var position = index + 1;
+        <div class="utility-line">
+            <select name="@PropertyRows.UtilityKindField" aria-label="@($"Utility {position}")">
+                @foreach (var kind in UtilityKindNames.All)
+                {
+                    <option value="@kind" selected="@(row.Kind == kind)">@UtilityKindNames.Label(kind)</option>
+                }
+            </select>
+            <input type="text" name="@PropertyRows.UtilityLabelField" value="@row.Label"
+                   aria-label="@($"Name for utility {position}")" placeholder="Name, for an other line" />
+            <input type="number" step="0.01" name="@PropertyRows.UtilityCostField" value="@row.MonthlyCost"
+                   aria-label="@($"Monthly cost of utility {position}")" placeholder="Per month" />
+            <button class="btn btn-small btn-danger" type="submit" name="action" value="@PropertyRows.RemoveAction("utility", index)"
+                    aria-label="@($"Remove utility {position}")">Remove</button>
+        </div>
+    }
+    <button class="btn btn-small" type="submit" name="action" value="@PropertyRows.AddAction("utility")" style="margin-top:0.5rem">
+        Add a utility
+    </button>
+</fieldset>
+
+@code {
+    /// <summary>The lines to render, in order.</summary>
+    [Parameter]
+    public IReadOnlyList<UtilityRow> Rows { get; set; } = [];
+}

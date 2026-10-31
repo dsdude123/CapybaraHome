@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using CapybaraHome.Application;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.DataTransfer;
+using CapybaraHome.Application.Homes;
 using CapybaraHome.Application.Reports;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
@@ -32,6 +33,7 @@ builder.Services.AddInfrastructure(
     ?? throw new InvalidOperationException("Connection string 'CapybaraHome' is not configured."));
 
 builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(BackupOptions.SectionName));
+builder.Services.Configure<PropertyPhotoOptions>(builder.Configuration.GetSection(PropertyPhotoOptions.SectionName));
 builder.Services.AddHostedService<ScheduledBackupService>();
 builder.Services.AddHostedService<TaskAutomationRunner>();
 
@@ -59,6 +61,7 @@ builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithTools<TaskTools>()
     .WithTools<MealTools>()
+    .WithTools<HomeSearchTools>()
     .WithTools<GroceryTools>();
 
 var app = builder.Build();
@@ -94,6 +97,7 @@ app.MapRazorComponents<App>()
 
 app.MapApi();
 app.MapSettings();
+app.MapHomeSearch();
 app.MapReport();
 app.MapMcp("/mcp").RequireAuthorization(AuthenticationSetup.ApiPolicyName);
 

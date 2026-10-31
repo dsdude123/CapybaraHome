@@ -59,6 +59,9 @@ public class StaticRenderingTests
     [InlineData("/meals/1/print")]
     [InlineData("/meals/1/variants/1/print")]
     [InlineData("/meals/tags")]
+    [InlineData("/homes")]
+    [InlineData("/homes/new")]
+    [InlineData("/homes/settings")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -91,6 +94,9 @@ public class StaticRenderingTests
     [InlineData("/meals/1/print")]
     [InlineData("/meals/1/variants/1/print")]
     [InlineData("/meals/tags")]
+    [InlineData("/homes")]
+    [InlineData("/homes/new")]
+    [InlineData("/homes/settings")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]
@@ -117,6 +123,7 @@ public class StaticRenderingTests
     [InlineData("/automations", "automations/new")]
     [InlineData("/meals", "meals/new")]
     [InlineData("/meals/plan", "meals/new")]
+    [InlineData("/homes", "homes/new")]
     public async Task Every_list_page_offers_its_own_create_link(string path, string href)
     {
         await using var app = await AppFactory.CreateAsync();
@@ -137,6 +144,9 @@ public class StaticRenderingTests
     [InlineData("/meals")]
     [InlineData("/meals/new")]
     [InlineData("/meals/plan")]
+    [InlineData("/homes")]
+    [InlineData("/homes/new")]
+    [InlineData("/homes/settings")]
     [InlineData("/settings")]
     [InlineData("/settings/jira")]
     [InlineData("/account")]

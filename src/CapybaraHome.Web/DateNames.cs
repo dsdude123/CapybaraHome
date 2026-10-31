@@ -19,6 +19,10 @@ public static class DateNames
     /// <summary>Returns the name of <paramref name="zone"/> as the UI labels times with it.</summary>
     public static string ZoneLabel(TimeZoneInfo zone) => zone.Id;
 
+    /// <summary>Returns the day <paramref name="moment"/> fell on, in the server's own zone.</summary>
+    public static string Day(DateTimeOffset moment) =>
+        Long(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(moment, TimeZoneInfo.Local).DateTime));
+
     /// <summary>Returns when a meal was last cooked, in the words the meal lists use.</summary>
     public static string LastCooked(DateOnly? date) =>
         date is { } cooked ? $"Last cooked {Long(cooked)}" : "Never cooked";

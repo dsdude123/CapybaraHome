@@ -604,6 +604,67 @@ code.secret {
     padding-left: 1.2rem;
 }
 
+/* One line of a property's amenities, pros or cons: the box and its Remove button. */
+.row-line {
+    align-items: center;
+    display: grid;
+    gap: 0.4rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-bottom: 0.5rem;
+}
+
+/* A utility line stacks on a phone, where four controls across leave nothing readable. */
+.utility-line {
+    display: grid;
+    gap: 0.4rem;
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 0.75rem;
+}
+
+@media (min-width: 48rem) {
+    .utility-line {
+        align-items: center;
+        gap: 0.5rem;
+        grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) minmax(0, 8rem) auto;
+        margin-bottom: 0.5rem;
+    }
+}
+
+.photo-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+}
+
+.photo {
+    margin: 0;
+}
+
+.photo img {
+    border-radius: 0.4rem;
+    display: block;
+    height: auto;
+    max-width: 100%;
+}
+
+.photo figcaption {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.35rem;
+}
+
+/* The numbers under a candidate's name: side by side where there is room, stacked on a phone,
+   so the list never needs to scroll sideways. */
+.facts {
+    display: grid;
+    gap: 0.25rem 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+    margin-top: 0.3rem;
+}
+
 .print-page {
     margin: 0 auto;
     max-width: 48rem;
