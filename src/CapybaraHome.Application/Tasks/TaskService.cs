@@ -11,7 +11,7 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <summary>Returns the tasks matching <paramref name="filter"/> in the order <paramref name="sort"/> asks for.</summary>
     public async Task<IReadOnlyList<TaskView>> ListAsync(TaskFilter filter, TaskSort sort = TaskSort.DueDate, CancellationToken cancellationToken = default)
     {
-        var matching = Filter(context.Tasks.AsNoTracking(), filter);
+        var matching = await FilterAsync(context.Tasks.AsNoTracking(), filter, cancellationToken);
 
         if (sort == TaskSort.RecentlyUpdated)
         {
@@ -85,9 +85,10 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
     }
 
     /// <summary>Counts the tasks matching <paramref name="filter"/>.</summary>
-    public Task<int> CountAsync(TaskFilter filter, CancellationToken cancellationToken = default)
+    public async Task<int> CountAsync(TaskFilter filter, CancellationToken cancellationToken = default)
     {
-        return Filter(context.Tasks.AsNoTracking(), filter).CountAsync(cancellationToken);
+        var matching = await FilterAsync(context.Tasks.AsNoTracking(), filter, cancellationToken);
+        return await matching.CountAsync(cancellationToken);
     }
 
     /// <summary>Creates a task and returns it as saved.</summary>
@@ -250,6 +251,30 @@ public class TaskService(ICapybaraHomeDbContext context, TimeProvider clock)
         }
 
         return query;
+    }
+
+    /// <summary>
+    /// Applies <see cref="Filter"/> and then, when a completion cutoff was asked for, narrows the
+    /// result to the ids past it. SQLite cannot compare a DateTimeOffset in SQL, so the cutoff is
+    /// settled here: one query reads the id and the completion stamp of every finished row that
+    /// matched, and the ids that survive go back into the query the caller orders and pages.
+    /// </summary>
+    private async Task<IQueryable<TaskItem>> FilterAsync(IQueryable<TaskItem> query, TaskFilter filter, CancellationToken cancellationToken)
+    {
+        query = Filter(query, filter);
+
+        if (filter.CompletedSince is not { } since)
+        {
+            return query;
+        }
+
+        var stamps = await query
+            .Where(t => t.CompletedAt != null)
+            .Select(t => new { t.Id, t.CompletedAt })
+            .ToListAsync(cancellationToken);
+
+        var kept = stamps.Where(s => s.CompletedAt > since).Select(s => s.Id).ToList();
+        return query.Where(t => kept.Contains(t.Id));
     }
 
     private async Task EnsureCategoryExistsAsync(int? categoryId, CancellationToken cancellationToken)

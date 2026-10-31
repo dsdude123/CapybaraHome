@@ -47,9 +47,10 @@ public static class ApiEndpoints
             int? dueWithinDays,
             bool? overdue,
             int? limit,
+            DateTimeOffset? completedSince,
             CancellationToken cancellationToken) =>
         {
-            var filter = new TaskFilter(text, status is { } one ? [one] : null, categoryId, uncategorized ?? false, dueWithinDays, overdue ?? false, limit);
+            var filter = new TaskFilter(text, status is { } one ? [one] : null, categoryId, uncategorized ?? false, dueWithinDays, overdue ?? false, limit, CompletedSince: completedSince);
             return Results.Ok(await service.ListAsync(filter, cancellationToken: cancellationToken));
         });
 

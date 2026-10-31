@@ -1,0 +1,84 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to CapybaraHome",
+        "description": "Mint a token under Settings in CapybaraHome, then give the address Home Assistant can reach it on.",
+        "data": {
+          "url": "Address",
+          "token": "API token"
+        },
+        "data_description": {
+          "url": "The address and port Home Assistant can reach CapybaraHome on.",
+          "token": "The token is shown once when you mint it and cannot be read back."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "CapybaraHome could not be reached at that address.",
+      "invalid_auth": "CapybaraHome did not accept that token.",
+      "invalid_url": "The address must start with http:// or https://."
+    },
+    "abort": {
+      "already_configured": "That CapybaraHome server is already set up."
+    }
+  },
+  "services": {
+    "create_task": {
+      "name": "Create task",
+      "description": "Creates a task in CapybaraHome.",
+      "fields": {
+        "title": {
+          "name": "Title",
+          "description": "Short description of the work."
+        },
+        "notes": {
+          "name": "Notes",
+          "description": "Free-form detail, held as markdown."
+        },
+        "category": {
+          "name": "Category",
+          "description": "Name of the category to file the task under. It must already exist."
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "Day the task is due."
+        },
+        "status": {
+          "name": "Status",
+          "description": "State the task starts in."
+        },
+        "config_entry_id": {
+          "name": "CapybaraHome server",
+          "description": "Which server to create the task on, when more than one is set up."
+        }
+      }
+    }
+  },
+  "triggers": {
+    "task_completed": {
+      "name": "Task completed",
+      "description": "Fires when a task is marked done in CapybaraHome.",
+      "fields": {
+        "category": {
+          "name": "Category",
+          "description": "Only fire for tasks in one of these categories. Leave empty for every task."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "no_entry": {
+      "message": "No CapybaraHome server is set up."
+    },
+    "entry_not_loaded": {
+      "message": "That CapybaraHome server is not loaded."
+    },
+    "several_entries": {
+      "message": "More than one CapybaraHome server is set up, so the action needs to be told which one to use."
+    },
+    "unknown_category": {
+      "message": "CapybaraHome has no category called {category}."
+    }
+  }
+}
