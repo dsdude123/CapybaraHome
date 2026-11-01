@@ -56,10 +56,11 @@ public class HomeSearchPagesTests
         var page = await client.GetStringAsync($"/homes/{property.Id}");
         Assert.Contains("Harbor Steps", page);
         Assert.Contains("$2,475", page);
-        Assert.Contains("Size: 850 sq ft", page);
+        Assert.Contains("Size: 850 sq ft, $2.80 rent a sq ft", page);
 
         var list = await client.GetStringAsync("/homes");
         Assert.Contains("850 sq ft", list);
+        Assert.Contains("$2.80", list);
     }
 
     [Fact]
@@ -344,15 +345,52 @@ public class HomeSearchPagesTests
             ["amenity"] = "3",
             ["pro"] = "2",
             ["con"] = "4",
+            ["size"] = "0.1",
         });
 
         Assert.Contains("Saved the weights.", await saved.Content.ReadAsStringAsync());
+        Assert.Contains("value=\"0.1\"", await client.GetStringAsync("/homes/settings"));
         Assert.DoesNotContain("No scoring weights are set yet", await client.GetStringAsync("/homes"));
 
         using var scope = app.Services.CreateScope();
         var settings = await scope.ServiceProvider.GetRequiredService<HomeSearchService>().GetSettingsAsync();
         Assert.Equal(0.05m, settings.MonthlyFeePointsPerDollar);
         Assert.Equal(4m, settings.ConPoints);
+        Assert.Equal(0.1m, settings.SizePointsPerSquareFoot);
+    }
+
+    [Fact]
+    public async Task Size_is_scored_against_the_current_home_and_shown_with_its_rent_a_square_foot()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
+                .SaveSettingsAsync(new HomeSearchSettingsRequest(SizePointsPerSquareFoot: 0.1m));
+        }
+
+        var now = await CreateAsync(app, new CreatePropertyRequest("Now", IsCurrent: true, Rent: 2100m, SquareFeet: 700));
+        var same = await CreateAsync(app, new CreatePropertyRequest("Same", SquareFeet: 700));
+        var bigger = await CreateAsync(app, new CreatePropertyRequest("Bigger", Rent: 2380m, SquareFeet: 850));
+        var smaller = await CreateAsync(app, new CreatePropertyRequest("Smaller", SquareFeet: 600));
+
+        var gained = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{bigger.Id}"));
+        Assert.Contains("+150 sq ft", gained);
+        Assert.Contains("+15", gained);
+
+        var lost = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{smaller.Id}"));
+        Assert.Contains("\u2212100 sq ft", lost);
+        Assert.Contains("Size: 600 sq ft</p>", lost);
+
+        Assert.Matches(@"<td>Size</td>\s*<td>0 sq ft</td>", await client.GetStringAsync($"/homes/{same.Id}"));
+        Assert.Matches(@"<td>Size</td>\s*<td>\u2014</td>", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{now.Id}")));
+
+        var list = WebUtility.HtmlDecode(await client.GetStringAsync("/homes"));
+        Assert.Contains("700 sq ft, $3.00 rent a sq ft", list);
+        Assert.Contains("Rent a sq ft</span> $2.80", list);
+        Assert.Contains("Rent a sq ft</span> \u2014", list);
     }
 
     [Fact]

@@ -2,7 +2,7 @@ namespace CapybaraHome.Domain.Homes;
 
 /// <summary>
 /// A home being tracked: either a candidate or the one lived in now, which is the baseline the
-/// candidates' fees and drive times are scored against.
+/// candidates' fees, size and drive times are scored against.
 /// </summary>
 public class Property
 {

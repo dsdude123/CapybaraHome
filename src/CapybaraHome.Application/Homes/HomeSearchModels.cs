@@ -121,6 +121,10 @@ public record PropertyView(
     public decimal MonthlyTotal =>
         (Rent ?? 0m) + (ParkingFee ?? 0m) + (PetRent ?? 0m) + UtilitiesTotal;
 
+    /// <summary>The rent divided by the square footage, or null when either is unknown.</summary>
+    public decimal? RentPerSquareFoot =>
+        Rent is { } rent && SquareFeet is > 0 ? rent / SquareFeet.Value : null;
+
     /// <summary>The pros, in order.</summary>
     public IEnumerable<PropertyPointView> Pros => Points.Where(p => p.Kind == PropertyPointKind.Pro);
 
@@ -293,6 +297,7 @@ public record SearchPriorityView(int Id, string Name, decimal Points, int SortOr
 /// <param name="AmenityPoints">Points for each amenity.</param>
 /// <param name="ProPoints">Points for each pro.</param>
 /// <param name="ConPoints">Points taken off for each con.</param>
+/// <param name="SizePointsPerSquareFoot">Points per square foot larger than the current home.</param>
 /// <param name="RoutingBaseUrl">Base address of the OpenRouteService instance.</param>
 /// <param name="HasRoutingApiKey">Whether a key is held for it; the key itself is never read back.</param>
 public record HomeSearchSettingsView(
@@ -302,6 +307,7 @@ public record HomeSearchSettingsView(
     decimal AmenityPoints,
     decimal ProPoints,
     decimal ConPoints,
+    decimal SizePointsPerSquareFoot,
     string? RoutingBaseUrl,
     bool HasRoutingApiKey)
 {
@@ -312,7 +318,8 @@ public record HomeSearchSettingsView(
         || DriveTimePointsPerMinute != 0m
         || AmenityPoints != 0m
         || ProPoints != 0m
-        || ConPoints != 0m;
+        || ConPoints != 0m
+        || SizePointsPerSquareFoot != 0m;
 
     /// <summary>Whether addresses can be placed and drives measured rather than typed.</summary>
     public bool CanMeasureDriveTimes => !string.IsNullOrWhiteSpace(RoutingBaseUrl);
@@ -325,6 +332,7 @@ public record HomeSearchSettingsView(
 /// <param name="AmenityPoints">Points for each amenity.</param>
 /// <param name="ProPoints">Points for each pro.</param>
 /// <param name="ConPoints">Points taken off for each con.</param>
+/// <param name="SizePointsPerSquareFoot">Points per square foot larger than the current home.</param>
 /// <param name="RoutingBaseUrl">Base address of the OpenRouteService instance; pass an empty string to clear it.</param>
 /// <param name="RoutingApiKey">Key for it; an empty string keeps the key already held.</param>
 public record HomeSearchSettingsRequest(
@@ -334,6 +342,7 @@ public record HomeSearchSettingsRequest(
     decimal? AmenityPoints = null,
     decimal? ProPoints = null,
     decimal? ConPoints = null,
+    decimal? SizePointsPerSquareFoot = null,
     string? RoutingBaseUrl = null,
     string? RoutingApiKey = null);
 

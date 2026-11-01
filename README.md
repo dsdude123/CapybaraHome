@@ -111,10 +111,12 @@ nothing is scored until you fill them in:
   parking plus cat rent plus the utilities.
 - **Points per minute of drive**, multiplied by each destination's own weight, against the
   same baseline. Work, driven to every day, is worth setting above one.
+- **Points per square foot** larger than the home you live in now; a smaller place loses them.
+  Each property also shows its rent a square foot, which is not scored.
 - **Points per amenity**, **per pro** and **off per con**.
 - Each priority carries its own points, earned by a property you mark as meeting it.
 
-Fees and drive times are differences, so they need a property ticked as *This is where I live
+Fees, size and drive times are differences, so they need a property ticked as *This is where I live
 now*; amenities, pros, cons and priorities stand on their own. A drive only scores where both
 ends are known, so a destination you have not measured for both places counts for nothing
 rather than inventing a saving.

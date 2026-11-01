@@ -1,7 +1,7 @@
 namespace CapybaraHome.Application.Homes;
 
 /// <summary>
-/// Turns a property into a score. Fees and drive times are scored as differences from the home
+/// Turns a property into a score. Fees, size and drive times are scored as differences from the home
 /// lived in now, so a search with no current home scores only what stands on its own: the
 /// amenities, the pros and cons, and the priorities met.
 /// </summary>
@@ -26,12 +26,17 @@ public static class PropertyScorer
             ? (decimal?)null
             : baseline.Deposit.Value - property.Deposit.Value;
 
+        var sizeDifference = baseline?.SquareFeet is { } theirs && property.SquareFeet is { } mine
+            ? mine - theirs
+            : (int?)null;
+
         var driveLines = DriveLines(property, baseline, destinations, settings);
 
         return new PropertyScore(
             PropertyId: property.Id,
             MonthlyFees: (monthlyDifference ?? 0m) * settings.MonthlyFeePointsPerDollar,
             Deposit: (depositDifference ?? 0m) * settings.DepositPointsPerDollar,
+            Size: (sizeDifference ?? 0) * settings.SizePointsPerSquareFoot,
             DriveTimes: driveLines.Sum(line => line.Points),
             Amenities: property.Amenities.Count * settings.AmenityPoints,
             Pros: property.Pros.Count() * settings.ProPoints,
@@ -39,7 +44,8 @@ public static class PropertyScorer
             Priorities: property.Priorities.Where(p => p.Meets == true).Sum(p => p.Points),
             DriveTimeLines: driveLines,
             MonthlyDifference: monthlyDifference,
-            DepositDifference: depositDifference);
+            DepositDifference: depositDifference,
+            SizeDifference: sizeDifference);
     }
 
     // A destination only scores where both drives are known: with one of them missing there is no

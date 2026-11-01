@@ -27,6 +27,9 @@ public class HomeSearchSettings
     /// <summary>Points taken off for each con.</summary>
     public decimal ConPoints { get; set; }
 
+    /// <summary>Points per square foot larger than the current home; a smaller place costs points.</summary>
+    public decimal SizePointsPerSquareFoot { get; set; }
+
     /// <summary>
     /// Base address of the OpenRouteService instance, which both places an address and measures
     /// the drive. Empty until it is set, and then every drive time is typed in by hand.

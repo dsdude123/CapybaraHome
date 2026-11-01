@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CapybaraHome.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CapybaraHomeDbContext))]
-    [Migration("20261101010504_AddPropertySquareFeet")]
-    partial class AddPropertySquareFeet
+    [Migration("20261101013118_AddPropertySize")]
+    partial class AddPropertySize
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -168,6 +168,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<string>("RoutingBaseUrl")
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
+
+                    b.Property<double>("SizePointsPerSquareFoot")
+                        .HasColumnType("REAL");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");

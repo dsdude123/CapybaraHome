@@ -17,6 +17,7 @@ public class HomeSearchSettingsConfiguration : IEntityTypeConfiguration<HomeSear
         builder.Property(s => s.AmenityPoints).HasConversion<double>();
         builder.Property(s => s.ProPoints).HasConversion<double>();
         builder.Property(s => s.ConPoints).HasConversion<double>();
+        builder.Property(s => s.SizePointsPerSquareFoot).HasConversion<double>();
         builder.Property(s => s.RoutingBaseUrl).HasMaxLength(500);
         builder.Property(s => s.RoutingApiKey).HasMaxLength(500);
     }

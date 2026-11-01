@@ -21,8 +21,8 @@ else
     {
         <p class="notice">
             No scoring weights are set yet, so every property scores zero.
-            <a href="homes/settings">Set the weights</a> for fees, drive times, amenities and
-            pros and cons.
+            <a href="homes/settings">Set the weights</a> for fees, size, drive times, amenities
+            and pros and cons.
         </p>
     }
 
@@ -69,6 +69,7 @@ else
                         <span><span class="muted">A month</span> @Money(scored.Property.MonthlyTotal)</span>
                         <span><span class="muted">Deposit</span> @Money(scored.Property.Deposit)</span>
                         <span><span class="muted">Size</span> @SquareFeet(scored.Property.SquareFeet)</span>
+                        <span><span class="muted">Rent a sq ft</span> @Cents(scored.Property.RentPerSquareFoot)</span>
                         @foreach (var destination in board.Destinations)
                         {
                             var line = scored.Score.DriveTimeLines.FirstOrDefault(d => d.DestinationId == destination.Id);
@@ -88,7 +89,7 @@ else
         </ul>
 
         <p class="muted">
-            A candidate's score is the difference from your current home in fees and drive times,
+            A candidate's score is the difference from your current home in fees, size and drive times,
             plus what its amenities, pros, cons and priorities are worth.
         </p>
     }
@@ -105,7 +106,8 @@ else
 
     private static string Baseline(PropertyView current) =>
         $"{Money(current.Rent)} rent, {Money(current.UtilitiesTotal)} utilities, {Money(current.Deposit)} deposit"
-        + (current.SquareFeet is null ? string.Empty : $", {SquareFeet(current.SquareFeet)}");
+        + (current.SquareFeet is null ? string.Empty : $", {SquareFeet(current.SquareFeet)}")
+        + (current.RentPerSquareFoot is null ? string.Empty : $", {Cents(current.RentPerSquareFoot)} rent a sq ft");
 
     // The container has no locale, so a currency format renders the generic sign rather than a
     // dollar one; the weights are labelled per dollar, so the sign is written out here.
@@ -113,6 +115,11 @@ else
         value is null
             ? "\u2014"
             : (value < 0 ? "\u2212$" : "$") + Math.Abs(value.Value).ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Cents(decimal? value) =>
+        value is null
+            ? "\u2014"
+            : "$" + value.Value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string SquareFeet(int? size) =>
         size is { } known

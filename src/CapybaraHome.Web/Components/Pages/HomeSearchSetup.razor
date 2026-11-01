@@ -12,8 +12,8 @@
 <section class="card stack">
     <h2 class="card-title">Scoring weights</h2>
     <p class="muted">
-        Fees and drive times score as the difference from your current home: a candidate that is
-        cheaper or closer earns points, one that is dearer or further loses them. Every weight
+        Fees, size and drive times score as the difference from your current home: a candidate that
+        is cheaper, bigger or closer earns points, one that is dearer, smaller or further loses them. Every weight
         starts at zero, which is the same as switching that part of the score off.
     </p>
 
@@ -43,6 +43,10 @@
             <div class="field">
                 <label for="weight-con">Points off per con</label>
                 <input id="weight-con" type="number" step="0.001" name="con" value="@con" />
+            </div>
+            <div class="field">
+                <label for="weight-size">Points per square foot</label>
+                <input id="weight-size" type="number" step="0.001" name="size" value="@size" />
             </div>
         </div>
         <div class="row">
@@ -377,7 +381,7 @@
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
-    private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, null, false);
+    private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private IReadOnlyList<SearchDestinationView> destinations = [];
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
@@ -388,6 +392,7 @@
     private string? amenity;
     private string? pro;
     private string? con;
+    private string? size;
     private string? routingUrl;
     private string? destinationName;
     private string? destinationAddress;
@@ -427,6 +432,7 @@
         amenity = Typed(settings.AmenityPoints);
         pro = Typed(settings.ProPoints);
         con = Typed(settings.ConPoints);
+        size = Typed(settings.SizePointsPerSquareFoot);
         routingUrl = settings.RoutingBaseUrl;
     }
 
@@ -445,7 +451,8 @@
             DriveTimePointsPerMinute: PropertyRows.Money(form["drive"]) ?? 0m,
             AmenityPoints: PropertyRows.Money(form["amenity"]) ?? 0m,
             ProPoints: PropertyRows.Money(form["pro"]) ?? 0m,
-            ConPoints: PropertyRows.Money(form["con"]) ?? 0m));
+            ConPoints: PropertyRows.Money(form["con"]) ?? 0m,
+            SizePointsPerSquareFoot: PropertyRows.Money(form["size"]) ?? 0m));
 
         saved = "Saved the weights.";
         await LoadAsync();

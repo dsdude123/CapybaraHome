@@ -13,6 +13,7 @@ public class PropertyScorerTests
         AmenityPoints: 3m,
         ProPoints: 2m,
         ConPoints: 4m,
+        SizePointsPerSquareFoot: 0.1m,
         RoutingBaseUrl: null,
         HasRoutingApiKey: false);
 
@@ -48,6 +49,46 @@ public class PropertyScorerTests
         var missing = PropertyScorer.Score(unknown, current, [], Weights);
         Assert.Equal(0m, missing.Deposit);
         Assert.Null(missing.DepositDifference);
+    }
+
+    [Fact]
+    public void A_bigger_place_earns_points_and_a_smaller_one_loses_them()
+    {
+        var current = Property(1, "Now", squareFeet: 700);
+        var bigger = Property(2, "Bigger", squareFeet: 850);
+        var smaller = Property(3, "Smaller", squareFeet: 600);
+
+        var gained = PropertyScorer.Score(bigger, current, [], Weights);
+        Assert.Equal(150, gained.SizeDifference);
+        Assert.Equal(15m, gained.Size);
+
+        var lost = PropertyScorer.Score(smaller, current, [], Weights);
+        Assert.Equal(-100, lost.SizeDifference);
+        Assert.Equal(-10m, lost.Size);
+    }
+
+    [Theory]
+    [InlineData(true, true, 15)]
+    [InlineData(true, false, 0)]
+    [InlineData(false, true, 0)]
+    [InlineData(false, false, 0)]
+    public void Size_only_scores_when_both_are_known(bool mine, bool theirs, decimal expected)
+    {
+        var current = Property(1, "Now", squareFeet: theirs ? 700 : null);
+        var candidate = Property(2, "There", squareFeet: mine ? 850 : null);
+
+        var score = PropertyScorer.Score(candidate, current, [], Weights);
+
+        Assert.Equal(expected, score.Size);
+        Assert.Equal(mine && theirs ? 150 : null, score.SizeDifference);
+    }
+
+    [Fact]
+    public void Rent_a_square_foot_needs_both_the_rent_and_the_size()
+    {
+        Assert.Equal(2.8m, Property(1, "Both", rent: 2380m, squareFeet: 850).RentPerSquareFoot);
+        Assert.Null(Property(2, "No size", rent: 2380m).RentPerSquareFoot);
+        Assert.Null(Property(3, "No rent", squareFeet: 850).RentPerSquareFoot);
     }
 
     [Fact]
@@ -120,12 +161,14 @@ public class PropertyScorerTests
     public void The_current_home_is_not_compared_with_itself()
     {
         var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, 0, 0m, null, null, 0) };
-        var current = Property(1, "Now", rent: 2000m, deposit: 500m, drives: [(1, 30d)], amenities: ["Deck"]);
+        var current = Property(1, "Now", rent: 2000m, deposit: 500m, squareFeet: 700, drives: [(1, 30d)], amenities: ["Deck"]);
 
         var score = PropertyScorer.Score(current, current, destinations, Weights);
 
         Assert.Equal(0m, score.MonthlyFees);
         Assert.Equal(0m, score.Deposit);
+        Assert.Equal(0m, score.Size);
+        Assert.Null(score.SizeDifference);
         Assert.Equal(0m, score.DriveTimes);
         Assert.Null(score.MonthlyDifference);
         Assert.Equal(3m, score.Amenities);
@@ -134,12 +177,13 @@ public class PropertyScorerTests
     [Fact]
     public void Every_weight_at_zero_scores_nothing()
     {
-        var none = new HomeSearchSettingsView(0m, 0m, 0m, 0m, 0m, 0m, null, false);
+        var none = new HomeSearchSettingsView(0m, 0m, 0m, 0m, 0m, 0m, 0m, null, false);
         var current = Property(1, "Now", rent: 3000m);
         var candidate = Property(2, "Cheap", rent: 900m, amenities: ["Gym"], pros: ["Nice"], cons: ["Far"]);
 
         Assert.Equal(0m, PropertyScorer.Score(candidate, current, [], none).Total);
         Assert.False(none.AnyWeightSet);
+        Assert.True((none with { SizePointsPerSquareFoot = 1m }).AnyWeightSet);
         Assert.True(Weights.AnyWeightSet);
     }
 
@@ -147,17 +191,18 @@ public class PropertyScorerTests
     public void The_total_is_every_component_added_up()
     {
         var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, 0, 0m, null, null, 0) };
-        var current = Property(1, "Now", rent: 2000m, deposit: 1000m, drives: [(1, 30d)]);
+        var current = Property(1, "Now", rent: 2000m, deposit: 1000m, squareFeet: 700, drives: [(1, 30d)]);
         var candidate = Property(
-            2, "There", rent: 1900m, deposit: 800m, drives: [(1, 25d)],
+            2, "There", rent: 1900m, deposit: 800m, squareFeet: 720, drives: [(1, 25d)],
             amenities: ["Gym"], pros: ["Quiet"], cons: ["Dark"], priorities: [(1, 10m, true)]);
 
         var score = PropertyScorer.Score(candidate, current, destinations, Weights);
 
         Assert.Equal(5m, score.MonthlyFees);
         Assert.Equal(2m, score.Deposit);
+        Assert.Equal(2m, score.Size);
         Assert.Equal(7.5m, score.DriveTimes);
-        Assert.Equal(5m + 2m + 7.5m + 3m + 2m - 4m + 10m, score.Total);
+        Assert.Equal(5m + 2m + 2m + 7.5m + 3m + 2m - 4m + 10m, score.Total);
     }
 
     private static PropertyView Property(
@@ -167,6 +212,7 @@ public class PropertyScorerTests
         decimal? parking = null,
         decimal? petRent = null,
         decimal? deposit = null,
+        int? squareFeet = null,
         decimal utilities = 0m,
         IReadOnlyList<string>? amenities = null,
         IReadOnlyList<string>? pros = null,
@@ -190,7 +236,7 @@ public class PropertyScorerTests
             petRent,
             deposit,
             null,
-            null,
+            squareFeet,
             null,
             null,
             utilities == 0m
