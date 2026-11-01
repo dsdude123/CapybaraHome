@@ -378,11 +378,19 @@ public class StaticRenderingTests
             ["form.CategoryId"] = string.Empty,
         });
 
+        // Saving a new task goes back to the list, the same place saving an edit goes.
         Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
-        var editor = created.Headers.Location!.OriginalString;
-        Assert.Contains("tasks/", editor);
+        Assert.Equal("/tasks", created.Headers.Location!.AbsolutePath);
+        Assert.Contains("Mow the lawn", await client.GetStringAsync("/tasks"));
 
-        var edited = await PostAsync(client, editor, "task-editor", new()
+        int id;
+        using (var seeded = app.Services.CreateScope())
+        {
+            var seededContext = seeded.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            id = (await seededContext.Tasks.SingleAsync()).Id;
+        }
+
+        var edited = await PostAsync(client, $"/tasks/{id}", "task-editor", new()
         {
             ["form.Title"] = "Mow the lawn and edge it",
             ["form.Notes"] = string.Empty,

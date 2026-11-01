@@ -124,9 +124,9 @@
         {
             if (Id is null)
             {
-                var created = await Tasks.CreateAsync(
+                await Tasks.CreateAsync(
                     new CreateTaskRequest(form.Title ?? string.Empty, form.Notes, form.Status, category, due));
-                Navigation.NavigateTo($"tasks/{created.Id}");
+                Navigation.NavigateTo("tasks");
                 return;
             }
 
