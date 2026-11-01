@@ -20,6 +20,7 @@ public record DriveTimeScore(
 /// <param name="PropertyId">The property scored.</param>
 /// <param name="MonthlyFees">Points for the difference in what a month costs.</param>
 /// <param name="Deposit">Points for the difference in deposit.</param>
+/// <param name="Size">Points for the difference in square footage.</param>
 /// <param name="DriveTimes">Points for the differences in drive time, added up.</param>
 /// <param name="Amenities">Points for the amenities.</param>
 /// <param name="Pros">Points for the pros.</param>
@@ -28,10 +29,12 @@ public record DriveTimeScore(
 /// <param name="DriveTimeLines">The drive comparisons behind <paramref name="DriveTimes"/>.</param>
 /// <param name="MonthlyDifference">How much cheaper a month is than the current home's, as money.</param>
 /// <param name="DepositDifference">How much lower the deposit is than the current home's, as money.</param>
+/// <param name="SizeDifference">How many square feet larger it is than the current home.</param>
 public record PropertyScore(
     int PropertyId,
     decimal MonthlyFees,
     decimal Deposit,
+    decimal Size,
     decimal DriveTimes,
     decimal Amenities,
     decimal Pros,
@@ -39,8 +42,9 @@ public record PropertyScore(
     decimal Priorities,
     IReadOnlyList<DriveTimeScore> DriveTimeLines,
     decimal? MonthlyDifference,
-    decimal? DepositDifference)
+    decimal? DepositDifference,
+    int? SizeDifference)
 {
     /// <summary>Every component added up.</summary>
-    public decimal Total => MonthlyFees + Deposit + DriveTimes + Amenities + Pros + Cons + Priorities;
+    public decimal Total => MonthlyFees + Deposit + Size + DriveTimes + Amenities + Pros + Cons + Priorities;
 }

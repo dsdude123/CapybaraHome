@@ -166,6 +166,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
+                    b.Property<double>("SizePointsPerSquareFoot")
+                        .HasColumnType("REAL");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -216,6 +219,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
 
                     b.Property<double?>("Rent")
                         .HasColumnType("REAL");
+
+                    b.Property<int?>("SquareFeet")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");

@@ -46,6 +46,7 @@ public class HomeSearchTools
     /// <param name="petRent">Monthly pet rent.</param>
     /// <param name="deposit">Deposit, which is paid once.</param>
     /// <param name="internet">What internet the place provides.</param>
+    /// <param name="squareFeet">How big the place is, in square feet.</param>
     /// <param name="amenities">What it offers, such as a gym or a pool.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "add_property")]
@@ -59,6 +60,7 @@ public class HomeSearchTools
         decimal? petRent = null,
         decimal? deposit = null,
         string? internet = null,
+        int? squareFeet = null,
         string[]? amenities = null,
         CancellationToken cancellationToken = default)
     {
@@ -71,6 +73,7 @@ public class HomeSearchTools
                 PetRent: petRent,
                 Deposit: deposit,
                 Internet: internet,
+                SquareFeet: squareFeet,
                 Amenities: amenities),
             cancellationToken);
     }

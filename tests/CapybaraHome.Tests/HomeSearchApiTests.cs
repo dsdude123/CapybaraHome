@@ -26,12 +26,14 @@ public class HomeSearchApiTests
             "Harbor Steps",
             Address: "1221 1st Ave",
             Rent: 2380m,
+            SquareFeet: 850,
             Utilities: [new PropertyUtilityInput(UtilityKind.Electricity, 70m)],
             Amenities: ["Gym"]), Json);
 
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var property = (await created.Content.ReadFromJsonAsync<PropertyView>(Json))!;
         Assert.Equal(2450m, property.MonthlyTotal);
+        Assert.Equal(850, property.SquareFeet);
 
         var scored = await client.GetFromJsonAsync<ScoredProperty>($"/api/properties/{property.Id}", Json);
         Assert.Equal("Harbor Steps", scored!.Property.Name);
@@ -39,7 +41,9 @@ public class HomeSearchApiTests
 
         var patched = await client.PatchAsJsonAsync($"/api/properties/{property.Id}",
             new UpdatePropertyRequest(Name: "Harbor Steps 1408"), Json);
-        Assert.Equal("Harbor Steps 1408", (await patched.Content.ReadFromJsonAsync<PropertyView>(Json))!.Name);
+        var renamed = (await patched.Content.ReadFromJsonAsync<PropertyView>(Json))!;
+        Assert.Equal("Harbor Steps 1408", renamed.Name);
+        Assert.Equal(850, renamed.SquareFeet);
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/properties/{property.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"/api/properties/{property.Id}")).StatusCode);

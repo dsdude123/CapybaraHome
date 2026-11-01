@@ -374,6 +374,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         settings.AmenityPoints = request.AmenityPoints ?? settings.AmenityPoints;
         settings.ProPoints = request.ProPoints ?? settings.ProPoints;
         settings.ConPoints = request.ConPoints ?? settings.ConPoints;
+        settings.SizePointsPerSquareFoot = request.SizePointsPerSquareFoot ?? settings.SizePointsPerSquareFoot;
 
         if (request.RoutingBaseUrl is not null)
         {
@@ -422,6 +423,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         settings.AmenityPoints,
         settings.ProPoints,
         settings.ConPoints,
+        settings.SizePointsPerSquareFoot,
         settings.RoutingBaseUrl,
         !string.IsNullOrWhiteSpace(settings.RoutingApiKey));
 

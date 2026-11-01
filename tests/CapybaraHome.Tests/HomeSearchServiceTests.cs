@@ -153,13 +153,15 @@ public class HomeSearchServiceTests
             DriveTimePointsPerMinute: 1.5m,
             AmenityPoints: 3m,
             ProPoints: 2m,
-            ConPoints: 4m));
+            ConPoints: 4m,
+            SizePointsPerSquareFoot: 0.1m));
 
         var saved = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(AmenityPoints: 5m));
 
         Assert.Equal(5m, saved.AmenityPoints);
         Assert.Equal(0.05m, saved.MonthlyFeePointsPerDollar);
         Assert.Equal(4m, saved.ConPoints);
+        Assert.Equal(0.1m, saved.SizePointsPerSquareFoot);
         Assert.True(saved.AnyWeightSet);
         Assert.Equal(db.Clock.GetUtcNow(), await UpdatedAtAsync(db));
     }

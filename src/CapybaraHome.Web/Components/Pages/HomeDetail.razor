@@ -34,6 +34,8 @@ else
         <p class="muted">@property.Address</p>
     }
 
+    <p class="muted">Size: @Size(property)</p>
+
     <section class="card stack">
         <h2 class="card-title">Score</h2>
         @if (!settings.AnyWeightSet && priorityPoints == 0m)
@@ -58,6 +60,11 @@ else
                     <td>Deposit</td>
                     <td>@Money(score.DepositDifference)</td>
                     <td>@Points(score.Deposit)</td>
+                </tr>
+                <tr>
+                    <td>Size</td>
+                    <td>@SizeDifference(score.SizeDifference)</td>
+                    <td>@Points(score.Size)</td>
                 </tr>
                 @foreach (var line in score.DriveTimeLines)
                 {
@@ -92,7 +99,7 @@ else
         @if (property.IsCurrent)
         {
             <p class="muted">
-                This is the baseline, so its fees and drives are not compared with anything.
+                This is the baseline, so its fees, size and drives are not compared with anything.
             </p>
         }
         else if (current is null)
@@ -517,7 +524,7 @@ else
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
     private PropertyDrivingCost? driving;
-    private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, null, false);
+    private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private decimal priorityPoints;
     private List<string> problems = [];
     private string? measured;
@@ -668,6 +675,21 @@ else
 
     private static string Gallons(double value) =>
         value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string SquareFeet(int? size) =>
+        size is { } known
+            ? known.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " sq ft"
+            : "not recorded";
+
+    private static string Size(PropertyView property) =>
+        SquareFeet(property.SquareFeet)
+        + (property.RentPerSquareFoot is { } perFoot ? $", {Cents(perFoot)} rent a sq ft" : string.Empty);
+
+    private static string SizeDifference(int? difference) =>
+        difference is { } known
+            ? (known > 0 ? "+" : known < 0 ? "\u2212" : string.Empty)
+                + Math.Abs(known).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " sq ft"
+            : "\u2014";
 
     private static string Points(decimal value) =>
         (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
