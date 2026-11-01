@@ -240,6 +240,7 @@ public class DrivingCostCalculatorTests
             null,
             null,
             null,
+            null,
             [],
             [],
             [],

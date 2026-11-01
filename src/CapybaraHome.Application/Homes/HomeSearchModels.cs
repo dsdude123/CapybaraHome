@@ -79,6 +79,7 @@ public record PropertyPriorityView(int PriorityId, string Name, decimal Points, 
 /// <param name="PetRent">Monthly pet rent.</param>
 /// <param name="Deposit">Deposit, which is paid once.</param>
 /// <param name="Internet">What internet the place provides, as written.</param>
+/// <param name="SquareFeet">How big the place is, in square feet.</param>
 /// <param name="Latitude">Latitude the address was resolved to, or null.</param>
 /// <param name="Longitude">Longitude the address was resolved to, or null.</param>
 /// <param name="Utilities">The monthly utilities, by kind.</param>
@@ -100,6 +101,7 @@ public record PropertyView(
     decimal? PetRent,
     decimal? Deposit,
     string? Internet,
+    int? SquareFeet,
     double? Latitude,
     double? Longitude,
     IReadOnlyList<PropertyUtilityView> Utilities,
@@ -146,6 +148,7 @@ public record PropertyPointInput(PropertyPointKind Kind, string Text);
 /// <param name="PetRent">Monthly pet rent.</param>
 /// <param name="Deposit">Deposit, which is paid once.</param>
 /// <param name="Internet">What internet the place provides.</param>
+/// <param name="SquareFeet">How big the place is, in square feet.</param>
 /// <param name="Utilities">The utility breakdown.</param>
 /// <param name="Amenities">What the place offers, in the order given.</param>
 /// <param name="Points">The pros and cons, in the order given.</param>
@@ -158,6 +161,7 @@ public record CreatePropertyRequest(
     decimal? PetRent = null,
     decimal? Deposit = null,
     string? Internet = null,
+    int? SquareFeet = null,
     IReadOnlyList<PropertyUtilityInput>? Utilities = null,
     IReadOnlyList<string>? Amenities = null,
     IReadOnlyList<PropertyPointInput>? Points = null);
@@ -170,8 +174,9 @@ public record CreatePropertyRequest(
 /// <param name="ParkingFee">New monthly parking fee.</param>
 /// <param name="PetRent">New monthly pet rent.</param>
 /// <param name="Deposit">New deposit.</param>
-/// <param name="ClearMoney">When true, the money fields left null in this request are cleared.</param>
+/// <param name="ClearMoney">When true, the money fields and the square footage left null in this request are cleared.</param>
 /// <param name="Internet">New internet description; pass an empty string to clear it.</param>
+/// <param name="SquareFeet">New size in square feet.</param>
 /// <param name="Utilities">The whole utility breakdown, replacing the one held.</param>
 /// <param name="Amenities">The whole list of amenities, replacing the one held.</param>
 /// <param name="Points">The whole list of pros and cons, replacing the one held.</param>
@@ -187,6 +192,7 @@ public record UpdatePropertyRequest(
     decimal? Deposit = null,
     bool ClearMoney = false,
     string? Internet = null,
+    int? SquareFeet = null,
     IReadOnlyList<PropertyUtilityInput>? Utilities = null,
     IReadOnlyList<string>? Amenities = null,
     IReadOnlyList<PropertyPointInput>? Points = null,

@@ -77,7 +77,7 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   open. Times are the server's own clock, so in a container they follow `TZ`. A run missed
   while the app was down happens once when it is back.
 - **Homes** (`/homes`) — the home search: the place you live now, then the candidates ranked by
-  score. A property (`/homes/{id}`) holds its rent, parking, cat rent, deposit, a utility
+  score. A property (`/homes/{id}`) holds its size, rent, parking, cat rent, deposit, a utility
   breakdown by kind, what internet is provided, amenities, pros and cons, notes and pictures,
   and the drive time and distance to each destination, with what a week of driving costs in
   fuel and tolls. **Search settings** (`/homes/settings`) holds the scoring weights, the

@@ -34,6 +34,8 @@ else
         <p class="muted">@property.Address</p>
     }
 
+    <p class="muted">Size: @SquareFeet(property.SquareFeet)</p>
+
     <section class="card stack">
         <h2 class="card-title">Score</h2>
         @if (!settings.AnyWeightSet && priorityPoints == 0m)
@@ -668,6 +670,11 @@ else
 
     private static string Gallons(double value) =>
         value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string SquareFeet(int? size) =>
+        size is { } known
+            ? known.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " sq ft"
+            : "not recorded";
 
     private static string Points(decimal value) =>
         (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);

@@ -217,6 +217,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<double?>("Rent")
                         .HasColumnType("REAL");
 
+                    b.Property<int?>("SquareFeet")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 

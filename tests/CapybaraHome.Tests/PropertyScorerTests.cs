@@ -192,6 +192,7 @@ public class PropertyScorerTests
             null,
             null,
             null,
+            null,
             utilities == 0m
                 ? []
                 : [new PropertyUtilityView(1, UtilityKind.Electricity, null, utilities)],

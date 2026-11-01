@@ -101,6 +101,29 @@ public class PropertyServiceTests
     }
 
     [Fact]
+    public async Task The_square_footage_is_kept_changed_and_cleared_like_the_money()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+
+        var created = await service.CreateAsync(new CreatePropertyRequest("Roomy", SquareFeet: 850));
+        Assert.Equal(850, created.SquareFeet);
+
+        var renamed = await service.UpdateAsync(created.Id, new UpdatePropertyRequest(Name: "Roomier"));
+        Assert.Equal(850, renamed!.SquareFeet);
+
+        var grown = await service.UpdateAsync(created.Id, new UpdatePropertyRequest(SquareFeet: 910));
+        Assert.Equal(910, grown!.SquareFeet);
+
+        var cleared = await service.UpdateAsync(created.Id, new UpdatePropertyRequest(ClearMoney: true));
+        Assert.Null(cleared!.SquareFeet);
+
+        // Nothing is no size at all, so zero or less is read as not known.
+        var nothing = await service.CreateAsync(new CreatePropertyRequest("Nowhere", SquareFeet: 0));
+        Assert.Null(nothing.SquareFeet);
+    }
+
+    [Fact]
     public async Task Only_one_property_at_a_time_is_the_current_home()
     {
         await using var db = await TestDatabase.CreateAsync();

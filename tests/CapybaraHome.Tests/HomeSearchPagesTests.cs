@@ -26,6 +26,7 @@ public class HomeSearchPagesTests
         [
             new("name", "  Harbor Steps  "),
             new("address", "1221 1st Ave"),
+            new("square-feet", "850"),
             new("rent", "2380"),
             new("parking", "0"),
             new("pet-rent", "25"),
@@ -46,6 +47,7 @@ public class HomeSearchPagesTests
         var property = await OneAsync(app);
         Assert.Equal("Harbor Steps", property.Name);
         Assert.Equal(2475m, property.MonthlyTotal);
+        Assert.Equal(850, property.SquareFeet);
         Assert.Equal(["Gym", "Pool"], property.Amenities.Select(a => a.Name));
         Assert.Equal("Walk to the water", property.Pros.Single().Text);
         Assert.Equal("Small kitchen", property.Cons.Single().Text);
@@ -54,6 +56,36 @@ public class HomeSearchPagesTests
         var page = await client.GetStringAsync($"/homes/{property.Id}");
         Assert.Contains("Harbor Steps", page);
         Assert.Contains("$2,475", page);
+        Assert.Contains("Size: 850 sq ft", page);
+
+        var list = await client.GetStringAsync("/homes");
+        Assert.Contains("850 sq ft", list);
+    }
+
+    [Fact]
+    public async Task Blanking_the_square_feet_on_the_editor_clears_it()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Roomy", IsCurrent: true, SquareFeet: 1200));
+
+        var editor = await client.GetStringAsync($"/homes/{property.Id}/edit");
+        Assert.Contains("value=\"1200\"", editor);
+
+        var current = await client.GetStringAsync("/homes");
+        Assert.Contains("1,200 sq ft", current);
+
+        await PostManyAsync(client, $"/homes/{property.Id}/edit", "property-editor",
+        [
+            new("name", "Roomy"),
+            new("is-current", "true"),
+            new("square-feet", string.Empty),
+            new("action", "save"),
+        ]);
+
+        Assert.Null((await ReadAsync(app, property.Id)).SquareFeet);
+        Assert.Contains("Size: not recorded", await client.GetStringAsync($"/homes/{property.Id}"));
     }
 
     [Theory]

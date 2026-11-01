@@ -68,6 +68,7 @@ else
                     <div class="facts">
                         <span><span class="muted">A month</span> @Money(scored.Property.MonthlyTotal)</span>
                         <span><span class="muted">Deposit</span> @Money(scored.Property.Deposit)</span>
+                        <span><span class="muted">Size</span> @SquareFeet(scored.Property.SquareFeet)</span>
                         @foreach (var destination in board.Destinations)
                         {
                             var line = scored.Score.DriveTimeLines.FirstOrDefault(d => d.DestinationId == destination.Id);
@@ -103,7 +104,8 @@ else
     }
 
     private static string Baseline(PropertyView current) =>
-        $"{Money(current.Rent)} rent, {Money(current.UtilitiesTotal)} utilities, {Money(current.Deposit)} deposit";
+        $"{Money(current.Rent)} rent, {Money(current.UtilitiesTotal)} utilities, {Money(current.Deposit)} deposit"
+        + (current.SquareFeet is null ? string.Empty : $", {SquareFeet(current.SquareFeet)}");
 
     // The container has no locale, so a currency format renders the generic sign rather than a
     // dollar one; the weights are labelled per dollar, so the sign is written out here.
@@ -111,6 +113,11 @@ else
         value is null
             ? "\u2014"
             : (value < 0 ? "\u2212$" : "$") + Math.Abs(value.Value).ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string SquareFeet(int? size) =>
+        size is { } known
+            ? known.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " sq ft"
+            : "\u2014";
 
     private static string Points(decimal value) =>
         (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);

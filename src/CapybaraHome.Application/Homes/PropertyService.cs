@@ -57,6 +57,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             PetRent = request.PetRent,
             Deposit = request.Deposit,
             Internet = Blank(request.Internet),
+            SquareFeet = Size(request.SquareFeet),
             Utilities = Utilities(request.Utilities),
             Amenities = Amenities(request.Amenities),
             Points = Points(request.Points),
@@ -115,14 +116,16 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             property.IsCurrent = current;
         }
 
-        // The editor posts every money box every time, so a box left empty means that fee is gone
-        // rather than unchanged. An API caller sending one field keeps the rest by leaving the flag off.
+        // The editor posts every number box every time, so a box left empty means that figure is
+        // gone rather than unchanged. An API caller sending one field keeps the rest by leaving the
+        // flag off.
         if (request.ClearMoney)
         {
             property.Rent = request.Rent;
             property.ParkingFee = request.ParkingFee;
             property.PetRent = request.PetRent;
             property.Deposit = request.Deposit;
+            property.SquareFeet = Size(request.SquareFeet);
         }
         else
         {
@@ -130,6 +133,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             property.ParkingFee = request.ParkingFee ?? property.ParkingFee;
             property.PetRent = request.PetRent ?? property.PetRent;
             property.Deposit = request.Deposit ?? property.Deposit;
+            property.SquareFeet = Size(request.SquareFeet) ?? property.SquareFeet;
         }
 
         if (request.Latitude is { } latitude)
@@ -387,6 +391,8 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             })
             .ToList();
 
+    private static int? Size(int? squareFeet) => squareFeet > 0 ? squareFeet : null;
+
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static readonly Expression<Func<Property, PropertyView>> Projection = property => new PropertyView(
@@ -399,6 +405,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         property.PetRent,
         property.Deposit,
         property.Internet,
+        property.SquareFeet,
         property.Latitude,
         property.Longitude,
         property.Utilities

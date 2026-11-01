@@ -31,6 +31,11 @@
         <input id="property-address" type="text" name="address" value="@address" />
     </div>
 
+    <div class="field">
+        <label for="property-square-feet">Square feet</label>
+        <input id="property-square-feet" type="number" step="1" min="0" name="square-feet" value="@squareFeet" />
+    </div>
+
     <label class="row" style="align-items:center;gap:0.5rem">
         <input type="checkbox" name="is-current" value="true" checked="@isCurrent" style="width:auto;min-height:auto" />
         This is where I live now
@@ -114,6 +119,7 @@
     private string? parking;
     private string? petRent;
     private string? deposit;
+    private string? squareFeet;
     private bool isCurrent;
     private string? error;
 
@@ -151,6 +157,7 @@
         parking = Typed(property.ParkingFee);
         petRent = Typed(property.PetRent);
         deposit = Typed(property.Deposit);
+        squareFeet = property.SquareFeet?.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         utilities = property.Utilities
             .Select(u => new UtilityRow(u.Kind, u.Label, Typed(u.MonthlyCost)))
@@ -208,6 +215,7 @@
                     PropertyRows.Money(petRent),
                     PropertyRows.Money(deposit),
                     internet,
+                    Size(squareFeet),
                     utilityLines,
                     amenityNames,
                     points));
@@ -226,6 +234,7 @@
                 Deposit: PropertyRows.Money(deposit),
                 ClearMoney: true,
                 Internet: internet ?? string.Empty,
+                SquareFeet: Size(squareFeet),
                 Utilities: utilityLines,
                 Amenities: amenityNames,
                 Points: points));
@@ -297,6 +306,11 @@
     private static List<string> Written(List<TextRow> rows) =>
         rows.Where(row => !string.IsNullOrWhiteSpace(row.Text)).Select(row => row.Text!.Trim()).ToList();
 
+    private static int? Size(string? posted) =>
+        int.TryParse(posted, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var size) && size > 0
+            ? size
+            : null;
+
     private static string? Typed(decimal? value) =>
         value?.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
@@ -310,6 +324,7 @@
         parking = form["parking"];
         petRent = form["pet-rent"];
         deposit = form["deposit"];
+        squareFeet = form["square-feet"];
 
         utilities = PropertyRows.ReadUtilities(form);
         amenities = PropertyRows.ReadText(form, "amenity");

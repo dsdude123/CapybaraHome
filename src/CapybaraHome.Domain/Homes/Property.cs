@@ -30,6 +30,9 @@ public class Property
     /// <summary>Deposit, which is paid once rather than monthly.</summary>
     public decimal? Deposit { get; set; }
 
+    /// <summary>How big the place is, in square feet.</summary>
+    public int? SquareFeet { get; set; }
+
     /// <summary>What internet the place provides, as written, such as "fibre included, 1 Gbps".</summary>
     public string? Internet { get; set; }
 
