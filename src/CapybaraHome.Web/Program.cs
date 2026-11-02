@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json.Serialization;
 using CapybaraHome.Application;
 using CapybaraHome.Application.Dashboards;
@@ -19,6 +20,18 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Kestrel request size limits protect against oversized payloads on all endpoints.
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10 MB
+    options.Limits.MinRequestBodyDataRate = new MinDataRate(
+        bytesPerSecond: 100,
+        gracePeriod: TimeSpan.FromSeconds(10));
+    options.Limits.MinResponseDataRate = new MinDataRate(
+        bytesPerSecond: 100,
+        gracePeriod: TimeSpan.FromSeconds(10));
+});
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddCascadingAuthenticationState();
@@ -26,6 +39,53 @@ builder.Services.AddCascadingAuthenticationState();
 // Statuses travel as names, so the API and the export read the same way.
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
+// Rate limiting protects the API and MCP endpoints from abuse.
+builder.Services.AddRateLimiter(options =>
+{
+    // Global per-IP limiter: 120 requests per minute, sliding window.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(
+        context => RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString()
+                ?? context.Request.Headers["X-Forwarded-For"].FirstOrDefault() ?? "unknown",
+            factory => new SlidingWindowRateLimiterOptions
+            {
+                AutoRecovery = true,
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4 // granular buckets
+            }));
+
+    // Stricter policy for the MCP endpoint: 60 requests per minute.
+    options.AddPolicy("mcp", rateLimitOptions =>
+    {
+        rateLimitOptions.PermitPartition()
+            .OnRejected(async (context, token) =>
+            {
+                context.HttpContext.Response.StatusCode = 429;
+                context.HttpContext.Response.Headers.RetryAfter = "60";
+                await context.HttpContext.Response.WriteAsync(
+                    "MCP rate limit exceeded. Please slow down your requests.");
+                return Task.CompletedTask;
+            });
+    });
+
+    // API endpoints get a slightly higher limit: 200 requests per minute.
+    options.AddPolicy("api", rateLimitOptions =>
+    {
+        rateLimitOptions.PermitPartition()
+            .OnRejected(async (context, token) =>
+            {
+                context.HttpContext.Response.StatusCode = 429;
+                context.HttpContext.Response.Headers.RetryAfter = "60";
+                await context.HttpContext.Response.WriteAsync(
+                    "API rate limit exceeded. Please slow down your requests.");
+                return Task.CompletedTask;
+            });
+    });
+
+    options.RejectionStatusCode = 429;
+});
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(
@@ -70,6 +130,9 @@ await PrepareDatabaseAsync(app);
 
 app.UseForwardedHeaders();
 
+// Rate limiter middleware must come before authentication and authorization.
+app.UseRateLimiter();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -95,11 +158,24 @@ app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.MapApi();
+// Security headers on every response.
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    context.Response.Headers.Append("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+    await next();
+});
+
+app.MapApi().WithRateLimitPolicy("api");
 app.MapSettings();
 app.MapHomeSearch();
 app.MapReport();
-app.MapMcp("/mcp").RequireAuthorization(AuthenticationSetup.ApiPolicyName);
+app.MapMcp("/mcp")
+    .RequireAuthorization(AuthenticationSetup.ApiPolicyName)
+    .WithRateLimitPolicy("mcp");
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 

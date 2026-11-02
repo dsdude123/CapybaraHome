@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using CapybaraHome.Application.Grocery;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace CapybaraHome.Web.Mcp;
@@ -18,8 +19,10 @@ public class GroceryTools
     [Description("Get the open grocery list and everything on it.")]
     public static Task<GroceryListView?> GetGroceryListAsync(
         GroceryService grocery,
+        ILogger<GroceryTools> logger,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] get_grocery_list user={UserId}", "mcp");
         return grocery.GetCurrentAsync(cancellationToken);
     }
 
@@ -32,10 +35,13 @@ public class GroceryTools
     [Description("Add one item to the open grocery list, starting a list if there is none.")]
     public static Task<GroceryItemView> AddGroceryItemAsync(
         GroceryService grocery,
+        ILogger<GroceryTools> logger,
         string item,
         string? quantity = null,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] add_grocery_item user={UserId} item={Item} quantity={Quantity}",
+            "mcp", item, quantity ?? "(none)");
         return grocery.AddItemAsync(new GroceryItemInput(item, quantity), cancellationToken);
     }
 
@@ -47,9 +53,11 @@ public class GroceryTools
     [Description("Take one item off the grocery list by its id.")]
     public static Task<bool> RemoveGroceryItemAsync(
         GroceryService grocery,
+        ILogger<GroceryTools> logger,
         int id,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] remove_grocery_item user={UserId} itemId={ItemId}", "mcp", id);
         return grocery.RemoveItemAsync(id, cancellationToken);
     }
 
@@ -60,8 +68,10 @@ public class GroceryTools
     [Description("Close the open grocery list and start an empty one. The old list is kept.")]
     public static Task<GroceryListView> StartFreshGroceryListAsync(
         GroceryService grocery,
+        ILogger<GroceryTools> logger,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] start_fresh_grocery_list user={UserId}", "mcp");
         return grocery.StartFreshAsync(cancellationToken);
     }
 
@@ -72,8 +82,10 @@ public class GroceryTools
     [Description("List what generating a grocery list would ask about: the frequent items and each planned meal's ingredients.")]
     public static Task<GroceryCandidates> ListGroceryCandidatesAsync(
         GroceryService grocery,
+        ILogger<GroceryTools> logger,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] list_grocery_candidates user={UserId}", "mcp");
         return grocery.CandidatesAsync(cancellationToken);
     }
 }

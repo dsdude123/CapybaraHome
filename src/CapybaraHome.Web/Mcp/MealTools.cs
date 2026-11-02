@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Domain.Meals;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace CapybaraHome.Web.Mcp;
@@ -24,6 +25,7 @@ public class MealTools
     [Description("Search the meals by text, status or tag.")]
     public static async Task<IReadOnlyList<MealView>> SearchMealsAsync(
         MealService meals,
+        ILogger<MealTools> logger,
         string? text = null,
         MealStatus? status = null,
         int[]? tagIds = null,
@@ -31,6 +33,9 @@ public class MealTools
         int limit = 25,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] search_meals user={UserId} text={Text} status={Status} limit={Limit}",
+            "mcp", text ?? "(none)", status?.ToString() ?? "(none)", limit);
+
         var filter = new MealFilter(
             Text: text,
             Statuses: status is { } one ? [one] : null,
@@ -48,9 +53,11 @@ public class MealTools
     [Description("Get one meal by its id, with its ingredients and tags.")]
     public static Task<MealView?> GetMealAsync(
         MealService meals,
+        ILogger<MealTools> logger,
         int id,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] get_meal user={UserId} mealId={MealId}", "mcp", id);
         return meals.GetAsync(id, cancellationToken);
     }
 
@@ -67,6 +74,7 @@ public class MealTools
     [Description("Add a meal, with its ingredients kept apart from its directions.")]
     public static Task<MealView> CreateMealAsync(
         MealService meals,
+        ILogger<MealTools> logger,
         string name,
         string? directions = null,
         MealStatus status = MealStatus.Pooled,
@@ -75,6 +83,8 @@ public class MealTools
         int[]? tagIds = null,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] create_meal user={UserId} name={Name} status={Status} ingredientCount={IngredientCount}",
+            "mcp", name, status, ingredients?.Length ?? 0);
         var request = new CreateMealRequest(name, directions, status, false, lastCookedAt, ingredients, tagIds);
         return meals.CreateAsync(request, cancellationToken);
     }
@@ -93,6 +103,7 @@ public class MealTools
     [Description("Change a meal. Fields left out keep their current value.")]
     public static Task<MealView?> UpdateMealAsync(
         MealService meals,
+        ILogger<MealTools> logger,
         int id,
         string? name = null,
         string? directions = null,
@@ -102,6 +113,8 @@ public class MealTools
         int[]? tagIds = null,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] update_meal user={UserId} mealId={MealId} name={Name} status={Status}",
+            "mcp", id, name ?? "(unchanged)", status?.ToString() ?? "(unchanged)");
         var request = new UpdateMealRequest(
             Name: name,
             Directions: directions,
@@ -125,6 +138,7 @@ public class MealTools
     [Description("Add a variant of a meal. A variant shares its meal's status and last cooked date.")]
     public static Task<MealVariantView?> CreateMealVariantAsync(
         MealService meals,
+        ILogger<MealTools> logger,
         int mealId,
         string name,
         string? directionsModifications = null,
@@ -132,6 +146,8 @@ public class MealTools
         int[]? removedIngredientIds = null,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] create_meal_variant user={UserId} mealId={MealId} variantName={Name} addedIngredients={AddedIngredients} removedIngredients={RemovedIngredients}",
+            "mcp", mealId, name, addedIngredients?.Length ?? 0, removedIngredientIds?.Length ?? 0);
         var request = new MealVariantRequest(name, directionsModifications, addedIngredients, removedIngredientIds);
         return meals.CreateVariantAsync(mealId, request, cancellationToken);
     }
@@ -143,8 +159,10 @@ public class MealTools
     [Description("List the meal tags and the facet each one describes.")]
     public static async Task<IReadOnlyList<MealTagView>> ListMealTagsAsync(
         MealTagService tags,
+        ILogger<MealTools> logger,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] list_meal_tags user={UserId}", "mcp");
         return await tags.ListAsync(cancellationToken);
     }
 }
