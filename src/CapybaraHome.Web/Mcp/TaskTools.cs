@@ -2,6 +2,7 @@ using System.ComponentModel;
 using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Tasks;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace CapybaraHome.Web.Mcp;
@@ -26,6 +27,7 @@ public class TaskTools
     [Description("Search the home task list by text, status, category or due date.")]
     public static async Task<IReadOnlyList<TaskView>> SearchTasksAsync(
         TaskService tasks,
+        ILogger<TaskTools> logger,
         string? text = null,
         TaskItemStatus? status = null,
         int? categoryId = null,
@@ -34,6 +36,9 @@ public class TaskTools
         int limit = 25,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] search_tasks user={UserId} text={Text} status={Status} limit={Limit}",
+            "mcp", text ?? "(none)", status?.ToString() ?? "(none)", limit);
+
         var filter = new TaskFilter(
             Text: text,
             Statuses: status is { } one ? [one] : null,
@@ -53,9 +58,11 @@ public class TaskTools
     [Description("Get one home task by its id.")]
     public static Task<TaskView?> GetTaskAsync(
         TaskService tasks,
+        ILogger<TaskTools> logger,
         int id,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] get_task user={UserId} taskId={TaskId}", "mcp", id);
         return tasks.GetAsync(id, cancellationToken);
     }
 
@@ -71,6 +78,7 @@ public class TaskTools
     [Description("Add a home task.")]
     public static Task<TaskView> CreateTaskAsync(
         TaskService tasks,
+        ILogger<TaskTools> logger,
         string title,
         string? notes = null,
         TaskItemStatus status = TaskItemStatus.ToDo,
@@ -78,6 +86,8 @@ public class TaskTools
         DateOnly? dueDate = null,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] create_task user={UserId} title={Title} status={Status} categoryId={CategoryId}",
+            "mcp", title, status, categoryId?.ToString() ?? "(none)");
         return tasks.CreateAsync(new CreateTaskRequest(title, notes, status, categoryId, dueDate), cancellationToken);
     }
 
@@ -96,6 +106,7 @@ public class TaskTools
     [Description("Change a home task. Fields left out keep their current value.")]
     public static Task<TaskView?> UpdateTaskAsync(
         TaskService tasks,
+        ILogger<TaskTools> logger,
         int id,
         string? title = null,
         string? notes = null,
@@ -106,6 +117,8 @@ public class TaskTools
         bool clearDueDate = false,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] update_task user={UserId} taskId={TaskId} title={Title} status={Status} clearCategory={ClearCategory}",
+            "mcp", id, title ?? "(unchanged)", status?.ToString() ?? "(unchanged)", clearCategory);
         var request = new UpdateTaskRequest(title, notes, status, categoryId, clearCategory, dueDate, clearDueDate);
         return tasks.UpdateAsync(id, request, cancellationToken);
     }
@@ -117,8 +130,10 @@ public class TaskTools
     [Description("List the task categories and their progress.")]
     public static async Task<IReadOnlyList<CategoryView>> ListCategoriesAsync(
         CategoryService categories,
+        ILogger<TaskTools> logger,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] list_categories user={UserId}", "mcp");
         return await categories.ListAsync(cancellationToken);
     }
 }

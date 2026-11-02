@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using CapybaraHome.Application.Homes;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace CapybaraHome.Web.Mcp;
@@ -18,8 +19,10 @@ public class HomeSearchTools
     [Description("Read the home search: the current home, every candidate property with its score, and the destinations and priorities the scores came from.")]
     public static Task<HomeSearchBoard> GetHomeSearchAsync(
         HomeSearchBoardService board,
+        ILogger<HomeSearchTools> logger,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] get_home_search user={UserId}", "mcp");
         return board.GetAsync(cancellationToken);
     }
 
@@ -31,9 +34,11 @@ public class HomeSearchTools
     [Description("Get one property by its id, with its fees, utilities, amenities, pros and cons, drive times and score.")]
     public static Task<ScoredProperty?> GetPropertyAsync(
         HomeSearchBoardService board,
+        ILogger<HomeSearchTools> logger,
         int id,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] get_property user={UserId} propertyId={PropertyId}", "mcp", id);
         return board.GetScoredAsync(id, cancellationToken);
     }
 
@@ -53,6 +58,7 @@ public class HomeSearchTools
     [Description("Add a candidate property to the home search.")]
     public static async Task<PropertyView> AddPropertyAsync(
         PropertyService properties,
+        ILogger<HomeSearchTools> logger,
         string name,
         string? address = null,
         decimal? rent = null,
@@ -64,6 +70,8 @@ public class HomeSearchTools
         string[]? amenities = null,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] add_property user={UserId} name={Name} rent={Rent} address={Address}",
+            "mcp", name, rent?.ToString() ?? "(none)", address ?? "(none)");
         return await properties.CreateAsync(
             new CreatePropertyRequest(
                 name,
@@ -87,10 +95,13 @@ public class HomeSearchTools
     [Description("Write a note on a property in the home search.")]
     public static Task<PropertyNoteView?> AddPropertyNoteAsync(
         PropertyService properties,
+        ILogger<HomeSearchTools> logger,
         int id,
         string body,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] add_property_note user={UserId} propertyId={PropertyId} noteLength={NoteLength}",
+            "mcp", id, body.Length);
         return properties.AddNoteAsync(id, body, cancellationToken);
     }
 }
