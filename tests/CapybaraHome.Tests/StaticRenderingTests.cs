@@ -1724,23 +1724,28 @@ public class StaticRenderingTests
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
 
+        // Tomorrow rather than a date written down here, because the preview only lists executions
+        // that are still to come and a fixed date stops being one.
+        var startsOn = DateOnly.FromDateTime(DateTime.Now).AddDays(1);
+
         var posted = await PostAsync(client, "/automations/new", "automation-editor", new()
         {
             ["form.Action"] = "preview",
             ["form.Title"] = "Still being set up",
             ["form.IntervalUnit"] = unit.ToString(),
             ["form.IntervalCount"] = count.ToString(),
-            ["form.StartsOn"] = "2026-11-02",
+            ["form.StartsOn"] = startsOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ["form.TimeOfDay"] = "06:00",
             ["form.CategoryId"] = string.Empty,
             ["form.IsEnabled"] = "true",
         });
 
         var html = await posted.Content.ReadAsStringAsync();
+        var first = startsOn.ToString("MMMM d, yyyy", CultureInfo.InvariantCulture) + " at 6:00 AM";
 
         Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
         Assert.Contains("Next executions", html);
-        Assert.Contains("November 2, 2026 at 6:00 AM", html);
+        Assert.Contains(first, html);
 
         // The typed title comes back with the page, and nothing was saved.
         Assert.Contains("Still being set up", html);
