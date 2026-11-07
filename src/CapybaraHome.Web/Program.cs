@@ -36,6 +36,7 @@ builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(Backu
 builder.Services.Configure<PropertyPhotoOptions>(builder.Configuration.GetSection(PropertyPhotoOptions.SectionName));
 builder.Services.AddHostedService<ScheduledBackupService>();
 builder.Services.AddHostedService<TaskAutomationRunner>();
+builder.Services.AddHostedService<TaskCloseOperationRunner>();
 
 builder.Services.AddScoped<DailyReportPrinting>();
 builder.Services.AddHttpClient<IppPrinter>(client => client.Timeout = TimeSpan.FromSeconds(30));

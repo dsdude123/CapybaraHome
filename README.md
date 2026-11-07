@@ -95,6 +95,13 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   meals, one tick box apiece, and adds only what is ticked. **Print** (`/grocery/print`)
   is the same list with nothing but the list on it, ready for paper; an earlier list is at
   `/grocery/print/{id}`.
+- **Close operations** — on a task's own page, what happens when it is moved to done: call a
+  webhook or create another task. A task can carry as many as you like, and they run in the
+  order you add them, with what each one last did shown beside it. The created task's due date
+  can be an exact date or one worked out from the day you finished the task: in so many days,
+  weeks, months or years, the start of the next quarter, or the end of the quarter it was
+  finished in. Unless you turn it off, the created task carries the same operations, so closing
+  it sets the next one again.
 - **Settings** (`/settings`) — categories, frequent grocery items, the accounts, connector
   tokens, and the export,
   import and backup controls. **Import from JIRA** (`/settings/jira`) is the wizard that
@@ -206,6 +213,20 @@ repository of type Integration to install it.
 The trigger is a poll: the integration asks once a minute for the tasks completed since its
 last question, which is what `GET /api/tasks?completedSince=` answers.
 
+## Webhooks
+
+A webhook operation sends the completed task to a URL you type. A `POST` carries the title,
+notes, category, due date and completion time as JSON; a `GET` just fetches the URL. The call
+goes out within a few seconds of the task being closed rather than while the page is saving,
+and it is retried, further apart each time, until the target accepts it or five attempts have
+failed. What happened is on the task's own page.
+
+Redirects are not followed, and a call is refused if the address is the server itself, a
+link-local address such as a cloud metadata service, or multicast; the address is checked again
+when the connection is made, so a host name cannot be re-pointed at one of those after it is
+saved. Addresses on your own network are allowed, which is the ordinary case here. There is no
+place to put a header or a token on a webhook, so put any secret the target needs in the URL.
+
 ## Export, import and backups
 
 - `GET /api/export` downloads the whole database as one JSON document. Settings has the same
@@ -214,6 +235,8 @@ last question, which is what `GET /api/tasks?completedSince=` answers.
   name, tasks by JIRA key and automations by title, so re-importing an export of this
   installation updates rather than duplicates. Grocery lists have no such key, so a merge
   loads them only into an installation that holds none; frequent items are matched by name.
+  A task's close operations come across with it; the runs they have already had do not, being
+  history rather than configuration.
 - **Import from JIRA** (`/settings/jira`) is a four-step wizard: the address of your JIRA
   Cloud site, the email address of your Atlassian account and an API token; then the project
   to copy, chosen from the ones that account can see; then a confirmation with the issue

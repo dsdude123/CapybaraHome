@@ -1,3 +1,4 @@
+using System.Net.Http;
 using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Dashboards;
 using CapybaraHome.Application.Homes;
@@ -22,6 +23,7 @@ public static class DependencyInjection
 
         services.AddScoped<TaskService>();
         services.AddScoped<TaskAutomationService>();
+        services.AddScoped<TaskCloseOperationService>();
         services.AddScoped<CategoryService>();
         services.AddScoped<MealService>();
         services.AddScoped<MealTagService>();
@@ -55,6 +57,15 @@ public static class DependencyInjection
         services.AddHttpClient<WeatherFeed>(client => client.Timeout = TimeSpan.FromSeconds(10));
         services.AddHttpClient<CalendarFeed>(client => client.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<NewsFeed>(client => client.Timeout = TimeSpan.FromSeconds(15));
+
+        // A webhook goes to a URL the user typed, so redirects are not followed and every
+        // connection is checked against the address rules before the socket opens.
+        services.AddHttpClient<TaskWebhookSender>(client => client.Timeout = TaskWebhookSender.Timeout)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectCallback = TaskWebhookSender.ConnectAsync,
+            });
 
         return services;
     }
