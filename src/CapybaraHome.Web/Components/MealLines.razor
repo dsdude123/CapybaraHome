@@ -11,7 +11,7 @@ else
         {
             <li>
                 <div class="task-line">
-                    <a class="task-link" href="@($"meals/{meal.Id}")">@meal.Name</a>
+                    <a class="task-link" href="@MealLink(meal)">@meal.Name</a>
                     <span class="pill">@MealStatusNames.Label(meal.Status)</span>
                 </div>
                 <div class="task-meta">
@@ -38,4 +38,10 @@ else
     /// <summary>Meals to list.</summary>
     [Parameter, EditorRequired]
     public IReadOnlyList<MealView> Meals { get; set; } = [];
+
+    /// <summary>Page a meal's editor comes back to when it is left.</summary>
+    [Parameter]
+    public string Return { get; set; } = "meals";
+
+    private string MealLink(MealView meal) => $"meals/{meal.Id}?return={Uri.EscapeDataString(Return)}";
 }

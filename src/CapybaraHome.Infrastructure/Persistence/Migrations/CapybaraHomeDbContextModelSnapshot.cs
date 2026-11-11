@@ -582,6 +582,11 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<bool>("NeedsIngredientSplit")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("PlannedMealCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("PlannedSlot")
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");

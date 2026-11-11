@@ -19,6 +19,10 @@ public class MealConfiguration : IEntityTypeConfiguration<Meal>
         builder.HasIndex(m => m.LastCookedAt);
         builder.Property(m => m.PlannedSlot).HasConversion<string>().HasMaxLength(20);
 
+        // The default keeps the meals that were already planned when the column arrived counting
+        // for one meal each, rather than for none.
+        builder.Property(m => m.PlannedMealCount).HasDefaultValue(1);
+
         // The plan points at a variant without owning it, so dropping the variant only clears the
         // choice; the meal stays planned as itself.
         builder.HasOne(m => m.PlannedVariant)
