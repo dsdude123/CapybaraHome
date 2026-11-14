@@ -2885,6 +2885,94 @@ public class StaticRenderingTests
             "The review list has to come before the search.");
     }
 
+    [Fact]
+    public async Task The_search_offers_load_more_only_while_meals_are_left_to_show()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            for (var i = 1; i <= 30; i++)
+            {
+                context.Meals.Add(new Domain.Meals.Meal
+                {
+                    Name = $"Searchable meal {i:00}",
+                    Status = MealStatus.Pooled,
+                    LastCookedAt = new DateOnly(2026, 1, 1).AddDays(i),
+                });
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        var first = await client.GetStringAsync("/meals/plan");
+        Assert.Equal(25, SearchRows(first));
+        Assert.Contains("Load more", first);
+
+        var more = await client.GetStringAsync("/meals/plan?shown=50");
+        Assert.Equal(30, SearchRows(more));
+        Assert.DoesNotContain("Load more", more);
+    }
+
+    [Fact]
+    public async Task Load_more_keeps_the_search_it_was_followed_from()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            for (var i = 1; i <= 30; i++)
+            {
+                context.Meals.Add(new Domain.Meals.Meal { Name = $"Noodles {i:00}", Status = MealStatus.Pooled });
+                context.Meals.Add(new Domain.Meals.Meal { Name = $"Rice {i:00}", Status = MealStatus.Pooled });
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        var page = await client.GetStringAsync("/meals/plan?text=Noodles&sort=name");
+        Assert.Contains("shown=50", page);
+
+        var more = await client.GetStringAsync("/meals/plan?text=Noodles&sort=name&shown=50");
+        Assert.Equal(30, SearchRows(more));
+        Assert.DoesNotContain("Rice", more);
+        Assert.Contains("value=\"Noodles\"", more);
+        Assert.Contains("value=\"name\" selected", more);
+    }
+
+    [Fact]
+    public async Task The_search_shows_no_more_than_its_limit_however_many_rows_the_query_asks_for()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            for (var i = 1; i <= 30; i++)
+            {
+                context.Meals.Add(new Domain.Meals.Meal { Name = $"Capped meal {i:00}", Status = MealStatus.Pooled });
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        foreach (var asked in new[] { "0", "-5", "not a number", "100000" })
+        {
+            var page = await client.GetStringAsync($"/meals/plan?shown={Uri.EscapeDataString(asked)}");
+            Assert.InRange(SearchRows(page), 25, 30);
+        }
+    }
+
+    // How many rows the search section below the review list is showing.
+    private static int SearchRows(string page) =>
+        System.Text.RegularExpressions.Regex.Matches(
+            page[page.IndexOf("Search meals", StringComparison.Ordinal)..], "value=\"search-").Count;
+
     private static async Task<HttpResponseMessage> PostAsync(
         HttpClient client,
         string path,
