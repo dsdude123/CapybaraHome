@@ -13,32 +13,44 @@ public class HomeSearchTools
 {
     /// <summary>Reads the whole search: the current home, the candidates in score order, and the setup.</summary>
     /// <param name="board">Home search board service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "get_home_search")]
     [Description("Read the home search: the current home, every candidate property with its score, and the destinations and priorities the scores came from.")]
     public static Task<HomeSearchBoard> GetHomeSearchAsync(
         HomeSearchBoardService board,
+        ILogger<HomeSearchTools> logger,
+        IHttpContextAccessor http,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] get_home_search user={User}", http.CurrentUser());
         return board.GetAsync(cancellationToken);
     }
 
     /// <summary>Reads one property in full, with its score broken down.</summary>
     /// <param name="board">Home search board service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="id">Id of the property.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "get_property")]
     [Description("Get one property by its id, with its fees, utilities, amenities, pros and cons, drive times and score.")]
     public static Task<ScoredProperty?> GetPropertyAsync(
         HomeSearchBoardService board,
+        ILogger<HomeSearchTools> logger,
+        IHttpContextAccessor http,
         int id,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] get_property user={User} propertyId={PropertyId}", http.CurrentUser(), id);
         return board.GetScoredAsync(id, cancellationToken);
     }
 
     /// <summary>Adds a candidate property.</summary>
     /// <param name="properties">Property service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="name">What the place is called.</param>
     /// <param name="address">Street address, which the routing service reads to measure the drives.</param>
     /// <param name="rent">Monthly rent.</param>
@@ -53,6 +65,8 @@ public class HomeSearchTools
     [Description("Add a candidate property to the home search.")]
     public static async Task<PropertyView> AddPropertyAsync(
         PropertyService properties,
+        ILogger<HomeSearchTools> logger,
+        IHttpContextAccessor http,
         string name,
         string? address = null,
         decimal? rent = null,
@@ -64,6 +78,8 @@ public class HomeSearchTools
         string[]? amenities = null,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] add_property user={User} name={Name} rent={Rent} address={Address}",
+            http.CurrentUser(), name, rent?.ToString() ?? "(none)", address ?? "(none)");
         return await properties.CreateAsync(
             new CreatePropertyRequest(
                 name,
@@ -80,6 +96,8 @@ public class HomeSearchTools
 
     /// <summary>Writes a note on a property.</summary>
     /// <param name="properties">Property service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="id">Id of the property.</param>
     /// <param name="body">What to write, as markdown.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -87,10 +105,14 @@ public class HomeSearchTools
     [Description("Write a note on a property in the home search.")]
     public static Task<PropertyNoteView?> AddPropertyNoteAsync(
         PropertyService properties,
+        ILogger<HomeSearchTools> logger,
+        IHttpContextAccessor http,
         int id,
         string body,
         CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("[MCP] add_property_note user={User} propertyId={PropertyId} noteLength={NoteLength}",
+            http.CurrentUser(), id, body.Length);
         return properties.AddNoteAsync(id, body, cancellationToken);
     }
 }
