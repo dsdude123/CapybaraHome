@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Homes;
@@ -20,7 +21,7 @@ public class McpToolTests
     public async Task Every_task_tool_answers_and_names_the_caller()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var tasks = new TaskService(db.Context, db.Clock);
+        var tasks = db.Tasks();
         var categories = new CategoryService(db.Context);
         var log = new McpAuditLog<TaskTools>();
         var http = McpAuditLog<TaskTools>.RequestFrom("first");
@@ -46,6 +47,29 @@ public class McpToolTests
         log.Clear();
         Assert.Empty(await TaskTools.ListCategoriesAsync(categories, log, http));
         Assert.Contains("[MCP] list_categories user=first", log.Single());
+    }
+
+    [Fact]
+    public async Task A_task_tool_called_with_nothing_optional_logs_what_was_left_out()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var tasks = db.Tasks();
+        var categories = new CategoryService(db.Context);
+        var log = new McpAuditLog<TaskTools>();
+        var http = McpAuditLog<TaskTools>.RequestFrom("first");
+
+        var house = await categories.CreateAsync(new CategoryRequest("House"));
+        var created = await TaskTools.CreateTaskAsync(tasks, log, http, "Sweep", categoryId: house.Id);
+        Assert.Contains($"categoryId={house.Id}", log.Single());
+
+        log.Clear();
+        var unchanged = await TaskTools.UpdateTaskAsync(tasks, log, http, created.Id);
+        Assert.Equal("Sweep", unchanged!.Title);
+        Assert.Contains("title=(unchanged) status=(unchanged)", log.Single());
+
+        log.Clear();
+        Assert.Single(await TaskTools.SearchTasksAsync(tasks, log, http));
+        Assert.Contains("text=(none) status=(none)", log.Single());
     }
 
     [Fact]
@@ -93,6 +117,22 @@ public class McpToolTests
         Assert.Contains("[MCP] search_meals user=first text=katsu", log.Single());
 
         log.Clear();
+        var plain = await MealTools.CreateMealAsync(meals, log, http, "Toast");
+        Assert.Contains("ingredientCount=0", log.Single());
+
+        log.Clear();
+        Assert.Equal("Toast", (await MealTools.UpdateMealAsync(meals, log, http, plain.Id))!.Name);
+        Assert.Contains("name=(unchanged) status=(unchanged)", log.Single());
+
+        log.Clear();
+        Assert.NotNull(await MealTools.CreateMealVariantAsync(meals, log, http, plain.Id, "Dry toast"));
+        Assert.Contains("addedIngredients=0 removedIngredients=0", log.Single());
+
+        log.Clear();
+        Assert.Equal(2, (await MealTools.SearchMealsAsync(meals, log, http)).Count);
+        Assert.Contains("text=(none) status=(none)", log.Single());
+
+        log.Clear();
         await tags.EnsureAsync(new MealTagRequest("quick"));
         Assert.Equal("quick", Assert.Single(await MealTools.ListMealTagsAsync(tags, log, http)).Name);
         Assert.Contains("[MCP] list_meal_tags user=first", log.Single());
@@ -114,8 +154,12 @@ public class McpToolTests
         Assert.Contains("[MCP] add_grocery_item user=first item=milk quantity=2 pints", log.Single());
 
         log.Clear();
+        await GroceryTools.AddGroceryItemAsync(grocery, log, http, "bread");
+        Assert.Contains("item=bread quantity=(none)", log.Single());
+
+        log.Clear();
         var list = await GroceryTools.GetGroceryListAsync(grocery, log, http);
-        Assert.Equal("milk", Assert.Single(list!.Items).Item);
+        Assert.Equal(["milk", "bread"], list!.Items.Select(line => line.Item));
 
         log.Clear();
         Assert.True(await GroceryTools.RemoveGroceryItemAsync(grocery, log, http, item.Id));
@@ -150,6 +194,10 @@ public class McpToolTests
         Assert.Contains("[MCP] add_property user=first name=Maple Court rent=2400", log.Single());
 
         log.Clear();
+        await HomeSearchTools.AddPropertyAsync(properties, log, http, "Birch Flats");
+        Assert.Contains("name=Birch Flats rent=(none) address=(none)", log.Single());
+
+        log.Clear();
         var note = await HomeSearchTools.AddPropertyNoteAsync(properties, log, http, added.Id, "Loud road.");
         Assert.Equal("Loud road.", note!.Body);
         Assert.Contains($"[MCP] add_property_note user=first propertyId={added.Id} noteLength=10", log.Single());
@@ -161,7 +209,7 @@ public class McpToolTests
 
         log.Clear();
         var search = await HomeSearchTools.GetHomeSearchAsync(board, log, http);
-        Assert.Equal(added.Id, Assert.Single(search.Candidates).Property.Id);
+        Assert.Contains(added.Id, search.Candidates.Select(candidate => candidate.Property.Id));
         Assert.Contains("[MCP] get_home_search user=first", log.Single());
     }
 
@@ -170,5 +218,17 @@ public class McpToolTests
     {
         Assert.Equal("unknown", new HttpContextAccessor().CurrentUser());
         Assert.Equal("unknown", new HttpContextAccessor { HttpContext = new DefaultHttpContext() }.CurrentUser());
+    }
+
+    [Fact]
+    public void A_request_with_only_a_name_on_it_is_logged_under_that_name()
+    {
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "First")], "Test");
+        var accessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) },
+        };
+
+        Assert.Equal("First", accessor.CurrentUser());
     }
 }
