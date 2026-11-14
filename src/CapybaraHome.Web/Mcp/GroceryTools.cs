@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using CapybaraHome.Application.Grocery;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace CapybaraHome.Web.Mcp;
@@ -14,20 +13,25 @@ public class GroceryTools
 {
     /// <summary>Reads the open grocery list, or null when none has been started.</summary>
     /// <param name="grocery">Grocery service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "get_grocery_list")]
     [Description("Get the open grocery list and everything on it.")]
     public static Task<GroceryListView?> GetGroceryListAsync(
         GroceryService grocery,
         ILogger<GroceryTools> logger,
+        IHttpContextAccessor http,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] get_grocery_list user={UserId}", "mcp");
+        logger.LogInformation("[MCP] get_grocery_list user={User}", http.CurrentUser());
         return grocery.GetCurrentAsync(cancellationToken);
     }
 
     /// <summary>Puts one item on the open list, starting a list when there is none.</summary>
     /// <param name="grocery">Grocery service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="item">What to buy.</param>
     /// <param name="quantity">How much to buy, as written, for example "2 cups".</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -36,17 +40,20 @@ public class GroceryTools
     public static Task<GroceryItemView> AddGroceryItemAsync(
         GroceryService grocery,
         ILogger<GroceryTools> logger,
+        IHttpContextAccessor http,
         string item,
         string? quantity = null,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] add_grocery_item user={UserId} item={Item} quantity={Quantity}",
-            "mcp", item, quantity ?? "(none)");
+        logger.LogInformation("[MCP] add_grocery_item user={User} item={Item} quantity={Quantity}",
+            http.CurrentUser(), item, quantity ?? "(none)");
         return grocery.AddItemAsync(new GroceryItemInput(item, quantity), cancellationToken);
     }
 
     /// <summary>Takes an item off the list.</summary>
     /// <param name="grocery">Grocery service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="id">Id of the item.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "remove_grocery_item")]
@@ -54,38 +61,45 @@ public class GroceryTools
     public static Task<bool> RemoveGroceryItemAsync(
         GroceryService grocery,
         ILogger<GroceryTools> logger,
+        IHttpContextAccessor http,
         int id,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] remove_grocery_item user={UserId} itemId={ItemId}", "mcp", id);
+        logger.LogInformation("[MCP] remove_grocery_item user={User} itemId={ItemId}", http.CurrentUser(), id);
         return grocery.RemoveItemAsync(id, cancellationToken);
     }
 
     /// <summary>Closes the open list and starts an empty one.</summary>
     /// <param name="grocery">Grocery service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "start_fresh_grocery_list")]
     [Description("Close the open grocery list and start an empty one. The old list is kept.")]
     public static Task<GroceryListView> StartFreshGroceryListAsync(
         GroceryService grocery,
         ILogger<GroceryTools> logger,
+        IHttpContextAccessor http,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] start_fresh_grocery_list user={UserId}", "mcp");
+        logger.LogInformation("[MCP] start_fresh_grocery_list user={User}", http.CurrentUser());
         return grocery.StartFreshAsync(cancellationToken);
     }
 
     /// <summary>Reads what a generated list would ask about, without adding anything.</summary>
     /// <param name="grocery">Grocery service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "list_grocery_candidates")]
     [Description("List what generating a grocery list would ask about: the frequent items and each planned meal's ingredients.")]
     public static Task<GroceryCandidates> ListGroceryCandidatesAsync(
         GroceryService grocery,
         ILogger<GroceryTools> logger,
+        IHttpContextAccessor http,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] list_grocery_candidates user={UserId}", "mcp");
+        logger.LogInformation("[MCP] list_grocery_candidates user={User}", http.CurrentUser());
         return grocery.CandidatesAsync(cancellationToken);
     }
 }

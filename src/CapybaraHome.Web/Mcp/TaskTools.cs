@@ -2,7 +2,6 @@ using System.ComponentModel;
 using CapybaraHome.Application.Categories;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Domain.Tasks;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace CapybaraHome.Web.Mcp;
@@ -16,6 +15,8 @@ public class TaskTools
 {
     /// <summary>Finds tasks by text, status, category or how soon they are due.</summary>
     /// <param name="tasks">Task service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="text">Words to look for in the title or the notes.</param>
     /// <param name="status">Keep only tasks in this state: ToDo, InProgress, OnHold or Done.</param>
     /// <param name="categoryId">Keep only tasks in this category.</param>
@@ -28,6 +29,7 @@ public class TaskTools
     public static async Task<IReadOnlyList<TaskView>> SearchTasksAsync(
         TaskService tasks,
         ILogger<TaskTools> logger,
+        IHttpContextAccessor http,
         string? text = null,
         TaskItemStatus? status = null,
         int? categoryId = null,
@@ -36,8 +38,8 @@ public class TaskTools
         int limit = 25,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] search_tasks user={UserId} text={Text} status={Status} limit={Limit}",
-            "mcp", text ?? "(none)", status?.ToString() ?? "(none)", limit);
+        logger.LogInformation("[MCP] search_tasks user={User} text={Text} status={Status} limit={Limit}",
+            http.CurrentUser(), text ?? "(none)", status?.ToString() ?? "(none)", limit);
 
         var filter = new TaskFilter(
             Text: text,
@@ -52,6 +54,8 @@ public class TaskTools
 
     /// <summary>Reads one task in full.</summary>
     /// <param name="tasks">Task service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="id">Id of the task.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "get_task")]
@@ -59,15 +63,18 @@ public class TaskTools
     public static Task<TaskView?> GetTaskAsync(
         TaskService tasks,
         ILogger<TaskTools> logger,
+        IHttpContextAccessor http,
         int id,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] get_task user={UserId} taskId={TaskId}", "mcp", id);
+        logger.LogInformation("[MCP] get_task user={User} taskId={TaskId}", http.CurrentUser(), id);
         return tasks.GetAsync(id, cancellationToken);
     }
 
     /// <summary>Adds a task.</summary>
     /// <param name="tasks">Task service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="title">What needs doing.</param>
     /// <param name="notes">Any detail, as markdown.</param>
     /// <param name="status">State to start in; defaults to ToDo.</param>
@@ -79,6 +86,7 @@ public class TaskTools
     public static Task<TaskView> CreateTaskAsync(
         TaskService tasks,
         ILogger<TaskTools> logger,
+        IHttpContextAccessor http,
         string title,
         string? notes = null,
         TaskItemStatus status = TaskItemStatus.ToDo,
@@ -86,13 +94,15 @@ public class TaskTools
         DateOnly? dueDate = null,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] create_task user={UserId} title={Title} status={Status} categoryId={CategoryId}",
-            "mcp", title, status, categoryId?.ToString() ?? "(none)");
+        logger.LogInformation("[MCP] create_task user={User} title={Title} status={Status} categoryId={CategoryId}",
+            http.CurrentUser(), title, status, categoryId?.ToString() ?? "(none)");
         return tasks.CreateAsync(new CreateTaskRequest(title, notes, status, categoryId, dueDate), cancellationToken);
     }
 
     /// <summary>Changes a task. Anything left out keeps its current value.</summary>
     /// <param name="tasks">Task service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="id">Id of the task to change.</param>
     /// <param name="title">New title.</param>
     /// <param name="notes">New notes.</param>
@@ -107,6 +117,7 @@ public class TaskTools
     public static Task<TaskView?> UpdateTaskAsync(
         TaskService tasks,
         ILogger<TaskTools> logger,
+        IHttpContextAccessor http,
         int id,
         string? title = null,
         string? notes = null,
@@ -117,23 +128,26 @@ public class TaskTools
         bool clearDueDate = false,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] update_task user={UserId} taskId={TaskId} title={Title} status={Status} clearCategory={ClearCategory}",
-            "mcp", id, title ?? "(unchanged)", status?.ToString() ?? "(unchanged)", clearCategory);
+        logger.LogInformation("[MCP] update_task user={User} taskId={TaskId} title={Title} status={Status} clearCategory={ClearCategory}",
+            http.CurrentUser(), id, title ?? "(unchanged)", status?.ToString() ?? "(unchanged)", clearCategory);
         var request = new UpdateTaskRequest(title, notes, status, categoryId, clearCategory, dueDate, clearDueDate);
         return tasks.UpdateAsync(id, request, cancellationToken);
     }
 
     /// <summary>Lists the categories, with how far each has got.</summary>
     /// <param name="categories">Category service.</param>
+    /// <param name="logger">Writes the audit line for the call.</param>
+    /// <param name="http">Names the caller the audit line is written against.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     [McpServerTool(Name = "list_categories")]
     [Description("List the task categories and their progress.")]
     public static async Task<IReadOnlyList<CategoryView>> ListCategoriesAsync(
         CategoryService categories,
         ILogger<TaskTools> logger,
+        IHttpContextAccessor http,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("[MCP] list_categories user={UserId}", "mcp");
+        logger.LogInformation("[MCP] list_categories user={User}", http.CurrentUser());
         return await categories.ListAsync(cancellationToken);
     }
 }
