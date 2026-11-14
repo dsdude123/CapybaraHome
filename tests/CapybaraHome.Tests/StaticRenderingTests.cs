@@ -1301,14 +1301,14 @@ public class StaticRenderingTests
             await meals.PlanAsync(mealId, MealSlot.Breakfast, shared: !shared);
         }
 
-        // Save shared posts the box and no slot at all, which is the only way to turn the box on
-        // or off for a meal whose own slot button is the disabled one.
+        // Save posts the box and no slot at all, which is the only way to turn the box on or off
+        // for a meal whose own slot button is the disabled one.
         var fields = new List<KeyValuePair<string, string>>
         {
             new("meal-id", mealId.ToString()),
             new("variant-id", string.Empty),
             new("current-slot", nameof(MealSlot.Breakfast)),
-            new("save-shared", "save"),
+            new("save", "save"),
         };
 
         if (shared)
@@ -1327,7 +1327,7 @@ public class StaticRenderingTests
         Assert.Equal(MealSlot.Breakfast, meal.PlannedSlot);
 
         var page = await client.GetStringAsync("/meals/plan");
-        Assert.Contains("name=\"save-shared\"", page);
+        Assert.Contains("name=\"save\"", page);
         Assert.Equal(shared, page.Contains("name=\"shared\" value=\"true\" checked"));
     }
 
@@ -2029,7 +2029,7 @@ public class StaticRenderingTests
 
         var plan = await client.GetStringAsync("/meals/plan");
 
-        Assert.Contains($"href=\"meals/{seeded.MealId}/variants/{seeded.VariantId}\"", plan);
+        Assert.Contains($"href=\"meals/{seeded.MealId}/variants/{seeded.VariantId}?return=meals%2Fplan\"", plan);
         Assert.Contains($"href=\"meals/{seeded.MealId}/variants/{seeded.VariantId}/print\"", plan);
     }
 
@@ -2385,6 +2385,316 @@ public class StaticRenderingTests
         {
             AllowAutoRedirect = false,
         });
+
+    [Fact]
+    public async Task Save_keeps_the_meal_editor_open_and_save_and_exit_goes_back_where_the_editing_started()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var created = await PostManyAsync(client, "/meals/new?return=meals%2Fplan", "meal-editor",
+        [
+            new("action", "save"),
+            new("return", "meals/plan"),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an item"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, created.StatusCode);
+
+        // A plain Save stays on the editor, and the editor it lands on still knows where to go back to.
+        var editor = created.Headers.Location!.PathAndQuery;
+        Assert.Contains("saved=true", editor);
+        Assert.Contains("return=meals%2Fplan", editor);
+
+        var page = await client.GetStringAsync(editor);
+        Assert.Contains("Saved.", page);
+        Assert.Contains("Save and exit", page);
+        Assert.Equal("meals/plan", Hidden(page, "return"));
+
+        // Saving again on the way does not move where Save and exit goes.
+        var again = await PostManyAsync(client, editor, "meal-editor",
+        [
+            new("action", "save"),
+            new("return", "meals/plan"),
+            new("name", "A renamed meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an item"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        var second = again.Headers.Location!.PathAndQuery;
+        Assert.Contains("return=meals%2Fplan", second);
+
+        var left = await PostManyAsync(client, second, "meal-editor",
+        [
+            new("action", "save-exit"),
+            new("return", "meals/plan"),
+            new("name", "A finished meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an item"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, left.StatusCode);
+        Assert.Equal("/meals/plan", left.Headers.Location!.PathAndQuery);
+
+        using var scope = app.Services.CreateScope();
+        var meal = Assert.Single(scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>().Meals);
+        Assert.Equal("A finished meal", meal.Name);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/evil")]
+    [InlineData("//example.com/evil")]
+    public async Task A_return_address_outside_the_app_is_dropped(string address)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var left = await PostManyAsync(client, "/meals/new", "meal-editor",
+        [
+            new("action", "save-exit"),
+            new("return", address),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an item"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, left.StatusCode);
+        Assert.Equal("/meals", left.Headers.Location!.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task A_meal_editor_opened_with_no_return_address_saves_and_leaves_for_the_list()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A meal"))).Id;
+        }
+
+        var saved = await PostManyAsync(client, $"/meals/{mealId}", "meal-editor",
+        [
+            new("action", "save"),
+            new("return", string.Empty),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an item"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        Assert.Equal($"/meals/{mealId}?saved=true", saved.Headers.Location!.PathAndQuery);
+
+        // The editor's own links hand the return address on, so a variant edited from here comes
+        // back to the editor rather than to the list.
+        var page = await client.GetStringAsync($"/meals/{mealId}?saved=true");
+        Assert.Contains($"meals/{mealId}/variants/new?return=meals%2F{mealId}", page);
+
+        var left = await PostManyAsync(client, $"/meals/{mealId}", "meal-editor",
+        [
+            new("action", "save-exit"),
+            new("return", string.Empty),
+            new("name", "A meal"),
+            new("status", nameof(MealStatus.Pooled)),
+            new("last-cooked", string.Empty),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an item"),
+            new("new-tags", string.Empty),
+            new("new-tag-facet", nameof(MealTagFacet.Trait)),
+        ]);
+
+        Assert.Equal("/meals", left.Headers.Location!.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task The_meal_list_and_the_planning_lists_tell_the_editor_where_to_come_back_to()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            var meal = await meals.CreateAsync(new CreateMealRequest("A plain meal", Status: MealStatus.Available));
+            mealId = meal.Id;
+            await meals.PlanAsync(meal.Id, MealSlot.Dinner);
+        }
+
+        var list = await client.GetStringAsync("/meals?text=plain");
+        Assert.Contains($"meals/{mealId}?return=meals%3Ftext%3Dplain", list);
+
+        var plan = await client.GetStringAsync("/meals/plan?text=plain");
+        Assert.Contains($"meals/{mealId}?return=meals%2Fplan%3Ftext%3Dplain", plan);
+    }
+
+    [Fact]
+    public async Task A_variant_is_saved_without_leaving_its_editor_and_save_and_exit_goes_back()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A meal"))).Id;
+        }
+
+        var created = await PostManyAsync(client, $"/meals/{mealId}/variants/new", "variant-editor",
+        [
+            new("action", "save"),
+            new("return", "meals/plan"),
+            new("name", "A variant"),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an extra"),
+        ]);
+
+        var editor = created.Headers.Location!.PathAndQuery;
+        Assert.Contains("saved=true", editor);
+        Assert.Contains("return=meals%2Fplan", editor);
+
+        var page = await client.GetStringAsync(editor);
+        Assert.Contains("Saved.", page);
+        Assert.Equal("meals/plan", Hidden(page, "return"));
+
+        var left = await PostManyAsync(client, editor, "variant-editor",
+        [
+            new("action", "save-exit"),
+            new("return", "meals/plan"),
+            new("name", "A renamed variant"),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an extra"),
+        ]);
+
+        Assert.Equal("/meals/plan", left.Headers.Location!.PathAndQuery);
+
+        // With no return address of its own, the variant editor goes back to its meal.
+        var plain = await PostManyAsync(client, $"/meals/{mealId}/variants/new", "variant-editor",
+        [
+            new("action", "save-exit"),
+            new("return", string.Empty),
+            new("name", "Another variant"),
+            new("directions", string.Empty),
+            new("quantity", string.Empty),
+            new("item", "an extra"),
+        ]);
+
+        Assert.Equal($"/meals/{mealId}", plain.Headers.Location!.PathAndQuery);
+    }
+
+    [Theory]
+    [InlineData("2", 2, true)]
+    [InlineData("1", 1, false)]
+    [InlineData("0", 1, false)]
+    public async Task A_planned_item_counts_for_the_meals_it_makes(string posted, int stored, bool saysSo)
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        int mealId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var meals = scope.ServiceProvider.GetRequiredService<MealService>();
+            mealId = (await meals.CreateAsync(new CreateMealRequest("A plain meal"))).Id;
+            await meals.PlanAsync(mealId, MealSlot.Lunch);
+            await meals.SaveTargetsAsync(
+                new Dictionary<MealSlot, int> { [MealSlot.Breakfast] = 0, [MealSlot.Lunch] = 2, [MealSlot.Dinner] = 1 }, 2);
+        }
+
+        var saved = await PostManyAsync(client, "/meals/plan", $"move-{mealId}",
+        [
+            new("meal-id", mealId.ToString()),
+            new("variant-id", string.Empty),
+            new("current-slot", nameof(MealSlot.Lunch)),
+            new("meal-count", posted),
+            new("shared", "true"),
+            new("save", "save"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var meal = (await scope.ServiceProvider.GetRequiredService<MealService>().GetAsync(mealId))!;
+            Assert.Equal(stored, meal.PlannedMealCount);
+        }
+
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains($"Lunch {stored} of 2", page);
+        Assert.Contains($"Planned {stored} of 3", page);
+        Assert.Contains($"Shared {stored} of 2", page);
+        Assert.Equal(saysSo, page.Contains($"Makes {stored} meals"));
+    }
+
+    [Fact]
+    public async Task The_meals_a_planned_item_makes_are_counted_even_with_no_slot()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            context.Meals.Add(new Domain.Meals.Meal
+            {
+                Name = "A slotless meal",
+                Status = MealStatus.Planned,
+                PlannedMealCount = 3,
+            });
+
+            await context.SaveChangesAsync();
+        }
+
+        var page = await client.GetStringAsync("/meals/plan");
+        Assert.Contains("3 with no slot", page);
+        Assert.Contains("Makes 3 meals", page);
+    }
+
+    [Fact]
+    public async Task The_planning_page_offers_the_queued_and_available_meals_before_the_search()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var page = await client.GetStringAsync("/meals/plan");
+
+        Assert.True(
+            page.IndexOf("Review queued and available meals", StringComparison.Ordinal)
+                < page.IndexOf("Search meals", StringComparison.Ordinal),
+            "The review list has to come before the search.");
+    }
 
     private static async Task<HttpResponseMessage> PostAsync(
         HttpClient client,

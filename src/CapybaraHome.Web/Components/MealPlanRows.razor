@@ -11,7 +11,7 @@ else
         {
             <li>
                 <div class="task-line">
-                    <a class="task-link" href="meals/@option.MealId">@option.Name</a>
+                    <a class="task-link" href="@MealLink(option)">@option.Name</a>
                     <span class="pill">@MealStatusNames.Label(option.Status)</span>
                 </div>
                 <div class="task-meta">
@@ -69,5 +69,12 @@ else
     [Parameter, EditorRequired]
     public Func<MealPlanOption, string> ChooseLink { get; set; } = _ => "meals/plan";
 
+    /// <summary>Page a meal's editor comes back to when it is left.</summary>
+    [Parameter]
+    public string Return { get; set; } = "meals/plan";
+
     private string FormName(MealPlanOption option) => $"{Prefix}-{option.MealId}";
+
+    private string MealLink(MealPlanOption option) =>
+        $"meals/{option.MealId}?return={Uri.EscapeDataString(Return)}";
 }

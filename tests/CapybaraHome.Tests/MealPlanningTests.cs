@@ -237,4 +237,59 @@ public class MealPlanningTests
         [MealSlot.Lunch] = lunch,
         [MealSlot.Dinner] = dinner,
     };
+
+    [Fact]
+    public async Task A_planned_item_counts_for_one_meal_until_it_is_told_otherwise()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal"));
+
+        var planned = await service.PlanAsync(meal.Id, MealSlot.Lunch);
+        Assert.Equal(1, planned!.PlannedMealCount);
+
+        var twice = await service.PlanAsync(meal.Id, MealSlot.Lunch, mealCount: 2);
+        Assert.Equal(2, twice!.PlannedMealCount);
+    }
+
+    [Fact]
+    public async Task Moving_a_planned_item_keeps_how_many_meals_it_makes()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal"));
+        await service.PlanAsync(meal.Id, MealSlot.Lunch, mealCount: 3);
+
+        var moved = await service.PlanAsync(meal.Id, MealSlot.Dinner);
+
+        Assert.Equal(MealSlot.Dinner, moved!.PlannedSlot);
+        Assert.Equal(3, moved.PlannedMealCount);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-4)]
+    public async Task Fewer_than_one_meal_is_read_as_one(int asked)
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal"));
+
+        var planned = await service.PlanAsync(meal.Id, MealSlot.Dinner, mealCount: asked);
+
+        Assert.Equal(1, planned!.PlannedMealCount);
+    }
+
+    [Fact]
+    public async Task Sending_a_planned_meal_back_puts_how_many_meals_it_makes_back_to_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new MealService(db.Context, db.Clock);
+        var meal = await service.CreateAsync(new CreateMealRequest("A meal"));
+        await service.PlanAsync(meal.Id, MealSlot.Dinner, mealCount: 2);
+
+        var back = await service.UpdateAsync(meal.Id, new UpdateMealRequest(Status: MealStatus.Available));
+
+        Assert.Equal(1, back!.PlannedMealCount);
+    }
 }

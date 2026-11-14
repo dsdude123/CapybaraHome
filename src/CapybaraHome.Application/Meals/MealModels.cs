@@ -63,6 +63,7 @@ public record MealVariantRequest(
 /// <param name="IsOneTime">Whether it was marked as a one-time cook in the data it came from.</param>
 /// <param name="LastCookedAt">Day it was last cooked, or null.</param>
 /// <param name="PlannedSlot">Which meal of the day it is planned for, or null.</param>
+/// <param name="PlannedMealCount">How many meals the planned item makes.</param>
 /// <param name="PlannedVariantId">The variant that was planned, or null for the meal itself.</param>
 /// <param name="PlannedVariantName">Name of that variant, or null.</param>
 /// <param name="ImportedText">The imported description, untouched, or null.</param>
@@ -81,6 +82,7 @@ public record MealView(
     bool IsOneTime,
     DateOnly? LastCookedAt,
     MealSlot? PlannedSlot,
+    int PlannedMealCount,
     int? PlannedVariantId,
     string? PlannedVariantName,
     string? ImportedText,

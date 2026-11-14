@@ -1,6 +1,7 @@
 @page "/meals/new"
 @page "/meals/{Id:int}"
 @using CapybaraHome.Domain.Meals
+@using CapybaraHome.Web
 @inject MealService Meals
 @inject MealTagService Tags
 @inject NavigationManager Navigation
@@ -21,6 +22,7 @@
     @* The browser submits a form's first submit button when Enter is pressed in a text box, so
        Save goes first and hidden: without it Enter would press a Remove button instead. *@
     <button type="submit" name="action" value="save" hidden></button>
+    <input type="hidden" name="return" value="@returnTo" />
 
     <div class="field">
         <label for="meal-name">Name</label>
@@ -110,6 +112,11 @@
         <p class="notice" style="margin-top:0.5rem">@added</p>
     }
 
+    @if (Saved && !posted)
+    {
+        <p class="notice" style="margin-top:0.5rem">Saved.</p>
+    }
+
     @if (error is not null)
     {
         <p class="error">@error</p>
@@ -117,7 +124,8 @@
 
     <div class="row" style="margin-top:0.75rem">
         <button class="btn btn-primary" type="submit" name="action" value="save">Save</button>
-        <a class="btn" href="meals">Cancel</a>
+        <button class="btn" type="submit" name="action" value="save-exit">Save and exit</button>
+        <a class="btn" href="@ExitLink">Cancel</a>
     </div>
 </form>
 
@@ -136,7 +144,7 @@
                 {
                     <li>
                         <div class="task-line">
-                            <a class="task-link" href="meals/@Id/variants/@variant.Id">@variant.Name</a>
+                            <a class="task-link" href="@VariantLink(variant.Id)">@variant.Name</a>
                             <a href="meals/@Id/variants/@variant.Id/print">Print</a>
                         </div>
                         <VariantChanges Meal="saved" Variant="variant" />
@@ -144,7 +152,7 @@
                 }
             </ul>
         }
-        <a class="btn btn-small" href="meals/@Id/variants/new">Add a variant</a>
+        <a class="btn btn-small" href="@VariantLink(null)">Add a variant</a>
     </section>
 
     <form method="post" @formname="meal-delete" @onsubmit="DeleteAsync" style="margin-top:0.75rem">
@@ -157,6 +165,14 @@
     /// <summary>Id of the meal being edited, or null when creating one.</summary>
     [Parameter]
     public int? Id { get; set; }
+
+    /// <summary>Page to go back to when the editor is left, kept across the saves made on the way.</summary>
+    [SupplyParameterFromQuery(Name = "return")]
+    private string? Return { get; set; }
+
+    /// <summary>Whether the editor is being shown straight after a save.</summary>
+    [SupplyParameterFromQuery(Name = "saved")]
+    private bool Saved { get; set; }
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -175,6 +191,8 @@
     private bool isOneTime;
     private string? error;
     private string? added;
+    private string? returnTo;
+    private bool posted;
 
     /// <summary>
     /// Fills the editor. A post carries the edited values, so they are read back out of the form
@@ -192,6 +210,8 @@
         }
 
         saved = meal;
+        returnTo = LocalUrl.Within(Return);
+        posted = HttpContext?.Request.Method == HttpMethods.Post;
 
         if (HttpContext?.Request.Method == HttpMethods.Post)
         {
@@ -224,6 +244,7 @@
         }
 
         var action = HttpContext.Request.Form["action"].ToString();
+        var exit = action == "save-exit";
 
         if (action == "add-row")
         {
@@ -268,7 +289,7 @@
                 var created = await Meals.CreateAsync(new CreateMealRequest(
                     name ?? string.Empty, directions, status, isOneTime, date, ingredients, chosen));
 
-                Navigation.NavigateTo($"meals/{created.Id}");
+                Navigation.NavigateTo(exit ? ExitLink : SelfLink(created.Id));
                 return;
             }
 
@@ -282,12 +303,28 @@
                 Ingredients: ingredients,
                 TagIds: chosen));
 
-            Navigation.NavigateTo("meals");
+            Navigation.NavigateTo(exit ? ExitLink : SelfLink(Id.Value));
         }
         catch (ArgumentException ex)
         {
             error = ex.Message;
         }
+    }
+
+    /// <summary>Where Cancel and Save and exit go: where the editor was opened from, or the list.</summary>
+    private string ExitLink => returnTo ?? "meals";
+
+    /// <summary>The editor's own address, which a plain Save returns to with the return address kept.</summary>
+    private string SelfLink(int id) =>
+        returnTo is { } back ? $"meals/{id}?saved=true&return={Uri.EscapeDataString(back)}" : $"meals/{id}?saved=true";
+
+    /// <summary>A variant editor's address, told to come back to this editor and then on to its own return.</summary>
+    private string VariantLink(int? variantId)
+    {
+        var mine = returnTo is { } back ? $"meals/{Id}?return={Uri.EscapeDataString(back)}" : $"meals/{Id}";
+        var variant = variantId is { } id ? id.ToString() : "new";
+
+        return $"meals/{Id}/variants/{variant}?return={Uri.EscapeDataString(mine)}";
     }
 
     private async Task DeleteAsync()
@@ -350,6 +387,7 @@
         status = Enum.TryParse<MealStatus>(form["status"], out var posted) ? posted : MealStatus.Pooled;
         newTagFacet = Enum.TryParse<MealTagFacet>(form["new-tag-facet"], out var facet) ? facet : MealTagFacet.Trait;
         newTags = form["new-tags"];
+        returnTo = LocalUrl.Within(form["return"]);
 
         selectedTags = form["tag"]
             .Select(value => int.TryParse(value, out var id) ? id : 0)

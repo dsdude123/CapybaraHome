@@ -1,6 +1,7 @@
 @page "/meals"
 @using CapybaraHome.Domain.Meals
 @inject MealService Meals
+@inject NavigationManager Navigation
 @inject MealTagService Tags
 
 <PageTitle>Meals</PageTitle>
@@ -82,7 +83,7 @@
 </p>
 
 <div class="card">
-    <MealLines Meals="meals" />
+    <MealLines Meals="meals" Return="@Navigation.ToBaseRelativePath(Navigation.Uri)" />
 </div>
 
 @if (pageCount > 1)
