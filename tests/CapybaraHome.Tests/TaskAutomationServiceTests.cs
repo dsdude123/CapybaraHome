@@ -203,7 +203,7 @@ public class TaskAutomationServiceTests
     {
         await using var db = await TestDatabase.CreateAsync();
         var service = Service(db);
-        var tasks = new TaskService(db.Context, db.Clock);
+        var tasks = db.Tasks();
 
         await service.CreateAsync(new CreateTaskAutomationRequest(
             "Clean the gutters",
@@ -235,7 +235,7 @@ public class TaskAutomationServiceTests
     {
         await using var db = await TestDatabase.CreateAsync();
         var service = Service(db);
-        var tasks = new TaskService(db.Context, db.Clock);
+        var tasks = db.Tasks();
 
         await service.CreateAsync(new CreateTaskAutomationRequest(
             "Hoover upstairs",
@@ -490,7 +490,7 @@ public class TaskAutomationServiceTests
     private static TaskAutomationService Service(TestDatabase db)
     {
         db.Clock.SetLocalTimeZone(Pacific);
-        return new TaskAutomationService(db.Context, new TaskService(db.Context, db.Clock), db.Clock);
+        return new TaskAutomationService(db.Context, db.Tasks(), db.Clock);
     }
 
     private static DateOnly Local(DateTimeOffset moment) =>

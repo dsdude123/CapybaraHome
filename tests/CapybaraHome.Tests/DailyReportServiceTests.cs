@@ -26,7 +26,7 @@ public class DailyReportServiceTests
     public async Task The_report_lists_the_open_tasks_due_within_a_week_and_marks_the_pressing_ones()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var tasks = new TaskService(db.Context, db.Clock);
+        var tasks = db.Tasks();
         var today = Today(db.Clock);
 
         await tasks.CreateAsync(new CreateTaskRequest("Overdue", DueDate: today.AddDays(-2)));
@@ -86,7 +86,7 @@ public class DailyReportServiceTests
     {
         await using var db = await TestDatabase.CreateAsync();
         var categories = new CategoryService(db.Context);
-        var tasks = new TaskService(db.Context, db.Clock);
+        var tasks = db.Tasks();
         var settings = new DailyReportSettingsService(db.Context);
         var today = Today(db.Clock);
 
@@ -159,7 +159,7 @@ public class DailyReportServiceTests
         const string Forecast = """{ "period1Name": "Today", "period1Condition": "Rain", "period1Temp": 12 }""";
 
         await using var db = await TestDatabase.CreateAsync();
-        var tasks = new TaskService(db.Context, db.Clock);
+        var tasks = db.Tasks();
         await tasks.CreateAsync(new CreateTaskRequest("Still printed", DueDate: Today(db.Clock)));
 
         // The calendars, the wire and the news page all refuse; only the forecast answers.
@@ -206,7 +206,7 @@ public class DailyReportServiceTests
     private static Task<DailyReport> Build(TestDatabase db, FakeHttp http, DailyReportSettingsService settings)
     {
         var service = new DailyReportService(
-            new TaskService(db.Context, db.Clock),
+            db.Tasks(),
             new MealService(db.Context, db.Clock),
             new WeatherFeed(http.Client()),
             new CalendarFeed(http.Client(), db.Clock),

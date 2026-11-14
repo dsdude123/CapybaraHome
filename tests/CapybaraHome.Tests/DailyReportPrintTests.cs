@@ -129,7 +129,7 @@ public class DailyReportPrintTests
         await using var db = await TestDatabase.CreateAsync();
         At(db, "2026-10-27T14:59:00Z");
 
-        var tasks = new TaskService(db.Context, db.Clock);
+        var tasks = db.Tasks();
         await tasks.CreateAsync(new CreateTaskRequest("Printed at eight", DueDate: new DateOnly(2026, 10, 27)));
 
         var ipp = new FakeHttp().Reply(Accepted);
@@ -275,6 +275,8 @@ public class DailyReportPrintTests
         // take the shared context down with it.
         services.AddSingleton<ICapybaraHomeDbContext>(db.Context);
         services.AddScoped<TaskService>();
+        services.AddScoped<TaskCloseOperationService>();
+        services.AddScoped(_ => new TaskWebhookSender(new FakeHttp().Client()));
         services.AddScoped<MealService>();
         services.AddScoped(_ => new WeatherFeed(new FakeHttp().Client()));
         services.AddScoped(_ => new CalendarFeed(new FakeHttp().Client(), db.Clock));
