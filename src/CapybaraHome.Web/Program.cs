@@ -89,6 +89,7 @@ builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(Backu
 builder.Services.Configure<PropertyPhotoOptions>(builder.Configuration.GetSection(PropertyPhotoOptions.SectionName));
 builder.Services.AddHostedService<ScheduledBackupService>();
 builder.Services.AddHostedService<TaskAutomationRunner>();
+builder.Services.AddHostedService<TaskCloseOperationRunner>();
 
 builder.Services.AddScoped<DailyReportPrinting>();
 builder.Services.AddHttpClient<IppPrinter>(client => client.Timeout = TimeSpan.FromSeconds(30));
@@ -173,10 +174,16 @@ app.MapPost("/sign-out", async (HttpContext http) =>
 
 app.Run();
 
-/// <summary>Brings the database up to the latest migration and seeds a usable dashboard.</summary>
+/// <summary>Repairs what a hard shutdown left behind, migrates the database and seeds a usable dashboard.</summary>
 static async Task PrepareDatabaseAsync(WebApplication app)
 {
     using var scope = app.Services.CreateScope();
+
+    // Before the migrations, because an abandoned migration lock makes MigrateAsync wait for a
+    // holder that no longer exists and the port never opens.
+    var recovery = scope.ServiceProvider.GetRequiredService<DatabaseRecovery>();
+    await recovery.RunAsync();
+
     var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
     await context.Database.MigrateAsync();
 

@@ -138,6 +138,7 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         {
             meal.PlannedSlot = null;
             meal.PlannedVariantId = null;
+            meal.PlannedMealCount = 1;
         }
 
         if (request.Ingredients is not null)
@@ -176,6 +177,10 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <param name="slot">Which meal of the day it fills.</param>
     /// <param name="variantId">The variant to plan, or null for the meal itself.</param>
     /// <param name="shared">Whether it is one of the shared meals.</param>
+    /// <param name="mealCount">
+    /// How many meals the planned item makes, or null to leave the count it already carries. A
+    /// count below one is read as one, since a planned item always makes at least one meal.
+    /// </param>
     /// <param name="cancellationToken">Cancels the work.</param>
     /// <exception cref="ArgumentException">The variant belongs to another meal.</exception>
     public async Task<MealView?> PlanAsync(
@@ -183,6 +188,7 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         MealSlot slot,
         int? variantId = null,
         bool shared = false,
+        int? mealCount = null,
         CancellationToken cancellationToken = default)
     {
         var meal = await context.Meals
@@ -202,6 +208,7 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         meal.Status = shared ? MealStatus.PlannedShared : MealStatus.Planned;
         meal.PlannedSlot = slot;
         meal.PlannedVariantId = variantId;
+        meal.PlannedMealCount = Math.Max(1, mealCount ?? meal.PlannedMealCount);
 
         await context.SaveChangesAsync(cancellationToken);
         return await GetAsync(mealId, cancellationToken);
@@ -547,6 +554,7 @@ public class MealService(ICapybaraHomeDbContext context, TimeProvider clock)
         m.IsOneTime,
         m.LastCookedAt,
         m.PlannedSlot,
+        m.PlannedMealCount,
         m.PlannedVariantId,
         m.PlannedVariant == null ? null : m.PlannedVariant.Name,
         m.ImportedText,

@@ -742,3 +742,8 @@ code.secret {
         content: "";
     }
 }
+
+/* The Remove button on an operation row, pushed to the end of the line. */
+.inline-form {
+    margin-inline-start: auto;
+}

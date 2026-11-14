@@ -1,5 +1,6 @@
 @page "/meals/{MealId:int}/variants/new"
 @page "/meals/{MealId:int}/variants/{Id:int}"
+@using CapybaraHome.Web
 @inject MealService Meals
 @inject NavigationManager Navigation
 
@@ -27,6 +28,7 @@ else
         @* The browser submits a form's first submit button when Enter is pressed in a text box, so
            Save goes first and hidden: without it Enter would press a Remove button instead. *@
         <button type="submit" name="action" value="save" hidden></button>
+        <input type="hidden" name="return" value="@returnTo" />
 
         <div class="field">
             <label for="variant-name">Name</label>
@@ -63,9 +65,15 @@ else
             <p class="error">@error</p>
         }
 
+        @if (Saved && !posted)
+        {
+            <p class="notice">Saved.</p>
+        }
+
         <div class="row">
             <button class="btn btn-primary" type="submit" name="action" value="save">Save</button>
-            <a class="btn" href="meals/@MealId">Cancel</a>
+            <button class="btn" type="submit" name="action" value="save-exit">Save and exit</button>
+            <a class="btn" href="@ExitLink">Cancel</a>
         </div>
     </form>
 
@@ -87,6 +95,14 @@ else
     [Parameter]
     public int? Id { get; set; }
 
+    /// <summary>Page to go back to when the editor is left, kept across the saves made on the way.</summary>
+    [SupplyParameterFromQuery(Name = "return")]
+    private string? Return { get; set; }
+
+    /// <summary>Whether the editor is being shown straight after a save.</summary>
+    [SupplyParameterFromQuery(Name = "saved")]
+    private bool Saved { get; set; }
+
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
@@ -96,6 +112,8 @@ else
     private string? name;
     private string? directions;
     private string? error;
+    private string? returnTo;
+    private bool posted;
 
     /// <summary>Loads the meal and fills the editor, from the posted form when there is one.</summary>
     protected override async Task OnParametersSetAsync()
@@ -105,6 +123,9 @@ else
         {
             return;
         }
+
+        returnTo = LocalUrl.Within(Return);
+        posted = HttpContext?.Request.Method == HttpMethods.Post;
 
         if (HttpContext?.Request.Method == HttpMethods.Post)
         {
@@ -136,6 +157,7 @@ else
         }
 
         var action = HttpContext.Request.Form["action"].ToString();
+        var exit = action == "save-exit";
 
         if (action == "add-row")
         {
@@ -164,21 +186,34 @@ else
 
         try
         {
+            var variantId = Id;
+
             if (Id is null)
             {
-                await Meals.CreateVariantAsync(MealId, request);
+                variantId = (await Meals.CreateVariantAsync(MealId, request))?.Id;
             }
             else
             {
                 await Meals.UpdateVariantAsync(Id.Value, request);
             }
 
-            Navigation.NavigateTo($"meals/{MealId}");
+            Navigation.NavigateTo(exit || variantId is null ? ExitLink : SelfLink(variantId.Value));
         }
         catch (ArgumentException ex)
         {
             error = ex.Message;
         }
+    }
+
+    /// <summary>Where Cancel and Save and exit go: where the editor was opened from, or the meal.</summary>
+    private string ExitLink => returnTo ?? $"meals/{MealId}";
+
+    /// <summary>The editor's own address, which a plain Save returns to with the return address kept.</summary>
+    private string SelfLink(int variantId)
+    {
+        var self = $"meals/{MealId}/variants/{variantId}?saved=true";
+
+        return returnTo is { } back ? $"{self}&return={Uri.EscapeDataString(back)}" : self;
     }
 
     private async Task DeleteAsync()
@@ -195,6 +230,8 @@ else
     {
         name = form["name"];
         directions = form["directions"];
+
+        returnTo = LocalUrl.Within(form["return"]);
 
         removed = form["removed"]
             .Select(value => int.TryParse(value, out var id) ? id : 0)

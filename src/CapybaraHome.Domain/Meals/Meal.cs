@@ -24,6 +24,9 @@ public class Meal
     /// <summary>Which meal of the day this is planned for, or null when it is not planned.</summary>
     public MealSlot? PlannedSlot { get; set; }
 
+    /// <summary>How many meals the planned item makes, which is what the plan's counters add up.</summary>
+    public int PlannedMealCount { get; set; } = 1;
+
     /// <summary>The variant that was planned, or null when the meal itself was.</summary>
     public int? PlannedVariantId { get; set; }
 

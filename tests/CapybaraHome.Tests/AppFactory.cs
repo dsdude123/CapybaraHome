@@ -29,14 +29,16 @@ public class AppFactory : WebApplicationFactory<Program>
     /// <summary>The username the seeded account is created with.</summary>
     public const string SeededUsername = "first";
 
-    private readonly string databasePath = Path.Combine(Path.GetTempPath(), $"capybarahome-tests-{Guid.NewGuid():N}.db");
+    private readonly string databasePath;
     private readonly bool stubSignIn;
     private readonly Action<IServiceCollection>? configureServices;
 
-    private AppFactory(bool stubSignIn, Action<IServiceCollection>? configureServices)
+    private AppFactory(bool stubSignIn, Action<IServiceCollection>? configureServices, string? databasePath)
     {
         this.stubSignIn = stubSignIn;
         this.configureServices = configureServices;
+        this.databasePath = databasePath
+            ?? Path.Combine(Path.GetTempPath(), $"capybarahome-tests-{Guid.NewGuid():N}.db");
     }
 
     /// <summary>
@@ -46,12 +48,14 @@ public class AppFactory : WebApplicationFactory<Program>
     /// <param name="stubSignIn">Whether every request arrives signed in as the first account.</param>
     /// <param name="seedFirstUser">Whether the installation already has its first account.</param>
     /// <param name="configureServices">Replaces services for the test, such as the JIRA client's handler.</param>
+    /// <param name="databasePath">An existing database file to start against, instead of a fresh one.</param>
     public static async Task<AppFactory> CreateAsync(
         bool stubSignIn = true,
         bool seedFirstUser = true,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        string? databasePath = null)
     {
-        var factory = new AppFactory(stubSignIn, configureServices);
+        var factory = new AppFactory(stubSignIn, configureServices, databasePath);
 
         if (seedFirstUser)
         {

@@ -13,6 +13,7 @@ public static class DependencyInjection
     {
         services.AddDbContext<CapybaraHomeDbContext>(options => options.UseSqlite(connectionString));
         services.AddScoped<ICapybaraHomeDbContext>(provider => provider.GetRequiredService<CapybaraHomeDbContext>());
+        services.AddScoped<DatabaseRecovery>();
         return services;
     }
 }
