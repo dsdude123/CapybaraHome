@@ -130,6 +130,17 @@ else
             </tbody>
         </table>
         <p class="muted">Internet: @(property.Internet is { Length: > 0 } ? property.Internet : "not recorded")</p>
+        <p class="muted">
+            Listing:
+            @if (property.ListingUrl is { Length: > 0 } listing)
+            {
+                <a href="@listing" target="_blank" rel="noopener noreferrer">@listing</a>
+            }
+            else
+            {
+                @("no link")
+            }
+        </p>
     </section>
 
     <div class="card-grid">

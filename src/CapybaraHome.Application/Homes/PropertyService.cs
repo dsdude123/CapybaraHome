@@ -57,6 +57,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             PetRent = request.PetRent,
             Deposit = request.Deposit,
             Internet = Blank(request.Internet),
+            ListingUrl = Listing(request.ListingUrl, nameof(request)),
             SquareFeet = Size(request.SquareFeet),
             Utilities = Utilities(request.Utilities),
             Amenities = Amenities(request.Amenities),
@@ -109,6 +110,11 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         if (request.Internet is not null)
         {
             property.Internet = Blank(request.Internet);
+        }
+
+        if (request.ListingUrl is not null)
+        {
+            property.ListingUrl = Listing(request.ListingUrl, nameof(request));
         }
 
         if (request.IsCurrent is { } current)
@@ -397,6 +403,24 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    // Only a web address is kept: the page turns this into a link, and a "javascript:" or "data:"
+    // address in a link is a way to run something rather than to open a listing.
+    private static string? Listing(string? value, string parameter)
+    {
+        if (Blank(value) is not { } typed)
+        {
+            return null;
+        }
+
+        var address = typed.Contains("://", StringComparison.Ordinal) ? typed : "https://" + typed;
+
+        return Uri.TryCreate(address, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && uri.Host.Length > 0
+                ? address
+                : throw new ArgumentException("A listing link has to be a web address, such as https://…", parameter);
+    }
+
     private static readonly Expression<Func<Property, PropertyView>> Projection = property => new PropertyView(
         property.Id,
         property.Name,
@@ -407,6 +431,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         property.PetRent,
         property.Deposit,
         property.Internet,
+        property.ListingUrl,
         property.SquareFeet,
         property.Latitude,
         property.Longitude,

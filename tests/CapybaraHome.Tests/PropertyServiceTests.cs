@@ -387,6 +387,43 @@ public class PropertyServiceTests
     }
 
     [Fact]
+    public async Task A_listing_link_is_kept_filled_out_and_refused_when_it_is_not_a_web_address()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+
+        var created = await service.CreateAsync(new CreatePropertyRequest(
+            "Harbor Steps", ListingUrl: "  https://example.com/listings/42?ref=a  "));
+
+        Assert.Equal("https://example.com/listings/42?ref=a", created.ListingUrl);
+
+        // A plain host is what people copy out of an address bar, so it is read as https.
+        var typedPlainly = await service.UpdateAsync(
+            created.Id, new UpdatePropertyRequest(ListingUrl: "example.com/listings/42"));
+        Assert.Equal("https://example.com/listings/42", typedPlainly!.ListingUrl);
+
+        // Plain http is a web address too, and stays as it was given.
+        var insecure = await service.UpdateAsync(
+            created.Id, new UpdatePropertyRequest(ListingUrl: "http://example.com/listings/42"));
+        Assert.Equal("http://example.com/listings/42", insecure!.ListingUrl);
+
+        var cleared = await service.UpdateAsync(created.Id, new UpdatePropertyRequest(ListingUrl: "  "));
+        Assert.Null(cleared!.ListingUrl);
+
+        // A link is something the page hands the browser, so nothing that could run is kept.
+        foreach (var refused in new[] { "javascript:alert(1)", "data:text/html,<script>alert(1)</script>", "file:///etc/passwd" })
+        {
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => service.UpdateAsync(created.Id, new UpdatePropertyRequest(ListingUrl: refused)));
+
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => service.CreateAsync(new CreatePropertyRequest("Dodgy", ListingUrl: refused)));
+        }
+
+        Assert.Null((await service.GetAsync(created.Id))!.ListingUrl);
+    }
+
+    [Fact]
     public async Task Coordinates_are_recorded_and_an_address_can_be_cleared()
     {
         await using var db = await TestDatabase.CreateAsync();

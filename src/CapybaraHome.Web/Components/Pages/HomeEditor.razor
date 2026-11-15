@@ -70,6 +70,12 @@
                placeholder="What is provided, and how fast" />
     </div>
 
+    <div class="field">
+        <label for="property-listing">Listing link</label>
+        <input id="property-listing" type="url" name="listing" value="@listing"
+               placeholder="https://… where you found it" />
+    </div>
+
     <UtilityRows Rows="utilities" />
 
     <TextRows Legend="Amenities" Noun="Amenity" Field="amenity" Rows="amenities"
@@ -115,6 +121,7 @@
     private string? name;
     private string? address;
     private string? internet;
+    private string? listing;
     private string? rent;
     private string? parking;
     private string? petRent;
@@ -152,6 +159,7 @@
         name = property.Name;
         address = property.Address;
         internet = property.Internet;
+        listing = property.ListingUrl;
         isCurrent = property.IsCurrent;
         rent = Typed(property.Rent);
         parking = Typed(property.ParkingFee);
@@ -215,6 +223,7 @@
                     PropertyRows.Money(petRent),
                     PropertyRows.Money(deposit),
                     internet,
+                    listing,
                     Size(squareFeet),
                     utilityLines,
                     amenityNames,
@@ -234,6 +243,7 @@
                 Deposit: PropertyRows.Money(deposit),
                 ClearMoney: true,
                 Internet: internet ?? string.Empty,
+                ListingUrl: listing ?? string.Empty,
                 SquareFeet: Size(squareFeet),
                 Utilities: utilityLines,
                 Amenities: amenityNames,
@@ -319,6 +329,7 @@
         name = form["name"];
         address = form["address"];
         internet = form["internet"];
+        listing = form["listing"];
         isCurrent = form["is-current"] == "true";
         rent = form["rent"];
         parking = form["parking"];

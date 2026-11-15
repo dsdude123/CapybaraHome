@@ -46,6 +46,7 @@ public class HomeSearchTools
     /// <param name="petRent">Monthly pet rent.</param>
     /// <param name="deposit">Deposit, which is paid once.</param>
     /// <param name="internet">What internet the place provides.</param>
+    /// <param name="listingUrl">Web address of the listing it was found on, over http or https.</param>
     /// <param name="squareFeet">How big the place is, in square feet.</param>
     /// <param name="amenities">What it offers, such as a gym or a pool.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -60,6 +61,7 @@ public class HomeSearchTools
         decimal? petRent = null,
         decimal? deposit = null,
         string? internet = null,
+        string? listingUrl = null,
         int? squareFeet = null,
         string[]? amenities = null,
         CancellationToken cancellationToken = default)
@@ -73,6 +75,7 @@ public class HomeSearchTools
                 PetRent: petRent,
                 Deposit: deposit,
                 Internet: internet,
+                ListingUrl: listingUrl,
                 SquareFeet: squareFeet,
                 Amenities: amenities),
             cancellationToken);

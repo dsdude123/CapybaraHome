@@ -203,6 +203,10 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<double?>("Latitude")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("ListingUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
                     b.Property<double?>("Longitude")
                         .HasColumnType("REAL");
 
