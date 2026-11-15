@@ -185,7 +185,38 @@ public class DrivingCostCalculatorTests
         Assert.Equal(15m, cost.CarpoolCreditPerWeek);
         Assert.Equal(21m, cost.Vehicles.Single().WeeklyCost, 2);
         Assert.Equal(91m, cost.Vehicles.Single().MonthlyCost, 2);
+        Assert.Equal(12m, cost.TollsLessCreditPerWeek);
+        Assert.Equal(12m, cost.Lines.Single().TollsLessCreditPerWeek);
         Assert.Equal(52m, cost.MonthlyTollsLessCredit, 2);
+    }
+
+    [Fact]
+    public void The_credit_comes_off_the_tolls_even_with_no_car_to_cost_the_fuel_in()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d, "WA 520")]),
+            [Destination(1, "Work", trips: 3, carpool: 5m)],
+            [],
+            [Toll(1, "520", 4.50m)]);
+
+        Assert.Empty(cost.Vehicles);
+        Assert.Equal(27m, cost.TollsPerWeek);
+        Assert.Equal(15m, cost.CarpoolCreditPerWeek);
+        Assert.Equal(12m, cost.TollsLessCreditPerWeek);
+        Assert.Equal(52m, cost.MonthlyTollsLessCredit, 2);
+    }
+
+    [Fact]
+    public void A_credit_bigger_than_the_tolls_leaves_them_owing_nothing_and_then_some()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d)]),
+            [Destination(1, "Work", trips: 3, carpool: 5m)],
+            [],
+            []);
+
+        Assert.Equal(-15m, cost.TollsLessCreditPerWeek);
+        Assert.Equal(-65m, cost.MonthlyTollsLessCredit, 2);
     }
 
     [Fact]

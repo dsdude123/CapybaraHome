@@ -129,8 +129,11 @@ ends are known, so a destination you have not measured for both places counts fo
 rather than inventing a saving.
 
 Drive times can always be typed in. To have them measured instead, put an OpenRouteService
-address and key under **Routing service**: `https://api.openrouteservice.org` with a key from
-their site, or your own instance, which needs no key. The same service places an address the
+address and key under **Routing service**: `https://api.heigit.org` with a key from
+their site, or your own instance, which needs no key. HeiGIT retired
+`api.openrouteservice.org`, and the hosted API serves routing under `/openrouteservice` and
+geocoding under `/pelias/v1`, which the app works out from the address it is given; an address
+still saved under the old host is called at the new one. The same service places an address the
 first time a drive is measured. The key is write-only — the page says whether one is held,
 never what it is — and there is a button to forget it.
 

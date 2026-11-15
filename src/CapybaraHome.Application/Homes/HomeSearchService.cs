@@ -378,7 +378,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
 
         if (request.RoutingBaseUrl is not null)
         {
-            settings.RoutingBaseUrl = Blank(request.RoutingBaseUrl);
+            settings.RoutingBaseUrl = RoutingEndpoints.Normalize(request.RoutingBaseUrl);
         }
 
         // An empty box means the key held should stay, since the page never renders it back; the

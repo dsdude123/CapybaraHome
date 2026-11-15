@@ -20,9 +20,10 @@ public record GeocodedPlace(string Label, double Latitude, double Longitude);
 public record MeasuredDrive(double Minutes, double Miles, IReadOnlyList<string> TolledRoads);
 
 /// <summary>
-/// Places addresses and measures drives through OpenRouteService. The hosted service at
-/// api.openrouteservice.org and a self-hosted instance speak the same API, so only the base
-/// address changes; both are read from the settings on every call, so no key is held in memory.
+/// Places addresses and measures drives through OpenRouteService. HeiGIT's hosted service and a
+/// self-hosted instance speak the same API under different paths, which <see cref="RoutingEndpoints"/>
+/// works out from the base address; the address and the key are read from the settings on every
+/// call, so no key is held in memory.
 /// </summary>
 public class RoutingClient(HttpClient http, HomeSearchService search)
 {
@@ -41,9 +42,9 @@ public class RoutingClient(HttpClient http, HomeSearchService search)
         }
 
         var (baseUrl, key) = await ConnectionAsync(cancellationToken);
-        var path = $"geocode/search?text={Uri.EscapeDataString(address)}&size=1";
 
-        using var document = await ReadAsync(HttpMethod.Get, baseUrl, path, key, null, cancellationToken);
+        using var document = await ReadAsync(
+            HttpMethod.Get, baseUrl, RoutingEndpoints.Geocode(baseUrl, address), key, null, cancellationToken);
 
         if (!document.RootElement.TryGetProperty("features", out var features)
             || features.ValueKind != JsonValueKind.Array
@@ -97,7 +98,7 @@ public class RoutingClient(HttpClient http, HomeSearchService search)
         };
 
         using var document = await ReadAsync(
-            HttpMethod.Post, baseUrl, "v2/directions/driving-car", key, body, cancellationToken);
+            HttpMethod.Post, baseUrl, RoutingEndpoints.Directions(baseUrl), key, body, cancellationToken);
 
         if (!document.RootElement.TryGetProperty("routes", out var routes)
             || routes.ValueKind != JsonValueKind.Array
@@ -193,12 +194,15 @@ public class RoutingClient(HttpClient http, HomeSearchService search)
     private async Task<(string BaseUrl, string? Key)> ConnectionAsync(CancellationToken cancellationToken)
     {
         var settings = await search.GetSettingsAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(settings.RoutingBaseUrl))
+
+        // Normalized here as well as on the way in, so an address saved before the hosted service
+        // moved hosts is called at the one that answers without being re-typed.
+        if (RoutingEndpoints.Normalize(settings.RoutingBaseUrl) is not { } baseUrl)
         {
             throw new RoutingException("No routing service is set up yet, so drive times have to be typed in.");
         }
 
-        return (settings.RoutingBaseUrl.TrimEnd('/'), await search.GetRoutingKeyAsync(cancellationToken));
+        return (baseUrl, await search.GetRoutingKeyAsync(cancellationToken));
     }
 
     private async Task<JsonDocument> ReadAsync(
