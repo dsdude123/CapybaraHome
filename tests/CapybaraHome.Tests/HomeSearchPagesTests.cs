@@ -1291,6 +1291,104 @@ public class HomeSearchPagesTests
             "+1.95", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{current.Id}")));
     }
 
+    [Fact]
+    public async Task A_scenario_is_switched_from_the_board_and_the_scores_follow_it()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var current = await CreateAsync(app, new CreatePropertyRequest("Now", IsCurrent: true, Rent: 2100m));
+        await CreateAsync(app, new CreatePropertyRequest("There", Rent: 1900m));
+
+        // The first scenario scores the fees; a second one does not.
+        await PostAsync(client, "/homes/settings", "home-weights", new() { ["fees"] = "0.05" });
+
+        var board = WebUtility.HtmlDecode(await client.GetStringAsync("/homes"));
+        Assert.Contains("Scored under Default", board);
+        Assert.Contains("+10", board);
+
+        await PostAsync(client, "/homes/settings", "profile-new", new() { ["name"] = "No weights" });
+
+        var profiles = await ProfilesAsync(app);
+        var second = profiles.Single(p => p.Name == "No weights");
+        Assert.True(second.IsActive);
+
+        // A dropdown appears once there is more than one, and switching changes the scores.
+        var switcher = await client.GetStringAsync("/homes");
+        Assert.Contains("board-profile", switcher);
+        Assert.DoesNotContain("+10", WebUtility.HtmlDecode(switcher));
+
+        var first = profiles.Single(p => p.Name == HomeSearchService.DefaultProfileName);
+        await PostAsync(client, "/homes", "board-profile", new() { ["profile"] = first.Id.ToString() });
+
+        Assert.True((await ProfilesAsync(app)).Single(p => p.Id == first.Id).IsActive);
+        Assert.Contains("+10", WebUtility.HtmlDecode(await client.GetStringAsync("/homes")));
+
+        // The current home is still the current home: properties are not part of a scenario.
+        Assert.Contains(current.Name, await client.GetStringAsync("/homes"));
+    }
+
+    [Fact]
+    public async Task A_scenario_is_copied_renamed_and_deleted_from_the_settings_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostAsync(client, "/homes/settings", "home-weights", new() { ["fees"] = "0.05" });
+        await DestinationAsync(app, "Work", trips: 5);
+
+        var first = (await ProfilesAsync(app)).Single();
+
+        // Copying with the box left empty uses the name the placeholder shows, and the copy is
+        // what is then being edited.
+        await PostAsync(client, "/homes/settings", $"profile-{first.Id}",
+            new() { ["action"] = "copy", ["name"] = first.Name, ["copy-name"] = string.Empty });
+
+        var copy = (await ProfilesAsync(app)).Single(p => p.Name == "Default copy");
+        Assert.True(copy.IsActive);
+        Assert.Equal(1, copy.DestinationCount);
+        Assert.Equal(0.05m, (await SettingsAsync(app)).MonthlyFeePointsPerDollar);
+
+        // Renaming it, and editing its destination, leaves the original alone.
+        await PostAsync(client, "/homes/settings", $"profile-{copy.Id}",
+            new() { ["action"] = "rename", ["name"] = "Two cars" });
+
+        Assert.Equal("Two cars", (await ProfilesAsync(app)).Single(p => p.Id == copy.Id).Name);
+
+        var copiedWork = (await DestinationsAsync(app)).Single();
+        await PostAsync(client, "/homes/settings", $"destination-{copiedWork.Id}",
+            new() { ["action"] = "save", ["name"] = "Work", ["trips"] = "3" });
+
+        await PostAsync(client, "/homes/settings", $"profile-{first.Id}", new() { ["action"] = "switch", ["name"] = "Default" });
+        Assert.Equal(5m, (await DestinationsAsync(app)).Single().RoundTripsPerWeek);
+
+        // The page says what each scenario holds, and the last one cannot be deleted.
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync("/homes/settings"));
+        Assert.Contains("showing now", page);
+        Assert.Contains("1 destination, 0 cars, 0 toll roads", page);
+
+        await PostAsync(client, "/homes/settings", $"profile-{copy.Id}", new() { ["action"] = "delete", ["name"] = "Two cars" });
+        Assert.Single(await ProfilesAsync(app));
+
+        var refused = await PostAsync(client, "/homes/settings", $"profile-{first.Id}",
+            new() { ["action"] = "delete", ["name"] = "Default" });
+
+        Assert.Contains("the last scenario stays", await refused.Content.ReadAsStringAsync());
+        Assert.Single(await ProfilesAsync(app));
+    }
+
+    private static async Task<IReadOnlyList<SearchProfileView>> ProfilesAsync(AppFactory app)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<HomeSearchService>().ListProfilesAsync();
+    }
+
+    private static async Task<HomeSearchSettingsView> SettingsAsync(AppFactory app)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<HomeSearchService>().GetSettingsAsync();
+    }
+
     private static async Task<PropertyView> OneAsync(AppFactory app)
     {
         using var scope = app.Services.CreateScope();

@@ -1,5 +1,6 @@
 @page "/homes"
 @inject HomeSearchBoardService Board
+@inject HomeSearchService Search
 
 <PageTitle>Homes</PageTitle>
 
@@ -17,6 +18,31 @@
 }
 else
 {
+    @if (board.Profiles.Count > 1)
+    {
+        <form method="post" @formname="board-profile" @onsubmit="SwitchAsync" class="card row" style="align-items:flex-end">
+            <AntiforgeryToken />
+            <div class="field">
+                <label for="board-profile">Scenario</label>
+                <select id="board-profile" name="profile">
+                    @foreach (var profile in board.Profiles)
+                    {
+                        <option value="@profile.Id" selected="@profile.IsActive">@profile.Name</option>
+                    }
+                </select>
+            </div>
+            <button class="btn btn-small btn-primary" type="submit">Switch to it</button>
+            <a class="btn btn-small" href="homes/settings">Scenarios</a>
+        </form>
+    }
+    else if (board.Profile is { } only)
+    {
+        <p class="muted">
+            Scored under @only.Name. <a href="homes/settings">Add a scenario</a> to keep more than
+            one set of weights, destinations and cars.
+        </p>
+    }
+
     @if (!board.Settings.AnyWeightSet && board.Priorities.All(p => p.Points == 0m))
     {
         <p class="notice">
@@ -96,11 +122,32 @@ else
 }
 
 @code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
     private HomeSearchBoard? board;
 
     /// <summary>Loads the properties, the setup and the scores.</summary>
     protected override async Task OnParametersSetAsync()
     {
+        board = await Board.GetAsync();
+    }
+
+    private async Task SwitchAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        if (int.TryParse(
+            HttpContext.Request.Form["profile"],
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var id))
+        {
+            await Search.ActivateProfileAsync(id);
+        }
+
         board = await Board.GetAsync();
     }
 

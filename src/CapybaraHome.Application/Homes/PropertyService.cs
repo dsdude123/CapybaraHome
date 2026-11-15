@@ -14,7 +14,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         return await context.Properties.AsNoTracking()
             .OrderByDescending(p => p.IsCurrent)
             .ThenBy(p => p.Name)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .ToListAsync(cancellationToken);
     }
 
@@ -23,7 +23,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
     {
         return await context.Properties.AsNoTracking()
             .Where(p => p.Id == id)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .SingleOrDefaultAsync(cancellationToken);
     }
 
@@ -33,7 +33,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         return await context.Properties.AsNoTracking()
             .Where(p => p.IsCurrent)
             .OrderBy(p => p.Id)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -421,7 +421,15 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 : throw new ArgumentException("A listing link has to be a web address, such as https://…", parameter);
     }
 
-    private static readonly Expression<Func<Property, PropertyView>> Projection = property => new PropertyView(
+    // The drive times belong to destinations, which belong to a scenario, so a property shows the
+    // drives of the scenario being looked at and no others.
+    private async Task<int> ProfileIdAsync(CancellationToken cancellationToken) =>
+        await context.SearchProfiles.AsNoTracking()
+            .Where(p => p.IsActive)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private static Expression<Func<Property, PropertyView>> Projection(int profileId) => property => new PropertyView(
         property.Id,
         property.Name,
         property.Address,
@@ -464,6 +472,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 p.Id, p.FileName, p.ContentType, p.ByteCount, p.Caption, p.SortOrder, p.CreatedAt))
             .ToList(),
         property.DriveTimes
+            .Where(d => d.Destination!.ProfileId == profileId)
             .OrderBy(d => d.Destination!.SortOrder)
             .ThenBy(d => d.DestinationId)
             .Select(d => new PropertyDriveTimeView(

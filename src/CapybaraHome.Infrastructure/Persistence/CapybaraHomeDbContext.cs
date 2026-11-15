@@ -71,6 +71,9 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Pictures of the properties.</summary>
     public DbSet<PropertyPhoto> PropertyPhotos => Set<PropertyPhoto>();
 
+    /// <summary>The scenarios the search is scored under, one of them active.</summary>
+    public DbSet<SearchProfile> SearchProfiles => Set<SearchProfile>();
+
     /// <summary>Places the drive from each property is measured to.</summary>
     public DbSet<SearchDestination> SearchDestinations => Set<SearchDestination>();
 

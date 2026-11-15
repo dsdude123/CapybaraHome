@@ -217,6 +217,23 @@ public record UpdatePropertyRequest(
     double? Latitude = null,
     double? Longitude = null);
 
+/// <summary>A scenario of the search as the pages see it.</summary>
+/// <param name="Id">Primary key.</param>
+/// <param name="Name">What the scenario is called.</param>
+/// <param name="IsActive">Whether this is the profile the pages are showing.</param>
+/// <param name="SortOrder">Position in the list.</param>
+/// <param name="DestinationCount">How many destinations it drives to.</param>
+/// <param name="VehicleCount">How many cars it drives.</param>
+/// <param name="TollRoadCount">How many toll roads it prices.</param>
+public record SearchProfileView(
+    int Id,
+    string Name,
+    bool IsActive,
+    int SortOrder,
+    int DestinationCount,
+    int VehicleCount,
+    int TollRoadCount);
+
 /// <summary>Fields accepted when creating or updating a destination.</summary>
 /// <param name="Name">What the place is called; required.</param>
 /// <param name="Address">Street address.</param>

@@ -5,15 +5,274 @@ using Microsoft.EntityFrameworkCore;
 namespace CapybaraHome.Application.Homes;
 
 /// <summary>
-/// The search's shared setup: where the drives are measured to, what a home has to do, and the
-/// weights that turn all of it into a score.
+/// The search's shared setup: the scenarios it is scored under, where the drives are measured to,
+/// what a home has to do, and the weights that turn all of it into a score. Everything but the
+/// routing service and the priorities belongs to the active scenario.
 /// </summary>
 public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider clock)
 {
-    /// <summary>Returns the destinations, in order.</summary>
+    /// <summary>What the first scenario is called, before any is named.</summary>
+    public const string DefaultProfileName = "Default";
+
+    /// <summary>Returns the scenarios, in order, the active one marked.</summary>
+    public async Task<IReadOnlyList<SearchProfileView>> ListProfilesAsync(CancellationToken cancellationToken = default)
+    {
+        await ActiveAsync(cancellationToken);
+
+        return await context.SearchProfiles.AsNoTracking()
+            .OrderBy(p => p.SortOrder)
+            .ThenBy(p => p.Id)
+            .Select(p => new SearchProfileView(
+                p.Id,
+                p.Name,
+                p.IsActive,
+                p.SortOrder,
+                p.Destinations.Count,
+                p.Vehicles.Count,
+                p.TollRoads.Count))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Returns the scenario the pages are showing, making the first one if there is none.</summary>
+    public async Task<SearchProfileView> GetActiveProfileAsync(CancellationToken cancellationToken = default)
+    {
+        var active = await ActiveAsync(cancellationToken);
+        return (await ListProfilesAsync(cancellationToken)).First(p => p.Id == active.Id);
+    }
+
+    /// <summary>Adds an empty scenario and returns it as saved.</summary>
+    /// <exception cref="ArgumentException">The name is blank.</exception>
+    public async Task<SearchProfileView> CreateProfileAsync(
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var profile = new SearchProfile
+        {
+            Name = Required(name, "A scenario needs a name.", nameof(name)),
+            SortOrder = await NextProfileOrderAsync(cancellationToken),
+            UpdatedAt = clock.GetUtcNow(),
+        };
+
+        context.SearchProfiles.Add(profile);
+        await context.SaveChangesAsync(cancellationToken);
+
+        return (await ListProfilesAsync(cancellationToken)).First(p => p.Id == profile.Id);
+    }
+
+    /// <summary>
+    /// Copies a scenario under a new name: its weights, destinations, cars and toll roads, the car
+    /// each destination drives and the toll roads marked by hand against each drive, and the drive
+    /// times already measured, so only the difference has to be changed. Returns null when no
+    /// scenario has that id.
+    /// </summary>
+    /// <exception cref="ArgumentException">The name is blank.</exception>
+    public async Task<SearchProfileView?> CopyProfileAsync(
+        int id,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var copied = Required(name, "A scenario needs a name.", nameof(name));
+
+        var source = await context.SearchProfiles.AsNoTracking()
+            .SingleOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+        if (source is null)
+        {
+            return null;
+        }
+
+        var profile = new SearchProfile
+        {
+            Name = copied,
+            SortOrder = await NextProfileOrderAsync(cancellationToken),
+            MonthlyFeePointsPerDollar = source.MonthlyFeePointsPerDollar,
+            DepositPointsPerDollar = source.DepositPointsPerDollar,
+            DriveTimePointsPerMinute = source.DriveTimePointsPerMinute,
+            AmenityPoints = source.AmenityPoints,
+            ProPoints = source.ProPoints,
+            ConPoints = source.ConPoints,
+            SizePointsPerSquareFoot = source.SizePointsPerSquareFoot,
+            UpdatedAt = clock.GetUtcNow(),
+        };
+
+        context.SearchProfiles.Add(profile);
+
+        var cars = new Dictionary<int, Vehicle>();
+        foreach (var car in await Owned(context.Vehicles, id).OrderBy(v => v.SortOrder).ToListAsync(cancellationToken))
+        {
+            var made = new Vehicle
+            {
+                Profile = profile,
+                Name = car.Name,
+                MilesPerGallon = car.MilesPerGallon,
+                FuelPricePerGallon = car.FuelPricePerGallon,
+                SortOrder = car.SortOrder,
+            };
+
+            cars[car.Id] = made;
+            context.Vehicles.Add(made);
+        }
+
+        var tolls = new Dictionary<int, TollRoad>();
+        foreach (var toll in await Owned(context.TollRoads, id).OrderBy(t => t.SortOrder).ToListAsync(cancellationToken))
+        {
+            var made = new TollRoad
+            {
+                Profile = profile,
+                Road = toll.Road,
+                PeakToll = toll.PeakToll,
+                SortOrder = toll.SortOrder,
+            };
+
+            tolls[toll.Id] = made;
+            context.TollRoads.Add(made);
+        }
+
+        var destinations = await Owned(context.SearchDestinations, id)
+            .OrderBy(d => d.SortOrder)
+            .ToListAsync(cancellationToken);
+
+        var drives = await context.PropertyDriveTimes.AsNoTracking()
+            .Where(d => d.Destination!.ProfileId == id)
+            .ToListAsync(cancellationToken);
+
+        // The marks name toll roads by id, and the copies have no ids until they are saved, so
+        // each copied drive is noted here and its marks filled in afterwards.
+        var marked = new List<(PropertyDriveTime Copy, IReadOnlyList<int> Marks)>();
+
+        foreach (var destination in destinations)
+        {
+            var made = new SearchDestination
+            {
+                Profile = profile,
+                Name = destination.Name,
+                Address = destination.Address,
+                Weight = destination.Weight,
+                RoundTripsPerWeek = destination.RoundTripsPerWeek,
+                CarpoolCreditPerDay = destination.CarpoolCreditPerDay,
+                DriveTimeMultiplier = destination.DriveTimeMultiplier,
+                Latitude = destination.Latitude,
+                Longitude = destination.Longitude,
+                SortOrder = destination.SortOrder,
+                Vehicle = destination.VehicleId is { } carId && cars.TryGetValue(carId, out var car) ? car : null,
+            };
+
+            context.SearchDestinations.Add(made);
+
+            foreach (var drive in drives.Where(d => d.DestinationId == destination.Id))
+            {
+                var copy = new PropertyDriveTime
+                {
+                    PropertyId = drive.PropertyId,
+                    Destination = made,
+                    Minutes = drive.Minutes,
+                    Miles = drive.Miles,
+                    Source = drive.Source,
+                    MeasuredAt = drive.MeasuredAt,
+                    TolledRoads = [.. drive.TolledRoads],
+                };
+
+                context.PropertyDriveTimes.Add(copy);
+
+                if (drive.TollRoadOverrideIds is { } marks)
+                {
+                    marked.Add((copy, marks));
+                }
+            }
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+
+        foreach (var (copy, marks) in marked)
+        {
+            copy.TollRoadOverrideIds = marks
+                .Where(tolls.ContainsKey)
+                .Select(tollId => tolls[tollId].Id)
+                .ToList();
+        }
+
+        if (marked.Count > 0)
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+
+        return (await ListProfilesAsync(cancellationToken)).First(p => p.Id == profile.Id);
+    }
+
+    /// <summary>Renames a scenario, or returns null when none has that id.</summary>
+    /// <exception cref="ArgumentException">The name is blank.</exception>
+    public async Task<SearchProfileView?> RenameProfileAsync(
+        int id,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var profile = await context.SearchProfiles.SingleOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (profile is null)
+        {
+            return null;
+        }
+
+        profile.Name = Required(name, "A scenario needs a name.", nameof(name));
+        profile.UpdatedAt = clock.GetUtcNow();
+        await context.SaveChangesAsync(cancellationToken);
+
+        return (await ListProfilesAsync(cancellationToken)).First(p => p.Id == id);
+    }
+
+    /// <summary>Makes a scenario the one the pages show, or returns null when none has that id.</summary>
+    public async Task<SearchProfileView?> ActivateProfileAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var profiles = await context.SearchProfiles.ToListAsync(cancellationToken);
+        if (profiles.All(p => p.Id != id))
+        {
+            return null;
+        }
+
+        foreach (var profile in profiles)
+        {
+            profile.IsActive = profile.Id == id;
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+
+        return (await ListProfilesAsync(cancellationToken)).First(p => p.Id == id);
+    }
+
+    /// <summary>
+    /// Deletes a scenario, with its destinations, cars, toll roads and the drive times measured to
+    /// them. Returns false when none has that id, or when it is the only one left.
+    /// </summary>
+    public async Task<bool> DeleteProfileAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var profiles = await context.SearchProfiles.OrderBy(p => p.SortOrder).ThenBy(p => p.Id)
+            .ToListAsync(cancellationToken);
+
+        var profile = profiles.FirstOrDefault(p => p.Id == id);
+
+        // The search has to be scored under something, so the last scenario stays.
+        if (profile is null || profiles.Count < 2)
+        {
+            return false;
+        }
+
+        context.SearchProfiles.Remove(profile);
+
+        if (profile.IsActive)
+        {
+            profiles.First(p => p.Id != id).IsActive = true;
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>Returns the destinations of the active scenario, in order.</summary>
     public async Task<IReadOnlyList<SearchDestinationView>> ListDestinationsAsync(CancellationToken cancellationToken = default)
     {
+        var active = await ActiveAsync(cancellationToken);
+
         return await context.SearchDestinations.AsNoTracking()
+            .Where(d => d.ProfileId == active.Id)
             .OrderBy(d => d.SortOrder)
             .ThenBy(d => d.Id)
             .Select(d => new SearchDestinationView(
@@ -35,14 +294,16 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         CancellationToken cancellationToken = default)
     {
         var name = Required(request.Name, "A destination needs a name.", nameof(request));
+        var active = await ActiveAsync(cancellationToken);
 
-        var last = await context.SearchDestinations.AsNoTracking()
+        var last = await Owned(context.SearchDestinations, active.Id).AsNoTracking()
             .OrderByDescending(d => d.SortOrder)
             .Select(d => (int?)d.SortOrder)
             .FirstOrDefaultAsync(cancellationToken);
 
         var destination = new SearchDestination
         {
+            ProfileId = active.Id,
             Name = name,
             Address = Blank(request.Address),
             Weight = request.Weight,
@@ -102,11 +363,17 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             destination.Latitude, destination.Longitude, destination.SortOrder,
             destination.DriveTimeMultiplier, destination.VehicleId);
 
-    // A car that has since been deleted leaves the drive shared out rather than failing the save.
-    private async Task<int?> CarAsync(int? vehicleId, CancellationToken cancellationToken) =>
-        vehicleId is { } id && await context.Vehicles.AnyAsync(v => v.Id == id, cancellationToken)
-            ? id
-            : null;
+    // A car from another scenario, or one since deleted, leaves the drive shared out rather than
+    // failing the save.
+    private async Task<int?> CarAsync(int? vehicleId, CancellationToken cancellationToken)
+    {
+        var active = await ActiveAsync(cancellationToken);
+
+        return vehicleId is { } id
+            && await context.Vehicles.AnyAsync(v => v.Id == id && v.ProfileId == active.Id, cancellationToken)
+                ? id
+                : null;
+    }
 
     /// <summary>Records where a destination is. Returns false when none has that id.</summary>
     public async Task<bool> PlaceDestinationAsync(
@@ -216,10 +483,12 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         return true;
     }
 
-    /// <summary>Returns the toll roads, in order.</summary>
+    /// <summary>Returns the toll roads of the active scenario, in order.</summary>
     public async Task<IReadOnlyList<TollRoadView>> ListTollRoadsAsync(CancellationToken cancellationToken = default)
     {
-        return await context.TollRoads.AsNoTracking()
+        var active = await ActiveAsync(cancellationToken);
+
+        return await Owned(context.TollRoads, active.Id).AsNoTracking()
             .OrderBy(t => t.SortOrder)
             .ThenBy(t => t.Id)
             .Select(t => new TollRoadView(t.Id, t.Road, t.PeakToll, t.SortOrder))
@@ -233,14 +502,16 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         CancellationToken cancellationToken = default)
     {
         var road = Required(request.Road, "A toll road needs the name to look for.", nameof(request));
+        var active = await ActiveAsync(cancellationToken);
 
-        var last = await context.TollRoads.AsNoTracking()
+        var last = await Owned(context.TollRoads, active.Id).AsNoTracking()
             .OrderByDescending(t => t.SortOrder)
             .Select(t => (int?)t.SortOrder)
             .FirstOrDefaultAsync(cancellationToken);
 
         var toll = new TollRoad
         {
+            ProfileId = active.Id,
             Road = road,
             PeakToll = Positive(request.PeakToll),
             SortOrder = (last ?? -1) + 1,
@@ -286,10 +557,12 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         return true;
     }
 
-    /// <summary>Returns the cars, in order.</summary>
+    /// <summary>Returns the cars of the active scenario, in order.</summary>
     public async Task<IReadOnlyList<VehicleView>> ListVehiclesAsync(CancellationToken cancellationToken = default)
     {
-        return await context.Vehicles.AsNoTracking()
+        var active = await ActiveAsync(cancellationToken);
+
+        return await Owned(context.Vehicles, active.Id).AsNoTracking()
             .OrderBy(v => v.SortOrder)
             .ThenBy(v => v.Id)
             .Select(v => new VehicleView(v.Id, v.Name, v.MilesPerGallon, v.FuelPricePerGallon, v.SortOrder))
@@ -303,14 +576,16 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         CancellationToken cancellationToken = default)
     {
         var name = Required(request.Name, "A car needs a name.", nameof(request));
+        var active = await ActiveAsync(cancellationToken);
 
-        var last = await context.Vehicles.AsNoTracking()
+        var last = await Owned(context.Vehicles, active.Id).AsNoTracking()
             .OrderByDescending(v => v.SortOrder)
             .Select(v => (int?)v.SortOrder)
             .FirstOrDefaultAsync(cancellationToken);
 
         var vehicle = new Vehicle
         {
+            ProfileId = active.Id,
             Name = name,
             MilesPerGallon = Positive(request.MilesPerGallon),
             FuelPricePerGallon = Positive(request.FuelPricePerGallon),
@@ -360,18 +635,27 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         return true;
     }
 
-    /// <summary>Returns the weights and the routing service, with every weight at zero until they are set.</summary>
+    /// <summary>
+    /// Returns the active scenario's weights and the routing service, with every weight at zero
+    /// until they are set.
+    /// </summary>
     public async Task<HomeSearchSettingsView> GetSettingsAsync(CancellationToken cancellationToken = default)
     {
+        var active = await ActiveAsync(cancellationToken);
         var held = await context.HomeSearchSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
-        return View(held ?? new HomeSearchSettings());
+        return View(active, held ?? new HomeSearchSettings());
     }
 
-    /// <summary>Applies the set members of <paramref name="request"/> and returns the settings as saved.</summary>
+    /// <summary>
+    /// Applies the set members of <paramref name="request"/> and returns the settings as saved. The
+    /// weights are the active scenario's; the routing service is shared by all of them.
+    /// </summary>
     public async Task<HomeSearchSettingsView> SaveSettingsAsync(
         HomeSearchSettingsRequest request,
         CancellationToken cancellationToken = default)
     {
+        var active = await ActiveAsync(cancellationToken);
+
         var settings = await context.HomeSearchSettings.FirstOrDefaultAsync(cancellationToken);
         if (settings is null)
         {
@@ -379,13 +663,14 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             context.HomeSearchSettings.Add(settings);
         }
 
-        settings.MonthlyFeePointsPerDollar = request.MonthlyFeePointsPerDollar ?? settings.MonthlyFeePointsPerDollar;
-        settings.DepositPointsPerDollar = request.DepositPointsPerDollar ?? settings.DepositPointsPerDollar;
-        settings.DriveTimePointsPerMinute = request.DriveTimePointsPerMinute ?? settings.DriveTimePointsPerMinute;
-        settings.AmenityPoints = request.AmenityPoints ?? settings.AmenityPoints;
-        settings.ProPoints = request.ProPoints ?? settings.ProPoints;
-        settings.ConPoints = request.ConPoints ?? settings.ConPoints;
-        settings.SizePointsPerSquareFoot = request.SizePointsPerSquareFoot ?? settings.SizePointsPerSquareFoot;
+        active.MonthlyFeePointsPerDollar = request.MonthlyFeePointsPerDollar ?? active.MonthlyFeePointsPerDollar;
+        active.DepositPointsPerDollar = request.DepositPointsPerDollar ?? active.DepositPointsPerDollar;
+        active.DriveTimePointsPerMinute = request.DriveTimePointsPerMinute ?? active.DriveTimePointsPerMinute;
+        active.AmenityPoints = request.AmenityPoints ?? active.AmenityPoints;
+        active.ProPoints = request.ProPoints ?? active.ProPoints;
+        active.ConPoints = request.ConPoints ?? active.ConPoints;
+        active.SizePointsPerSquareFoot = request.SizePointsPerSquareFoot ?? active.SizePointsPerSquareFoot;
+        active.UpdatedAt = clock.GetUtcNow();
 
         if (request.RoutingBaseUrl is not null)
         {
@@ -402,7 +687,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         settings.UpdatedAt = clock.GetUtcNow();
         await context.SaveChangesAsync(cancellationToken);
 
-        return View(settings);
+        return View(active, settings);
     }
 
     /// <summary>Forgets the routing key, so the app stops calling the service.</summary>
@@ -427,16 +712,66 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private static HomeSearchSettingsView View(HomeSearchSettings settings) => new(
-        settings.MonthlyFeePointsPerDollar,
-        settings.DepositPointsPerDollar,
-        settings.DriveTimePointsPerMinute,
-        settings.AmenityPoints,
-        settings.ProPoints,
-        settings.ConPoints,
-        settings.SizePointsPerSquareFoot,
+    private static HomeSearchSettingsView View(SearchProfile profile, HomeSearchSettings settings) => new(
+        profile.MonthlyFeePointsPerDollar,
+        profile.DepositPointsPerDollar,
+        profile.DriveTimePointsPerMinute,
+        profile.AmenityPoints,
+        profile.ProPoints,
+        profile.ConPoints,
+        profile.SizePointsPerSquareFoot,
         settings.RoutingBaseUrl,
         !string.IsNullOrWhiteSpace(settings.RoutingApiKey));
+
+    /// <summary>
+    /// The scenario the pages are showing. A search that has never had one named gets the first
+    /// profile here, which is what every destination, car and toll road already saved belongs to.
+    /// </summary>
+    private async Task<SearchProfile> ActiveAsync(CancellationToken cancellationToken)
+    {
+        var profiles = await context.SearchProfiles.OrderBy(p => p.SortOrder).ThenBy(p => p.Id)
+            .ToListAsync(cancellationToken);
+
+        if (profiles.FirstOrDefault(p => p.IsActive) is { } active)
+        {
+            return active;
+        }
+
+        // One left unmarked, or none at all: the first is the one to show.
+        if (profiles.FirstOrDefault() is { } first)
+        {
+            first.IsActive = true;
+            await context.SaveChangesAsync(cancellationToken);
+            return first;
+        }
+
+        var made = new SearchProfile
+        {
+            Name = DefaultProfileName,
+            IsActive = true,
+            UpdatedAt = clock.GetUtcNow(),
+        };
+
+        context.SearchProfiles.Add(made);
+        await context.SaveChangesAsync(cancellationToken);
+        return made;
+    }
+
+    private async Task<int> NextProfileOrderAsync(CancellationToken cancellationToken)
+    {
+        var last = await context.SearchProfiles.AsNoTracking()
+            .OrderByDescending(p => p.SortOrder)
+            .Select(p => (int?)p.SortOrder)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return (last ?? -1) + 1;
+    }
+
+    private static IQueryable<T> Owned<T>(DbSet<T> set, int profileId)
+        where T : class, IProfileOwned
+    {
+        return set.Where(owned => owned.ProfileId == profileId);
+    }
 
     private static string Required(string? value, string message, string parameter)
     {

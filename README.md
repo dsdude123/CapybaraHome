@@ -80,8 +80,8 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   score. A property (`/homes/{id}`) holds its size, rent, parking, cat rent, deposit, a utility
   breakdown by kind, what internet is provided, amenities, pros and cons, notes and pictures,
   and the drive time and distance to each destination, with what a week of driving costs in
-  fuel and tolls. **Search settings** (`/homes/settings`) holds the scoring weights, the
-  destinations, the priorities, the cars and the toll roads.
+  fuel and tolls. **Search settings** (`/homes/settings`) holds the scenarios, the scoring
+  weights, the destinations, the priorities, the cars and the toll roads.
 - **Morning report** (`/report`) — one page of the day: the forecast, the tasks due within a
   week, what is planned to eat, the next thirty days of your calendars, the holidays, today's
   fixtures and the headlines. **Download PDF** is exactly the sheet that is printed, and
@@ -110,8 +110,26 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
 
 ## The home search
 
-Scoring is entirely yours to set, under `/homes/settings`. Every weight starts at zero, so
-nothing is scored until you fill them in:
+### Scenarios
+
+The search can be kept under more than one scenario, and `/homes/settings` switches between
+them; with more than one, the board at `/homes` carries a dropdown of its own. A scenario holds
+the scoring weights, the destinations with their weight, round trips, car and multiplier, the
+cars and the toll roads, so the scores and the driving costs follow whichever one is showing.
+Everything else is shared: the properties and their fees, the priorities and how each property
+is marked against them, and the routing service, which is one account.
+
+Copying a scenario brings its weights, destinations, cars and toll roads, the car each
+destination drives and the toll roads marked by hand, and the drive times already measured, so
+only the difference has to be changed; the copy is the one left showing. Deleting one takes its
+destinations, cars, tolls and their drive times with it, and the last scenario stays, since the
+search has to be scored under something. A search that has never named one is scored under
+*Default*, which is everything already set up.
+
+### Scoring
+
+Scoring is entirely yours to set, under `/homes/settings`. Every weight belongs to the scenario
+showing, and starts at zero, so nothing is scored until you fill them in:
 
 - **Points per dollar a month** and **points per dollar of deposit** — a candidate cheaper
   than the home you live in now earns points, a dearer one loses them. The month is rent plus

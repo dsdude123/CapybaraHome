@@ -1,10 +1,16 @@
 namespace CapybaraHome.Domain.Homes;
 
 /// <summary>Somewhere the drive from each property is measured to, such as work.</summary>
-public class SearchDestination
+public class SearchDestination : IProfileOwned
 {
     /// <summary>Primary key.</summary>
     public int Id { get; set; }
+
+    /// <summary>The scenario this destination belongs to.</summary>
+    public int ProfileId { get; set; }
+
+    /// <summary>The profile named by <see cref="ProfileId"/>.</summary>
+    public SearchProfile? Profile { get; set; }
 
     /// <summary>What the place is called.</summary>
     public required string Name { get; set; }
