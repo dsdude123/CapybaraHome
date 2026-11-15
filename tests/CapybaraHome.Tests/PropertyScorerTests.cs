@@ -205,6 +205,33 @@ public class PropertyScorerTests
         Assert.Equal(5m + 2m + 2m + 7.5m + 3m + 2m - 4m + 10m, score.Total);
     }
 
+    [Fact]
+    public void A_drive_is_scored_on_the_minutes_it_is_reckoned_to_take_not_the_ones_measured()
+    {
+        var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, 0, 0m, null, null, 0, 1.25d) };
+
+        var current = Stretched(Property(1, "Now", drives: [(1, 30d)]), 1, 30d, 37.5d);
+        var candidate = Stretched(Property(2, "Candidate", drives: [(1, 20d)]), 1, 20d, 25d);
+
+        // 37.5 against 25 is 12.5 minutes saved, not the 10 the measurements alone would show.
+        var score = PropertyScorer.Score(candidate, current, destinations, Weights);
+
+        Assert.Equal(18.75m, score.DriveTimes);
+        Assert.Equal(25d, score.DriveTimeLines.Single().Minutes);
+        Assert.Equal(37.5d, score.DriveTimeLines.Single().CurrentMinutes);
+    }
+
+    // The multiplier is applied where the view is built, so a scorer test states both figures.
+    private static PropertyView Stretched(PropertyView property, int destinationId, double minutes, double adjusted) =>
+        property with
+        {
+            DriveTimes =
+            [
+                new PropertyDriveTimeView(
+                    destinationId, "Work", minutes, null, [], DriveTimeSource.Measured, default, adjusted, null),
+            ],
+        };
+
     private static PropertyView Property(
         int id,
         string name,
@@ -248,7 +275,8 @@ public class PropertyScorerTests
             [],
             (drives ?? [])
                 .Select(d => new PropertyDriveTimeView(
-                    d.DestinationId, $"Destination {d.DestinationId}", d.Minutes, null, [], DriveTimeSource.Manual, default))
+                    d.DestinationId, $"Destination {d.DestinationId}", d.Minutes, null, [], DriveTimeSource.Manual,
+                    default, d.Minutes, null))
                 .ToList(),
             (priorities ?? [])
                 .Select(p => new PropertyPriorityView(p.PriorityId, $"Priority {p.PriorityId}", p.Points, p.Meets))

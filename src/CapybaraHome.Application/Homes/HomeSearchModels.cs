@@ -50,9 +50,11 @@ public record PropertyPhotoView(
 /// <param name="DestinationName">What that place is called.</param>
 /// <param name="Minutes">How long the drive takes.</param>
 /// <param name="Miles">How far it is, when it was measured or typed in.</param>
-/// <param name="TolledRoads">Names of the tolled roads it uses.</param>
+/// <param name="TolledRoads">Names of the tolled roads a measured route reported.</param>
 /// <param name="Source">Whether the time was measured or typed in.</param>
 /// <param name="MeasuredAt">When it was measured or last typed.</param>
+/// <param name="AdjustedMinutes">The minutes the drive is reckoned to take, a measured time having been multiplied.</param>
+/// <param name="TollRoadOverrideIds">Toll roads charged whatever the route reported, or null to follow it.</param>
 public record PropertyDriveTimeView(
     int DestinationId,
     string DestinationName,
@@ -60,7 +62,13 @@ public record PropertyDriveTimeView(
     double? Miles,
     IReadOnlyList<string> TolledRoads,
     DriveTimeSource Source,
-    DateTimeOffset MeasuredAt);
+    DateTimeOffset MeasuredAt,
+    double AdjustedMinutes,
+    IReadOnlyList<int>? TollRoadOverrideIds)
+{
+    /// <summary>Whether the minutes shown differ from the ones measured or typed.</summary>
+    public bool IsAdjusted => Math.Abs(AdjustedMinutes - Minutes) > 0.005d;
+}
 
 /// <summary>How a property was marked against one priority.</summary>
 /// <param name="PriorityId">The priority.</param>
@@ -209,12 +217,14 @@ public record UpdatePropertyRequest(
 /// <param name="Weight">How much its drive counts next to the others.</param>
 /// <param name="RoundTripsPerWeek">How many round trips a week are driven to it.</param>
 /// <param name="CarpoolCreditPerDay">What each day driven there pays back.</param>
+/// <param name="DriveTimeMultiplier">What a measured drive to it is multiplied by; one leaves it as measured.</param>
 public record SearchDestinationRequest(
     string Name,
     string? Address = null,
     decimal Weight = 1m,
     int RoundTripsPerWeek = 0,
-    decimal CarpoolCreditPerDay = 0m);
+    decimal CarpoolCreditPerDay = 0m,
+    double DriveTimeMultiplier = 1d);
 
 /// <summary>A destination as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
@@ -226,6 +236,7 @@ public record SearchDestinationRequest(
 /// <param name="Latitude">Latitude the address was resolved to, or null.</param>
 /// <param name="Longitude">Longitude the address was resolved to, or null.</param>
 /// <param name="SortOrder">Position in the list.</param>
+/// <param name="DriveTimeMultiplier">What a measured drive to it is multiplied by.</param>
 public record SearchDestinationView(
     int Id,
     string Name,
@@ -235,7 +246,8 @@ public record SearchDestinationView(
     decimal CarpoolCreditPerDay,
     double? Latitude,
     double? Longitude,
-    int SortOrder);
+    int SortOrder,
+    double DriveTimeMultiplier = 1d);
 
 /// <summary>Fields accepted when adding or changing a toll road.</summary>
 /// <param name="Road">What to look for in the tolled roads' names; required.</param>
@@ -357,8 +369,10 @@ public record PropertyPriorityRequest(bool? Meets);
 /// <summary>Fields accepted when recording a drive time by hand.</summary>
 /// <param name="Minutes">How long the drive takes, or null to forget the time held.</param>
 /// <param name="Miles">How far it is, when known.</param>
-/// <param name="TolledRoads">Names of the tolled roads it uses.</param>
+/// <param name="TolledRoads">Names of the tolled roads a measured route reported.</param>
+/// <param name="TollRoadOverrideIds">Toll roads to charge whatever the route reported, or null to follow it.</param>
 public record PropertyDriveTimeRequest(
     double? Minutes,
     double? Miles = null,
-    IReadOnlyList<string>? TolledRoads = null);
+    IReadOnlyList<string>? TolledRoads = null,
+    IReadOnlyList<int>? TollRoadOverrideIds = null);

@@ -60,8 +60,10 @@ public static class PropertyScorer
 
         foreach (var destination in destinations)
         {
-            var mine = property.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id)?.Minutes;
-            var theirs = baseline?.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id)?.Minutes;
+            // The adjusted minutes are what the drive is reckoned to take, so they are what a
+            // saving is weighed in.
+            var mine = property.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id)?.AdjustedMinutes;
+            var theirs = baseline?.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id)?.AdjustedMinutes;
 
             var points = mine is { } minutes && theirs is { } current
                 ? (decimal)(current - minutes) * settings.DriveTimePointsPerMinute * destination.Weight

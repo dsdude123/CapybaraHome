@@ -296,6 +296,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         double? miles,
         DriveTimeSource source,
         IReadOnlyList<string>? tolledRoads = null,
+        IReadOnlyList<int>? tollRoadOverrideIds = null,
         CancellationToken cancellationToken = default)
     {
         if (!await context.Properties.AnyAsync(p => p.Id == propertyId, cancellationToken)
@@ -320,6 +321,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             .Where(road => road.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        held.TollRoadOverrideIds = tollRoadOverrideIds?.Distinct().Order().ToList();
         held.Source = source;
         held.MeasuredAt = clock.GetUtcNow();
 
@@ -440,7 +442,16 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             .OrderBy(d => d.Destination!.SortOrder)
             .ThenBy(d => d.DestinationId)
             .Select(d => new PropertyDriveTimeView(
-                d.DestinationId, d.Destination!.Name, d.Minutes, d.Miles, d.TolledRoads, d.Source, d.MeasuredAt))
+                d.DestinationId,
+                d.Destination!.Name,
+                d.Minutes,
+                d.Miles,
+                d.TolledRoads,
+                d.Source,
+                d.MeasuredAt,
+                // Only an estimate is stretched: a time typed in by hand is already what the drive took.
+                d.Source == DriveTimeSource.Measured ? d.Minutes * d.Destination!.DriveTimeMultiplier : d.Minutes,
+                d.TollRoadOverrideIds))
             .ToList(),
         property.Priorities
             .OrderBy(m => m.Priority!.SortOrder)

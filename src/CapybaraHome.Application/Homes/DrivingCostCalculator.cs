@@ -100,9 +100,16 @@ public static class DrivingCostCalculator
                 missing.Add(destination.Name);
             }
 
+            // A drive can be marked as crossing toll roads the measured route did not use, for a
+            // route taken in practice; those marks then stand in for what the route reported.
             // Two names on one route can both belong to the same toll, which is still paid once.
-            var tolls = tollRoads.Where(toll => tolled.Any(toll.Prices)).ToList();
-            var unpriced = tolled.Where(road => !tollRoads.Any(toll => toll.Prices(road))).ToList();
+            var tolls = drive?.TollRoadOverrideIds is { } chosen
+                ? tollRoads.Where(toll => chosen.Contains(toll.Id)).ToList()
+                : tollRoads.Where(toll => tolled.Any(toll.Prices)).ToList();
+
+            var unpriced = drive?.TollRoadOverrideIds is null
+                ? tolled.Where(road => !tollRoads.Any(toll => toll.Prices(road))).ToList()
+                : [];
 
             var trips = destination.RoundTripsPerWeek;
 

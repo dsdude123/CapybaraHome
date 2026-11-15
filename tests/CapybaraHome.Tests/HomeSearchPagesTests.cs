@@ -872,6 +872,159 @@ public class HomeSearchPagesTests
     }
 
     [Fact]
+    public async Task A_toll_road_is_ticked_against_a_drive_and_the_route_hands_over()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        var bridge = await TollRoadAsync(app, "520", 4.50m);
+        var tunnel = await TollRoadAsync(app, "99", 2.25m);
+
+        // A route that crosses nothing tolled: both boxes start clear and nothing is charged.
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, []);
+        }
+
+        var fresh = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Matches($"id=\"toll-{work.Id}-{bridge.Id}\"[^>]*(?!checked)", fresh);
+        Assert.Contains("Ticked from the measured route.", WebUtility.HtmlDecode(fresh));
+        Assert.DoesNotContain("$27.00", fresh);
+
+        // He takes the tolled way in practice, so he ticks it.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+            new($"toll-{work.Id}", bridge.Id.ToString()),
+        ]);
+
+        var marked = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("$27.00", marked);
+
+        // Ticking a box is not retyping the time, so the drive is still a measured one.
+        Assert.Equal(DriveTimeSource.Measured, (await OneDriveAsync(app, property.Id)).Source);
+        Assert.Contains("Marked by hand, so the measured route no longer decides.", marked);
+        Assert.Equal([bridge.Id], (await OneDriveAsync(app, property.Id)).TollRoadOverrideIds);
+
+        // Both of them, to prove the second box works as well as the first.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+            new($"toll-{work.Id}", bridge.Id.ToString()),
+            new($"toll-{work.Id}", tunnel.Id.ToString()),
+        ]);
+
+        Assert.Equal([bridge.Id, tunnel.Id], (await OneDriveAsync(app, property.Id)).TollRoadOverrideIds);
+        Assert.Contains("$40.50", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
+
+        // Clearing every box where the route found none of them is the route's own answer, so the
+        // marks come off and a later measurement counts again.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+        ]);
+
+        var handedBack = await OneDriveAsync(app, property.Id);
+        Assert.Null(handedBack.TollRoadOverrideIds);
+        Assert.DoesNotContain("$27.00", await client.GetStringAsync($"/homes/{property.Id}"));
+    }
+
+    [Fact]
+    public async Task Ticks_that_match_the_route_leave_it_in_charge()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        var bridge = await TollRoadAsync(app, "520", 4.50m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"]);
+        }
+
+        // The box the route ticked is left as it is, so the route keeps the drive.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "22"),
+            new($"miles-{work.Id}", "10"),
+            new($"toll-{work.Id}", bridge.Id.ToString()),
+        ]);
+
+        var drive = await OneDriveAsync(app, property.Id);
+        Assert.Null(drive.TollRoadOverrideIds);
+        Assert.Equal(["WA 520"], drive.TolledRoads);
+        Assert.Contains("$27.00", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
+
+        // Unticking it is a mark, and the charge goes with it.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "22"),
+            new($"miles-{work.Id}", "10"),
+        ]);
+
+        Assert.Empty((await OneDriveAsync(app, property.Id)).TollRoadOverrideIds!);
+        Assert.DoesNotContain("$27.00", await client.GetStringAsync($"/homes/{property.Id}"));
+    }
+
+    [Fact]
+    public async Task A_measured_drive_is_stretched_by_the_destinations_multiplier()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+
+        await PostAsync(client, "/homes/settings", $"destination-{work.Id}",
+            new() { ["action"] = "save", ["name"] = "Work", ["trips"] = "3", ["multiplier"] = "1.25" });
+
+        Assert.Equal(1.25d, (await DestinationsAsync(app)).Single().DriveTimeMultiplier);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, []);
+        }
+
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("20 min measured \u00d71.25", page);
+        Assert.Contains("= 25 min counted", page);
+
+        // The list shows the stretched drive too, since that is what the score is weighed in.
+        Assert.Contains("25 min", WebUtility.HtmlDecode(await client.GetStringAsync("/homes")));
+
+        // Saving the form without touching the numbers leaves the measurement, and the stretch,
+        // where they were.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+        ]);
+
+        Assert.Contains("= 25 min counted", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
+
+        // Typing a different time makes it his own observation, which is never stretched.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "32"),
+            new($"miles-{work.Id}", "10"),
+        ]);
+
+        var typed = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("typed in", typed);
+        Assert.DoesNotContain("measured \u00d71.25", typed);
+    }
+
+    [Fact]
     public async Task The_credit_still_comes_off_the_tolls_with_no_car_to_cost_the_fuel_in()
     {
         await using var app = await AppFactory.CreateAsync();
@@ -984,6 +1137,13 @@ public class HomeSearchPagesTests
     {
         using var scope = app.Services.CreateScope();
         return (await scope.ServiceProvider.GetRequiredService<PropertyService>().ListAsync()).Single();
+    }
+
+    private static async Task<PropertyDriveTimeView> OneDriveAsync(AppFactory app, int propertyId)
+    {
+        using var scope = app.Services.CreateScope();
+        return (await scope.ServiceProvider.GetRequiredService<PropertyService>().GetAsync(propertyId))!
+            .DriveTimes.Single();
     }
 
     private static async Task<SearchDestinationView> DestinationAsync(

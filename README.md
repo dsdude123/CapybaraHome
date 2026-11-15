@@ -123,6 +123,11 @@ nothing is scored until you fill them in:
 - **Points per amenity**, **per pro** and **off per con**.
 - Each priority carries its own points, earned by a property you mark as meeting it.
 
+A destination can also carry a drive time multiplier, for a commute the routing service reckons
+shorter than the traffic you meet. It stretches every measured drive to that destination, across
+every property, and the stretched minutes are what the page shows and the score weighs; a time
+typed in by hand is an observation rather than an estimate, so it is never multiplied.
+
 Fees, size and drive times are differences, so they need a property ticked as *This is where I live
 now*; amenities, pros, cons and priorities stand on their own. A drive only scores where both
 ends are known, so a destination you have not measured for both places counts for nothing
@@ -150,9 +155,13 @@ typed in beside the minutes. A measured route also names the tolled roads it use
 OpenRouteService marks from OpenStreetMap's toll tags without a price. A toll road under
 settings prices every tolled road whose name contains what you type, so `520` covers the
 SR 520 bridge, and each crossing is charged its peak toll in both directions. A tolled road
-the route used that nothing prices yet is named on the property's page. Tolls come only from
-a measured route, so a drive typed in by hand carries none. Driving cost is shown, not scored — it is not part
-of the points.
+the route used that nothing prices yet is named on the property's page.
+
+Each drive on a property's page carries a tick box per toll road. Left alone they follow the
+measured route; tick one the route did not use — the tolled way you would take in practice,
+for much the same time — and the ticks decide instead, for that drive, measurement or no
+measurement. Match them back to the route and it takes the drive over again. Driving cost is
+shown, not scored — it is not part of the points.
 
 Pictures are kept as files rather than in the database, so an export stays a readable
 document. `Photos__Path` says where, `/data/photos` in the container.

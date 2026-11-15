@@ -240,6 +240,13 @@ else
                         {
                             <span class="muted">— @(held.Source == DriveTimeSource.Measured ? "measured" : "typed in")</span>
                         }
+                        @if (held is { IsAdjusted: true })
+                        {
+                            <span class="muted">
+                                — @Minutes(held.Minutes) measured @Factor(destination.DriveTimeMultiplier)
+                                = @Minutes(held.AdjustedMinutes) counted
+                            </span>
+                        }
                     </p>
                     <div class="filters">
                         <div class="field">
@@ -256,6 +263,26 @@ else
                     @if (held is { TolledRoads.Count: > 0 })
                     {
                         <p class="task-meta">Tolled roads on the route: @string.Join(", ", held.TolledRoads)</p>
+                    }
+                    @if (tollRoads.Count > 0)
+                    {
+                        <div class="choice-line">
+                            <span class="muted">Charge these toll roads</span>
+                            @foreach (var toll in tollRoads)
+                            {
+                                <label for="toll-@destination.Id-@toll.Id">
+                                    <input id="toll-@destination.Id-@toll.Id" type="checkbox"
+                                           name="toll-@destination.Id" value="@toll.Id"
+                                           checked="@Charged(held, toll)" />
+                                    @toll.Road
+                                </label>
+                            }
+                        </div>
+                        <p class="task-meta muted">
+                            @(held?.TollRoadOverrideIds is null
+                                ? "Ticked from the measured route. Tick one the route missed and that choice stands instead, measure or no measure."
+                                : "Marked by hand, so the measured route no longer decides. Match the ticks to the route to hand it back.")
+                        </p>
                     }
                 }
                 <div class="row">
@@ -531,6 +558,7 @@ else
     private IReadOnlyList<SearchDestinationView> destinations = [];
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
+    private IReadOnlyList<TollRoadView> tollRoads = [];
     private PropertyDrivingCost? driving;
     private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private decimal priorityPoints;
@@ -561,6 +589,7 @@ else
         destinations = await Search.ListDestinationsAsync();
         priorities = await Search.ListPrioritiesAsync();
         vehicles = await Search.ListVehiclesAsync();
+        tollRoads = await Search.ListTollRoadsAsync();
         settings = await Search.GetSettingsAsync();
         priorityPoints = priorities.Sum(p => Math.Abs(p.Points));
     }
@@ -599,11 +628,17 @@ else
                     ? typed
                     : (double?)null;
 
-                // Tolls come only from a measured route, so retyping the time keeps the ones it found.
-                var tolled = property!.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id)?.TolledRoads;
+                var held = property!.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id);
 
+                // Leaving the numbers as they are and ticking a toll road does not turn a measured
+                // drive into a typed one, which would take its multiplier off as well.
+                var source = held is not null && Same(held.Minutes, minutes) && Same(held.Miles, miles)
+                    ? held.Source
+                    : DriveTimeSource.Manual;
+
+                // Tolls come from the measured route, so retyping the time keeps the ones it found.
                 await Properties.SetDriveTimeAsync(
-                    Id, destination.Id, minutes, miles, DriveTimeSource.Manual, tolled);
+                    Id, destination.Id, minutes, miles, source, held?.TolledRoads, Marked(held, destination.Id));
             }
             else
             {
@@ -700,6 +735,49 @@ else
             ? (known > 0 ? "+" : known < 0 ? "\u2212" : string.Empty)
                 + Math.Abs(known).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " sq ft"
             : "\u2014";
+
+    // Which toll roads the drive is charged: the ones marked by hand, or the ones the measured
+    // route named.
+    private bool Charged(PropertyDriveTimeView? held, TollRoadView toll) =>
+        held?.TollRoadOverrideIds is { } chosen
+            ? chosen.Contains(toll.Id)
+            : held is not null && held.TolledRoads.Any(toll.Prices);
+
+    // Ticks matching the route exactly leave the route in charge, so a later measurement still
+    // counts; anything else is his own mark and stands.
+    private IReadOnlyList<int>? Marked(PropertyDriveTimeView? held, int destinationId)
+    {
+        if (tollRoads.Count == 0 || HttpContext is null)
+        {
+            return held?.TollRoadOverrideIds;
+        }
+
+        var ticked = HttpContext.Request.Form[$"toll-{destinationId}"]
+            .Select(value => int.TryParse(value, out var id) ? id : 0)
+            .Where(id => tollRoads.Any(toll => toll.Id == id))
+            .Distinct()
+            .Order()
+            .ToList();
+
+        var fromRoute = tollRoads
+            .Where(toll => held is not null && held.TolledRoads.Any(toll.Prices))
+            .Select(toll => toll.Id)
+            .Order()
+            .ToList();
+
+        return ticked.SequenceEqual(fromRoute) ? null : ticked;
+    }
+
+    private static bool Same(double? held, double? posted) =>
+        held is null
+            ? posted is null
+            : posted is not null && Math.Abs(held.Value - posted.Value) < 0.005d;
+
+    private static string Minutes(double value) =>
+        value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " min";
+
+    private static string Factor(double value) =>
+        "\u00d7" + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string Points(decimal value) =>
         (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);

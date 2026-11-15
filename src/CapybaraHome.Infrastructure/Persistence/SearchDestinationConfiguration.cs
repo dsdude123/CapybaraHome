@@ -14,5 +14,9 @@ public class SearchDestinationConfiguration : IEntityTypeConfiguration<SearchDes
         builder.Property(d => d.Address).HasMaxLength(1000);
         builder.Property(d => d.Weight).HasConversion<double>();
         builder.Property(d => d.CarpoolCreditPerDay).HasConversion<double>();
+
+        // One, not zero: a destination that existed before the column did multiplies its drives by
+        // one, which leaves them as measured.
+        builder.Property(d => d.DriveTimeMultiplier).HasDefaultValue(1d);
     }
 }
