@@ -16,6 +16,10 @@ public class DriveTimeMeasurerTests
     { "routes": [ { "summary": { "distance": 12400.0, "duration": 1110.0 } } ] }
     """;
 
+    private const string NoTimeRoute = """
+    { "routes": [ { "summary": { "distance": 0.0, "duration": 0.0 } } ] }
+    """;
+
     [Fact]
     public async Task A_measurement_places_both_ends_and_records_the_drive()
     {
@@ -140,6 +144,24 @@ public class DriveTimeMeasurerTests
 
         Assert.Equal(0, outcome!.Measured);
         Assert.Contains("no road route", outcome.Problems.Single());
+    }
+
+    [Fact]
+    public async Task A_route_of_no_time_at_all_is_reported_rather_than_saved()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var http = new FakeHttp().Reply(OnePlace).Reply(OnePlace).Reply(NoTimeRoute);
+        var (measurer, properties, search) = Services(db, http);
+
+        var property = await properties.CreateAsync(new CreatePropertyRequest("Candidate", Address: "1221 1st Ave"));
+        await search.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+
+        var outcome = await measurer.MeasureAsync(property.Id);
+
+        Assert.Equal(0, outcome!.Measured);
+        Assert.Contains("Work: ", outcome.Problems.Single());
+        Assert.Contains("no time at all", outcome.Problems.Single());
+        Assert.Empty((await properties.GetAsync(property.Id))!.DriveTimes);
     }
 
     [Fact]

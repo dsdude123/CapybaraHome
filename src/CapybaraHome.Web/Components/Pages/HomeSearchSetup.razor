@@ -14,7 +14,8 @@
     <p class="muted">
         Fees, size and drive times score as the difference from your current home: a candidate that
         is cheaper, bigger or closer earns points, one that is dearer, smaller or further loses them. Every weight
-        starts at zero, which is the same as switching that part of the score off.
+        starts at zero, which is the same as switching that part of the score off. What a month's
+        driving costs scores at the points a dollar a month, on a line of its own.
     </p>
 
     <form method="post" @formname="home-weights" @onsubmit="SaveWeightsAsync" class="stack">
@@ -94,10 +95,13 @@
     <p class="muted">
         Where you drive to. The weight is how much that drive counts next to the others, so work,
         driven to every day, is worth more than one. The round trips a week are what the driving
-        cost counts, so a three-day work week is three, and the carpool credit is taken off for
-        each of those days. The drive time multiplier stretches every measured drive to this
-        destination, for a commute the routing service reckons shorter than the traffic you meet;
-        one leaves it as measured, and a time typed in by hand is never multiplied.
+        cost counts, so a three-day work week is three and somewhere visited every three weeks is
+        0.33, and the carpool credit is taken off for each of those days. The car is the one the
+        drive is made in; left averaged, the fuel is what it comes to over every car that has a
+        mileage and a fuel price, which is the one to leave for a drive you take turns at. The
+        drive time multiplier stretches every drive to this destination, measured or typed in, for
+        a commute the routing service reckons shorter than the traffic you meet; one leaves the
+        times alone.
     </p>
 
     @if (destinations.Count == 0)
@@ -127,7 +131,7 @@
                             </div>
                             <div class="field">
                                 <label for="destination-trips-@destination.Id">Round trips a week</label>
-                                <input id="destination-trips-@destination.Id" type="number" step="1" min="0" name="trips" value="@destination.RoundTripsPerWeek" />
+                                <input id="destination-trips-@destination.Id" type="number" step="0.01" min="0" name="trips" value="@Trips(destination.RoundTripsPerWeek)" />
                             </div>
                             <div class="field">
                                 <label for="destination-carpool-@destination.Id">Carpool credit a day</label>
@@ -136,6 +140,16 @@
                             <div class="field">
                                 <label for="destination-multiplier-@destination.Id">Drive time multiplier</label>
                                 <input id="destination-multiplier-@destination.Id" type="number" step="0.05" min="0" name="multiplier" value="@Typed(destination.DriveTimeMultiplier)" />
+                            </div>
+                            <div class="field">
+                                <label for="destination-vehicle-@destination.Id">Car</label>
+                                <select id="destination-vehicle-@destination.Id" name="vehicle">
+                                    <option value="" selected="@(destination.VehicleId is null)">Averaged over every car</option>
+                                    @foreach (var vehicle in vehicles)
+                                    {
+                                        <option value="@vehicle.Id" selected="@(destination.VehicleId == vehicle.Id)">@vehicle.Name</option>
+                                    }
+                                </select>
                             </div>
                         </div>
                         <div class="row">
@@ -166,7 +180,7 @@
             </div>
             <div class="field">
                 <label for="new-destination-trips">Round trips a week</label>
-                <input id="new-destination-trips" type="number" step="1" min="0" name="trips" value="@destinationTrips" />
+                <input id="new-destination-trips" type="number" step="0.01" min="0" name="trips" value="@destinationTrips" />
             </div>
             <div class="field">
                 <label for="new-destination-carpool">Carpool credit a day</label>
@@ -175,6 +189,16 @@
             <div class="field">
                 <label for="new-destination-multiplier">Drive time multiplier</label>
                 <input id="new-destination-multiplier" type="number" step="0.05" min="0" name="multiplier" value="@destinationMultiplier" placeholder="1" />
+            </div>
+            <div class="field">
+                <label for="new-destination-vehicle">Car</label>
+                <select id="new-destination-vehicle" name="vehicle">
+                    <option value="" selected="@(destinationVehicle is null)">Averaged over every car</option>
+                    @foreach (var vehicle in vehicles)
+                    {
+                        <option value="@vehicle.Id" selected="@(destinationVehicle == vehicle.Id.ToString())">@vehicle.Name</option>
+                    }
+                </select>
             </div>
         </div>
         <div class="row">
@@ -412,6 +436,7 @@
     private string? destinationTrips;
     private string? destinationCarpool;
     private string? destinationMultiplier;
+    private string? destinationVehicle;
     private string? tollRoad;
     private string? tollPrice;
     private string? tollError;
@@ -506,6 +531,7 @@
         destinationTrips = form["trips"];
         destinationCarpool = form["carpool"];
         destinationMultiplier = form["multiplier"];
+        destinationVehicle = form["vehicle"];
 
         try
         {
@@ -515,7 +541,8 @@
                 PropertyRows.Money(destinationWeight) ?? 1m,
                 Trips(destinationTrips),
                 PropertyRows.Money(destinationCarpool) ?? 0m,
-                Multiplier(destinationMultiplier)));
+                Multiplier(destinationMultiplier),
+                Car(destinationVehicle)));
 
             destinationName = null;
             destinationAddress = null;
@@ -523,6 +550,7 @@
             destinationTrips = null;
             destinationCarpool = null;
             destinationMultiplier = null;
+            destinationVehicle = null;
             destinationError = null;
         }
         catch (ArgumentException ex)
@@ -557,7 +585,8 @@
                 PropertyRows.Money(form["weight"]) ?? 1m,
                 Trips(form["trips"]),
                 PropertyRows.Money(form["carpool"]) ?? 0m,
-                Multiplier(form["multiplier"])));
+                Multiplier(form["multiplier"]),
+                Car(form["vehicle"])));
 
             destinationError = null;
         }
@@ -748,10 +777,20 @@
         await LoadAsync();
     }
 
-    private static int Trips(string? posted) =>
-        int.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var trips) && trips > 0
+    // Fractions are allowed: somewhere visited every three weeks is a third of a round trip.
+    private static decimal Trips(string? posted) =>
+        decimal.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var trips) && trips > 0m
             ? trips
-            : 0;
+            : 0m;
+
+    private static string Trips(decimal value) =>
+        value == 0m ? string.Empty : value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    // An empty pick leaves the drive shared out over every car that can be costed.
+    private static int? Car(string? posted) =>
+        int.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var id) && id > 0
+            ? id
+            : null;
 
     // An empty box, or anything that is not a factor, leaves the measured time alone.
     private static double Multiplier(string? posted) =>

@@ -474,8 +474,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 d.TolledRoads,
                 d.Source,
                 d.MeasuredAt,
-                // Only an estimate is stretched: a time typed in by hand is already what the drive took.
-                d.Source == DriveTimeSource.Measured ? d.Minutes * d.Destination!.DriveTimeMultiplier : d.Minutes,
+                d.Minutes * d.Destination!.DriveTimeMultiplier,
                 d.TollRoadOverrideIds))
             .ToList(),
         property.Priorities

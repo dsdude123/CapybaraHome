@@ -269,6 +269,45 @@ public class HomeSearchServiceTests
         var none = await service.UpdateDestinationAsync(
             work.Id, new SearchDestinationRequest("Work", "400 Broad St", 3m, -4));
         Assert.Equal(0, none!.RoundTripsPerWeek);
+
+        // Somewhere visited every third week is a third of a round trip.
+        var parents = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", "400 Broad St", 3m, 0.33m));
+        Assert.Equal(0.33m, parents!.RoundTripsPerWeek);
+        Assert.Equal(0.33m, (await service.ListDestinationsAsync()).Single().RoundTripsPerWeek);
+    }
+
+    [Fact]
+    public async Task A_destination_keeps_the_car_its_drive_is_made_in_or_none_to_average_them()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var car = await service.CreateVehicleAsync(new VehicleRequest("The hatchback", 30d, 4.50m));
+
+        var parents = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Parents", VehicleId: car.Id));
+        Assert.Equal(car.Id, parents.VehicleId);
+
+        // Nothing named is the drive shared out over every car.
+        var work = await service.CreateDestinationAsync(new SearchDestinationRequest("Work"));
+        Assert.Null(work.VehicleId);
+
+        var shared = await service.UpdateDestinationAsync(
+            parents.Id, new SearchDestinationRequest("Parents", VehicleId: null));
+        Assert.Null(shared!.VehicleId);
+
+        // A car that does not exist is no car at all rather than a failed save.
+        var invented = await service.UpdateDestinationAsync(
+            parents.Id, new SearchDestinationRequest("Parents", VehicleId: 404));
+        Assert.Null(invented!.VehicleId);
+
+        // Losing the car leaves the drive shared out instead of deleting it.
+        await service.UpdateDestinationAsync(parents.Id, new SearchDestinationRequest("Parents", VehicleId: car.Id));
+        Assert.True(await service.DeleteVehicleAsync(car.Id));
+
+        var orphaned = (await service.ListDestinationsAsync()).Single(d => d.Id == parents.Id);
+        Assert.Null(orphaned.VehicleId);
     }
 
     [Fact]

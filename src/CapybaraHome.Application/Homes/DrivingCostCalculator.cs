@@ -6,6 +6,9 @@ namespace CapybaraHome.Application.Homes;
 /// <param name="Miles">How far the drive is one way, or null when it is not known.</param>
 /// <param name="RoundTripsPerWeek">How many round trips a week are driven to it.</param>
 /// <param name="MilesPerWeek">The round trips together, in miles.</param>
+/// <param name="Cars">The cars the fuel is reckoned in: the one chosen, or every one that can be costed.</param>
+/// <param name="GallonsPerWeek">Gallons the week's trips burn, averaged over those cars.</param>
+/// <param name="FuelPerWeek">What those gallons cost.</param>
 /// <param name="Tolls">The toll roads the drive crosses.</param>
 /// <param name="TollsPerWeek">Those tolls over the week's round trips, paid each way.</param>
 /// <param name="CarpoolCreditPerWeek">What the week's days there pay back.</param>
@@ -14,8 +17,11 @@ public record DrivingCostLine(
     int DestinationId,
     string Name,
     double? Miles,
-    int RoundTripsPerWeek,
+    decimal RoundTripsPerWeek,
     double MilesPerWeek,
+    IReadOnlyList<string> Cars,
+    double GallonsPerWeek,
+    decimal FuelPerWeek,
     IReadOnlyList<TollRoadView> Tolls,
     decimal TollsPerWeek,
     decimal CarpoolCreditPerWeek,
@@ -23,55 +29,53 @@ public record DrivingCostLine(
 {
     /// <summary>The week's tolls with the carpool credit taken off, which is what the drive is owed.</summary>
     public decimal TollsLessCreditPerWeek => TollsPerWeek - CarpoolCreditPerWeek;
-}
 
-/// <summary>What the week's driving costs in one car.</summary>
-/// <param name="VehicleId">The car.</param>
-/// <param name="Name">What the car is called.</param>
-/// <param name="GallonsPerWeek">Gallons the week's driving burns.</param>
-/// <param name="FuelPerWeek">What those gallons cost.</param>
-/// <param name="WeeklyCost">The fuel and the tolls, less the carpool credit.</param>
-/// <param name="MonthlyCost">The same over an average month.</param>
-public record VehicleDrivingCost(
-    int VehicleId,
-    string Name,
-    double GallonsPerWeek,
-    decimal FuelPerWeek,
-    decimal WeeklyCost,
-    decimal MonthlyCost);
+    /// <summary>The fuel and the tolls, less the carpool credit.</summary>
+    public decimal WeeklyCost => FuelPerWeek + TollsLessCreditPerWeek;
+
+    /// <summary>Whether the fuel is shared out over every car rather than charged to one.</summary>
+    public bool IsAveraged => Cars.Count > 1;
+}
 
 /// <summary>What the usual week's driving from one property costs.</summary>
 /// <param name="MilesPerWeek">Miles a week, over every destination.</param>
+/// <param name="GallonsPerWeek">Gallons a week, over every destination.</param>
+/// <param name="FuelPerWeek">What those gallons cost.</param>
 /// <param name="TollsPerWeek">Tolls a week, over every destination.</param>
 /// <param name="CarpoolCreditPerWeek">Carpool credit a week, over every destination.</param>
 /// <param name="Lines">Where the week goes, one line per destination.</param>
-/// <param name="Vehicles">The cost in each car.</param>
 /// <param name="MissingMiles">Destinations driven to whose distance is not known.</param>
+/// <param name="MissingCars">Destinations driven to with no car that can be costed.</param>
 public record PropertyDrivingCost(
     double MilesPerWeek,
+    double GallonsPerWeek,
+    decimal FuelPerWeek,
     decimal TollsPerWeek,
     decimal CarpoolCreditPerWeek,
     IReadOnlyList<DrivingCostLine> Lines,
-    IReadOnlyList<VehicleDrivingCost> Vehicles,
-    IReadOnlyList<string> MissingMiles)
+    IReadOnlyList<string> MissingMiles,
+    IReadOnlyList<string> MissingCars)
 {
     /// <summary>Whether there is a week's driving to cost at all.</summary>
     public bool AnyDriving => MilesPerWeek > 0d || TollsPerWeek > 0m || CarpoolCreditPerWeek > 0m;
 
-    /// <summary>The cheapest car's monthly cost, which is the one figure worth a single line.</summary>
-    public decimal? LowestMonthlyCost =>
-        Vehicles.Count == 0 ? null : Vehicles.Min(v => v.MonthlyCost);
-
-    /// <summary>The tolls with the carpool credit taken off, which is the same in every car.</summary>
+    /// <summary>The tolls with the carpool credit taken off, which no car changes.</summary>
     public decimal TollsLessCreditPerWeek => TollsPerWeek - CarpoolCreditPerWeek;
 
     /// <summary>The same over an average month.</summary>
     public decimal MonthlyTollsLessCredit => TollsLessCreditPerWeek * DrivingCostCalculator.WeeksPerMonth;
+
+    /// <summary>The fuel and the tolls, less the carpool credit.</summary>
+    public decimal WeeklyCost => FuelPerWeek + TollsLessCreditPerWeek;
+
+    /// <summary>What a month of that driving costs, which is the figure the score weighs.</summary>
+    public decimal MonthlyCost => WeeklyCost * DrivingCostCalculator.WeeksPerMonth;
 }
 
 /// <summary>
 /// Works out what a week of the usual driving costs: the fuel, from the distance of each drive,
-/// how many round trips a week are made to it, and each car's mileage and fuel price; the tolls on
+/// how many round trips a week are made to it, and the mileage and fuel price of the car it is
+/// made in — averaged over every car that can be costed where whoever drives varies; the tolls on
 /// the roads each drive crosses, paid each way; and less what carpooling there pays back a day.
 /// </summary>
 public static class DrivingCostCalculator
@@ -87,9 +91,12 @@ public static class DrivingCostCalculator
         IReadOnlyList<TollRoadView> tollRoads)
     {
         var lines = new List<DrivingCostLine>();
-        var missing = new List<string>();
+        var missingMiles = new List<string>();
+        var missingCars = new List<string>();
 
-        foreach (var destination in destinations.Where(d => d.RoundTripsPerWeek > 0))
+        var costable = vehicles.Where(v => v.CanCost).ToList();
+
+        foreach (var destination in destinations.Where(d => d.RoundTripsPerWeek > 0m))
         {
             var drive = property.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id);
             var miles = drive?.Miles;
@@ -97,7 +104,7 @@ public static class DrivingCostCalculator
 
             if (miles is null)
             {
-                missing.Add(destination.Name);
+                missingMiles.Add(destination.Name);
             }
 
             // A drive can be marked as crossing toll roads the measured route did not use, for a
@@ -112,34 +119,47 @@ public static class DrivingCostCalculator
                 : [];
 
             var trips = destination.RoundTripsPerWeek;
+            var milesPerWeek = (miles ?? 0d) * 2d * (double)trips;
+
+            // A drive with no car of its own is shared out: whoever drives varies, so the fuel is
+            // what it averages over the cars, rather than any one of them.
+            var cars = destination.VehicleId is { } carId
+                ? costable.Where(v => v.Id == carId).ToList()
+                : costable;
+
+            if (cars.Count == 0)
+            {
+                missingCars.Add(destination.Name);
+            }
+
+            var gallons = cars.Count == 0 ? 0d : cars.Average(car => milesPerWeek / car.MilesPerGallon);
+            var fuel = cars.Count == 0
+                ? 0m
+                : cars.Average(car => (decimal)(milesPerWeek / car.MilesPerGallon) * car.FuelPricePerGallon);
 
             lines.Add(new DrivingCostLine(
                 destination.Id,
                 destination.Name,
                 miles,
                 trips,
-                (miles ?? 0d) * 2d * trips,
+                milesPerWeek,
+                cars.Select(car => car.Name).ToList(),
+                gallons,
+                fuel,
                 tolls,
                 tolls.Sum(t => t.PeakToll) * 2m * trips,
                 destination.CarpoolCreditPerDay * trips,
                 unpriced));
         }
 
-        var milesPerWeek = lines.Sum(l => l.MilesPerWeek);
-        var tollsPerWeek = lines.Sum(l => l.TollsPerWeek);
-        var creditPerWeek = lines.Sum(l => l.CarpoolCreditPerWeek);
-
-        var costs = vehicles
-            .Where(v => v.CanCost)
-            .Select(vehicle =>
-            {
-                var gallons = milesPerWeek / vehicle.MilesPerGallon;
-                var fuel = (decimal)gallons * vehicle.FuelPricePerGallon;
-                var weekly = fuel + tollsPerWeek - creditPerWeek;
-                return new VehicleDrivingCost(vehicle.Id, vehicle.Name, gallons, fuel, weekly, weekly * WeeksPerMonth);
-            })
-            .ToList();
-
-        return new PropertyDrivingCost(milesPerWeek, tollsPerWeek, creditPerWeek, lines, costs, missing);
+        return new PropertyDrivingCost(
+            lines.Sum(l => l.MilesPerWeek),
+            lines.Sum(l => l.GallonsPerWeek),
+            lines.Sum(l => l.FuelPerWeek),
+            lines.Sum(l => l.TollsPerWeek),
+            lines.Sum(l => l.CarpoolCreditPerWeek),
+            lines,
+            missingMiles,
+            missingCars);
     }
 }

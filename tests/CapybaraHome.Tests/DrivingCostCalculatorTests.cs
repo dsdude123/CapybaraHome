@@ -29,14 +29,16 @@ public class DrivingCostCalculatorTests
             [Vehicle(1, "Thirsty", mpg: 20d, price: 4m), Vehicle(2, "Thrifty", mpg: 50d, price: 4m)],
             []);
 
-        var thirsty = cost.Vehicles.Single(v => v.VehicleId == 1);
-        var thrifty = cost.Vehicles.Single(v => v.VehicleId == 2);
+        // Sixty miles a week: three gallons in the thirsty one at $12, 1.2 in the thrifty one at
+        // $4.80. With no car named the drive is shared out, so the fuel is the average, $8.40.
+        var line = cost.Lines.Single();
 
-        Assert.Equal(3d, thirsty.GallonsPerWeek);
-        Assert.Equal(12m, thirsty.FuelPerWeek);
-        Assert.Equal(12m, thirsty.WeeklyCost);
-        Assert.Equal(20.80m, thrifty.MonthlyCost, 2);
-        Assert.Equal(thrifty.MonthlyCost, cost.LowestMonthlyCost);
+        Assert.Equal(["Thirsty", "Thrifty"], line.Cars);
+        Assert.True(line.IsAveraged);
+        Assert.Equal(2.1d, line.GallonsPerWeek, 2);
+        Assert.Equal(8.40m, line.FuelPerWeek, 2);
+        Assert.Equal(8.40m, cost.FuelPerWeek, 2);
+        Assert.Equal(36.40m, cost.MonthlyCost, 2);
     }
 
     [Fact]
@@ -48,10 +50,8 @@ public class DrivingCostCalculatorTests
             [Vehicle(1, "Car", mpg: 30d, price: 4.50m)],
             []);
 
-        var vehicle = cost.Vehicles.Single();
-
-        Assert.Equal(9m, vehicle.WeeklyCost, 2);
-        Assert.Equal(39m, vehicle.MonthlyCost, 2);
+        Assert.Equal(9m, cost.WeeklyCost, 2);
+        Assert.Equal(39m, cost.MonthlyCost, 2);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class DrivingCostCalculatorTests
         Assert.Equal(0d, cost.MilesPerWeek);
         Assert.False(cost.AnyDriving);
         Assert.Equal(["Work"], cost.MissingMiles);
-        Assert.Equal(0m, cost.Vehicles.Single().WeeklyCost);
+        Assert.Equal(0m, cost.WeeklyCost);
     }
 
     [Fact]
@@ -90,8 +90,10 @@ public class DrivingCostCalculatorTests
             [Vehicle(1, "No mileage", mpg: 0d, price: 4m), Vehicle(2, "No price", mpg: 30d, price: 0m)],
             []);
 
-        Assert.Empty(cost.Vehicles);
-        Assert.Null(cost.LowestMonthlyCost);
+        Assert.Equal(0m, cost.FuelPerWeek);
+        Assert.Equal(0m, cost.MonthlyCost);
+        Assert.Equal(["Work"], cost.MissingCars);
+        Assert.Empty(cost.Lines.Single().Cars);
     }
 
     [Fact]
@@ -104,8 +106,8 @@ public class DrivingCostCalculatorTests
             []);
 
         Assert.Equal(88d, cost.MilesPerWeek);
-        Assert.Equal(3.52d, cost.Vehicles.Single().GallonsPerWeek, 2);
-        Assert.Equal(14.08m, cost.Vehicles.Single().WeeklyCost, 2);
+        Assert.Equal(3.52d, cost.GallonsPerWeek, 2);
+        Assert.Equal(14.08m, cost.WeeklyCost, 2);
     }
 
     [Fact]
@@ -122,7 +124,7 @@ public class DrivingCostCalculatorTests
         Assert.Equal(["520"], line.Tolls.Select(t => t.Road));
         Assert.Equal(27m, line.TollsPerWeek);
         Assert.Equal(27m, cost.TollsPerWeek);
-        Assert.Equal(36m, cost.Vehicles.Single().WeeklyCost, 2);
+        Assert.Equal(36m, cost.WeeklyCost, 2);
         Assert.Empty(line.UnpricedTolledRoads);
     }
 
@@ -229,8 +231,8 @@ public class DrivingCostCalculatorTests
 
         // $9 of fuel and $27 of tolls, less three days at $5.
         Assert.Equal(15m, cost.CarpoolCreditPerWeek);
-        Assert.Equal(21m, cost.Vehicles.Single().WeeklyCost, 2);
-        Assert.Equal(91m, cost.Vehicles.Single().MonthlyCost, 2);
+        Assert.Equal(21m, cost.WeeklyCost, 2);
+        Assert.Equal(91m, cost.MonthlyCost, 2);
         Assert.Equal(12m, cost.TollsLessCreditPerWeek);
         Assert.Equal(12m, cost.Lines.Single().TollsLessCreditPerWeek);
         Assert.Equal(52m, cost.MonthlyTollsLessCredit, 2);
@@ -245,7 +247,7 @@ public class DrivingCostCalculatorTests
             [],
             [Toll(1, "520", 4.50m)]);
 
-        Assert.Empty(cost.Vehicles);
+        Assert.Equal(0m, cost.FuelPerWeek);
         Assert.Equal(27m, cost.TollsPerWeek);
         Assert.Equal(15m, cost.CarpoolCreditPerWeek);
         Assert.Equal(12m, cost.TollsLessCreditPerWeek);
@@ -274,7 +276,7 @@ public class DrivingCostCalculatorTests
             [Vehicle(1, "Car", mpg: 30d, price: 4.50m)],
             []);
 
-        Assert.True(cost.Vehicles.Single().WeeklyCost < 0m);
+        Assert.True(cost.WeeklyCost < 0m);
     }
 
     [Fact]
@@ -290,6 +292,70 @@ public class DrivingCostCalculatorTests
         Assert.Equal(["Work"], cost.MissingMiles);
     }
 
+    [Fact]
+    public void A_drive_with_a_car_of_its_own_is_costed_in_that_car_alone()
+    {
+        var cars = new List<VehicleView> { Vehicle(1, "Thirsty", 20d, 4m), Vehicle(2, "Thrifty", 50d, 4m) };
+
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d), Drive(2, 10d)]),
+            [
+                Destination(1, "Parents", trips: 3, vehicleId: 1),
+                Destination(2, "Work", trips: 3),
+            ],
+            cars,
+            []);
+
+        var parents = cost.Lines.Single(l => l.DestinationId == 1);
+        var work = cost.Lines.Single(l => l.DestinationId == 2);
+
+        // The parents' drive is his own car's three gallons at $4; the work drive alternates, so
+        // it is the average of $12 and $4.80.
+        Assert.Equal(["Thirsty"], parents.Cars);
+        Assert.False(parents.IsAveraged);
+        Assert.Equal(12m, parents.FuelPerWeek, 2);
+
+        Assert.Equal(["Thirsty", "Thrifty"], work.Cars);
+        Assert.Equal(8.40m, work.FuelPerWeek, 2);
+        Assert.Equal(20.40m, cost.FuelPerWeek, 2);
+        Assert.Empty(cost.MissingCars);
+    }
+
+    [Fact]
+    public void A_drive_whose_car_cannot_be_costed_is_named_rather_than_averaged()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d)]),
+            [Destination(1, "Parents", trips: 1, vehicleId: 1)],
+            [Vehicle(1, "No price", 30d, 0m), Vehicle(2, "Costable", 30d, 4m)],
+            []);
+
+        Assert.Empty(cost.Lines.Single().Cars);
+        Assert.Equal(0m, cost.FuelPerWeek);
+        Assert.Equal(["Parents"], cost.MissingCars);
+    }
+
+    [Fact]
+    public void A_fraction_of_a_round_trip_a_week_costs_that_fraction()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 30d, "WA 520")]),
+            [Destination(1, "Parents", trips: 0.5m, carpool: 4m)],
+            [Vehicle(1, "Car", 30d, 4.50m)],
+            [Toll(1, "520", 4m)]);
+
+        var line = cost.Lines.Single();
+
+        // Half a round trip a week: 30 miles, one gallon at $4.50, one crossing each way at $4,
+        // less half a day's $4 credit.
+        Assert.Equal(0.5m, line.RoundTripsPerWeek);
+        Assert.Equal(30d, cost.MilesPerWeek);
+        Assert.Equal(4.50m, cost.FuelPerWeek, 2);
+        Assert.Equal(4m, cost.TollsPerWeek, 2);
+        Assert.Equal(2m, cost.CarpoolCreditPerWeek, 2);
+        Assert.Equal(6.50m, cost.WeeklyCost, 2);
+    }
+
     private static (int DestinationId, double? Miles, string[] Tolled, int[]? Marked) Drive(
         int destinationId,
         double? miles,
@@ -302,8 +368,9 @@ public class DrivingCostCalculatorTests
         int[] marked,
         params string[] tolled) => (destinationId, miles, tolled, marked);
 
-    private static SearchDestinationView Destination(int id, string name, int trips, decimal carpool = 0m) =>
-        new(id, name, null, 1m, trips, carpool, null, null, id);
+    private static SearchDestinationView Destination(
+        int id, string name, decimal trips, decimal carpool = 0m, int? vehicleId = null) =>
+        new(id, name, null, 1m, trips, carpool, null, null, id, 1d, vehicleId);
 
     private static VehicleView Vehicle(int id, string name, double mpg, decimal price) =>
         new(id, name, mpg, price, id);

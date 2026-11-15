@@ -782,7 +782,7 @@ public class HomeSearchPagesTests
 
         await VehicleAsync(app, "Unpriced", 30d, 0m);
         var noPrice = await client.GetStringAsync($"/homes/{property.Id}");
-        Assert.Contains("None of the cars has both a mileage and a fuel price yet", noPrice);
+        Assert.Contains("The drive to Work has no car with both a mileage and a fuel price", noPrice);
     }
 
     [Fact]
@@ -867,8 +867,8 @@ public class HomeSearchPagesTests
 
         // The credit comes off the tolls on the page, not onto them.
         Assert.DoesNotContain("$42.00", html);
-        Assert.Contains("The tolls less the carpool credit come to $12.00 a week,", html);
-        Assert.Contains("$52.00 a month, whichever car the week is driven in.", html);
+        Assert.Contains("The tolls less the credit are $12.00 of the week,", html);
+        Assert.Contains("$52.00 of the month, whichever car it is driven in.", html);
     }
 
     [Fact]
@@ -1026,7 +1026,78 @@ public class HomeSearchPagesTests
     }
 
     [Fact]
-    public async Task A_measured_drive_is_stretched_by_the_destinations_multiplier()
+    public async Task A_destination_can_be_given_one_car_or_left_averaged_over_them_all()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var parents = await DestinationAsync(app, "Parents", trips: 1);
+        var thirsty = await VehicleAsync(app, "The truck", 15d, 4m);
+        await VehicleAsync(app, "The hatchback", 60d, 4m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, parents.Id, 30d, 30d, DriveTimeSource.Measured, []);
+        }
+
+        // Left averaged: 60 miles a week is 4 gallons in the truck at $16 and 1 in the hatchback
+        // at $4, so $10 between them.
+        var averaged = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("averaged over 2 cars", averaged);
+        Assert.Contains("$10.00", averaged);
+
+        // Set to the truck, the fuel is the truck's alone.
+        await PostAsync(client, "/homes/settings", $"destination-{parents.Id}",
+            new() { ["action"] = "save", ["name"] = "Parents", ["trips"] = "1", ["vehicle"] = thirsty.Id.ToString() });
+
+        Assert.Equal(thirsty.Id, (await DestinationsAsync(app)).Single().VehicleId);
+
+        var named = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("The truck", named);
+        Assert.Contains("$16.00", named);
+
+        // And back to averaged by picking the empty option.
+        await PostAsync(client, "/homes/settings", $"destination-{parents.Id}",
+            new() { ["action"] = "save", ["name"] = "Parents", ["trips"] = "1", ["vehicle"] = string.Empty });
+
+        Assert.Null((await DestinationsAsync(app)).Single().VehicleId);
+        Assert.Contains("averaged over 2 cars", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
+    }
+
+    [Fact]
+    public async Task A_fraction_of_a_round_trip_a_week_is_saved_and_costed()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var parents = await DestinationAsync(app, "Parents", trips: 1);
+        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, parents.Id, 40d, 30d, DriveTimeSource.Measured, []);
+        }
+
+        await PostAsync(client, "/homes/settings", $"destination-{parents.Id}",
+            new() { ["action"] = "save", ["name"] = "Parents", ["trips"] = "0.5" });
+
+        Assert.Equal(0.5m, (await DestinationsAsync(app)).Single().RoundTripsPerWeek);
+
+        // Half a round trip is 30 miles a week, one gallon at $4.50.
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("0.5 \u00d7 30 mi each way", page);
+        Assert.Contains("$4.50", page);
+
+        // The box is filled with the fraction rather than rounded off.
+        Assert.Contains("value=\"0.5\"", await client.GetStringAsync("/homes/settings"));
+    }
+
+    [Fact]
+    public async Task Every_drive_to_a_destination_is_stretched_by_its_multiplier()
     {
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
@@ -1046,7 +1117,7 @@ public class HomeSearchPagesTests
         }
 
         var page = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
-        Assert.Contains("20 min measured \u00d71.25", page);
+        Assert.Contains("20 min \u00d71.25", page);
         Assert.Contains("= 25 min counted", page);
 
         // The list shows the stretched drive too, since that is what the score is weighed in.
@@ -1062,7 +1133,8 @@ public class HomeSearchPagesTests
 
         Assert.Contains("= 25 min counted", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
 
-        // Typing a different time makes it his own observation, which is never stretched.
+        // A time typed in by hand is stretched as well: the routing service coming up short is
+        // the reason to type one in at all.
         await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
         [
             new($"drive-{work.Id}", "32"),
@@ -1071,7 +1143,8 @@ public class HomeSearchPagesTests
 
         var typed = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
         Assert.Contains("typed in", typed);
-        Assert.DoesNotContain("measured \u00d71.25", typed);
+        Assert.Contains("32 min \u00d71.25", typed);
+        Assert.Contains("= 40 min counted", typed);
     }
 
     [Fact]
@@ -1094,8 +1167,8 @@ public class HomeSearchPagesTests
 
         Assert.Contains("No cars yet.", html);
         Assert.Contains("$15.00 off", html);
-        Assert.Contains("The tolls less the carpool credit come to $12.00 a week,", html);
-        Assert.Contains("$52.00 a month, whichever car the week is driven in.", html);
+        Assert.Contains("The tolls less the credit are $12.00 of the week,", html);
+        Assert.Contains("$52.00 of the month, whichever car it is driven in.", html);
         Assert.DoesNotContain("$42.00", html);
     }
 
@@ -1181,6 +1254,41 @@ public class HomeSearchPagesTests
         Assert.Contains("Driving a month", page);
         Assert.Contains("$78 a month driving, over 120 miles a week", page);
         Assert.Contains("$39", page);
+    }
+
+    [Fact]
+    public async Task The_score_carries_a_line_for_what_a_month_of_driving_costs()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
+                .SaveSettingsAsync(new HomeSearchSettingsRequest(MonthlyFeePointsPerDollar: 0.05m));
+        }
+
+        var current = await CreateAsync(app, new CreatePropertyRequest("Now", IsCurrent: true));
+        var candidate = await CreateAsync(app, new CreatePropertyRequest("There"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
+
+        await PostAsync(client, $"/homes/{current.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "40", [$"miles-{work.Id}"] = "20" });
+        await PostAsync(client, $"/homes/{candidate.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "20", [$"miles-{work.Id}"] = "10" });
+
+        // Sixty miles a week fewer at thirty to the gallon and $4.50 a gallon: $9 a week, $39 a
+        // month, which at a twentieth of a point a dollar is a point and a bit.
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{candidate.Id}"));
+
+        Assert.Contains("Driving a month", page);
+        Assert.Contains("$39", page);
+        Assert.Contains("+1.95", page);
+
+        // The current home scores nothing against itself, so the line reads as no difference.
+        Assert.DoesNotContain(
+            "+1.95", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{current.Id}")));
     }
 
     private static async Task<PropertyView> OneAsync(AppFactory app)

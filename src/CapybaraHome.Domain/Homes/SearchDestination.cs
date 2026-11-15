@@ -26,14 +26,24 @@ public class SearchDestination
 
     /// <summary>
     /// How many round trips a week are driven to it, which is what the fuel cost counts. Three
-    /// covers a three-day work week; zero leaves the destination out of the fuel cost.
+    /// covers a three-day work week, a third covers somewhere visited every three weeks, and zero
+    /// leaves the destination out of the fuel cost.
     /// </summary>
-    public int RoundTripsPerWeek { get; set; }
+    public decimal RoundTripsPerWeek { get; set; }
 
     /// <summary>
-    /// What a measured drive to this destination is multiplied by, for a commute the routing
-    /// service reckons shorter than the traffic actually met. One leaves it as measured, and a
-    /// time typed in by hand is never multiplied, being an observation rather than an estimate.
+    /// The car this drive is made in, or null when it is shared out: whoever drives varies, so the
+    /// fuel is averaged over every car that can be costed.
+    /// </summary>
+    public int? VehicleId { get; set; }
+
+    /// <summary>The car named by <see cref="VehicleId"/>.</summary>
+    public Vehicle? Vehicle { get; set; }
+
+    /// <summary>
+    /// What every drive to this destination is multiplied by, for a commute the routing service
+    /// reckons shorter than the traffic actually met. One leaves the times alone, and a time typed
+    /// in by hand is stretched like a measured one.
     /// </summary>
     public double DriveTimeMultiplier { get; set; } = 1d;
 

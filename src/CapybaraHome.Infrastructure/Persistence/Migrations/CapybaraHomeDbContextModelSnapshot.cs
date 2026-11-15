@@ -478,16 +478,21 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("RoundTripsPerWeek")
-                        .HasColumnType("INTEGER");
+                    b.Property<double>("RoundTripsPerWeek")
+                        .HasColumnType("REAL");
 
                     b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("VehicleId")
                         .HasColumnType("INTEGER");
 
                     b.Property<double>("Weight")
                         .HasColumnType("REAL");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("VehicleId");
 
                     b.ToTable("SearchDestinations");
                 });
@@ -1354,6 +1359,16 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchDestination", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Vehicle");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
