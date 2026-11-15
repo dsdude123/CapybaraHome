@@ -24,11 +24,14 @@ public class PropertyDriveTime
     /// <summary>How far the drive is, in miles, when it was measured or typed in.</summary>
     public double? Miles { get; set; }
 
-    /// <summary>
-    /// Names of the tolled roads the drive uses: what a measured route reported, or the toll roads
-    /// ticked against a drive typed in by hand.
-    /// </summary>
+    /// <summary>Names of the tolled roads a measured route reported for the drive.</summary>
     public List<string> TolledRoads { get; set; } = [];
+
+    /// <summary>
+    /// Ids of the toll roads charged for this drive whatever the route reported, for a route taken
+    /// in practice that the measured one did not follow. Null leaves the route's own roads in charge.
+    /// </summary>
+    public List<int>? TollRoadOverrideIds { get; set; }
 
     /// <summary>Whether the time was measured or typed in.</summary>
     public DriveTimeSource Source { get; set; }

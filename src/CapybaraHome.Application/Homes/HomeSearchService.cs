@@ -18,7 +18,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             .ThenBy(d => d.Id)
             .Select(d => new SearchDestinationView(
                 d.Id, d.Name, d.Address, d.Weight, d.RoundTripsPerWeek, d.CarpoolCreditPerDay,
-                d.Latitude, d.Longitude, d.SortOrder))
+                d.Latitude, d.Longitude, d.SortOrder, d.DriveTimeMultiplier))
             .ToListAsync(cancellationToken);
     }
 
@@ -48,6 +48,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             Weight = request.Weight,
             RoundTripsPerWeek = Trips(request.RoundTripsPerWeek),
             CarpoolCreditPerDay = Positive(request.CarpoolCreditPerDay),
+            DriveTimeMultiplier = Multiplier(request.DriveTimeMultiplier),
             SortOrder = (last ?? -1) + 1,
         };
 
@@ -57,7 +58,8 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         return new SearchDestinationView(
             destination.Id, destination.Name, destination.Address, destination.Weight,
             destination.RoundTripsPerWeek, destination.CarpoolCreditPerDay,
-            destination.Latitude, destination.Longitude, destination.SortOrder);
+            destination.Latitude, destination.Longitude, destination.SortOrder,
+            destination.DriveTimeMultiplier);
     }
 
     /// <summary>Renames a destination, or returns null when none has that id.</summary>
@@ -88,13 +90,15 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         destination.Weight = request.Weight;
         destination.RoundTripsPerWeek = Trips(request.RoundTripsPerWeek);
         destination.CarpoolCreditPerDay = Positive(request.CarpoolCreditPerDay);
+        destination.DriveTimeMultiplier = Multiplier(request.DriveTimeMultiplier);
 
         await context.SaveChangesAsync(cancellationToken);
 
         return new SearchDestinationView(
             destination.Id, destination.Name, destination.Address, destination.Weight,
             destination.RoundTripsPerWeek, destination.CarpoolCreditPerDay,
-            destination.Latitude, destination.Longitude, destination.SortOrder);
+            destination.Latitude, destination.Longitude, destination.SortOrder,
+            destination.DriveTimeMultiplier);
     }
 
     /// <summary>Records where a destination is. Returns false when none has that id.</summary>
@@ -438,6 +442,10 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
     private static double Positive(double value) => value > 0d ? value : 0d;
 
     private static decimal Positive(decimal value) => value > 0m ? value : 0m;
+
+    // A multiplier of zero or less would wipe the drive out rather than stretch it, so anything
+    // that is not a sensible factor leaves the measured time alone.
+    private static double Multiplier(double value) => value > 0d ? value : 1d;
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

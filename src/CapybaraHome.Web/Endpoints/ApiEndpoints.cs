@@ -501,7 +501,14 @@ public static class ApiEndpoints
             }
 
             return await service.SetDriveTimeAsync(
-                id, destinationId, request.Minutes.Value, request.Miles, DriveTimeSource.Manual, request.TolledRoads, cancellationToken)
+                    id,
+                    destinationId,
+                    request.Minutes.Value,
+                    request.Miles,
+                    DriveTimeSource.Manual,
+                    request.TolledRoads,
+                    request.TollRoadOverrideIds,
+                    cancellationToken)
                     ? Results.NoContent()
                     : Results.NotFound();
         });

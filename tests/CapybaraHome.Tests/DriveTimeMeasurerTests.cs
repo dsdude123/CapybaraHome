@@ -186,6 +186,30 @@ public class DriveTimeMeasurerTests
         Assert.Null(await measurer.MeasureAsync(404));
     }
 
+    [Fact]
+    public async Task Measuring_again_leaves_the_toll_roads_marked_by_hand_alone()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var http = new FakeHttp().Reply(OneRoute);
+        var (measurer, properties, search) = Services(db, http);
+
+        var property = await properties.CreateAsync(new CreatePropertyRequest("Candidate", Address: "1221 1st Ave"));
+        await properties.UpdateAsync(property.Id, new UpdatePropertyRequest(Latitude: 47.6d, Longitude: -122.3d));
+
+        var destination = await search.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+        await search.PlaceDestinationAsync(destination.Id, 47.7d, -122.4d);
+
+        var toll = await search.CreateTollRoadAsync(new TollRoadRequest("520", 4.50m));
+        await properties.SetDriveTimeAsync(
+            property.Id, destination.Id, 25d, 11d, DriveTimeSource.Manual, null, [toll.Id]);
+
+        Assert.Equal(1, (await measurer.MeasureAsync(property.Id))!.Measured);
+
+        var drive = (await properties.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Equal(18.5d, drive.Minutes);
+        Assert.Equal([toll.Id], drive.TollRoadOverrideIds);
+    }
+
     private static (DriveTimeMeasurer Measurer, PropertyService Properties, HomeSearchService Search) Services(
         TestDatabase db,
         FakeHttp http)

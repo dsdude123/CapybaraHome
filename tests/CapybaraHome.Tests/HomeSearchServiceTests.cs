@@ -224,6 +224,33 @@ public class HomeSearchServiceTests
     }
 
     [Fact]
+    public async Task A_destination_keeps_its_drive_time_multiplier_and_refuses_a_useless_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", DriveTimeMultiplier: 1.25d));
+
+        Assert.Equal(1.25d, work.DriveTimeMultiplier);
+
+        // Nothing typed is one, and so is anything that would wipe the drive out instead of
+        // stretching it.
+        var plain = await service.CreateDestinationAsync(new SearchDestinationRequest("Gym"));
+        Assert.Equal(1d, plain.DriveTimeMultiplier);
+
+        var zeroed = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", DriveTimeMultiplier: 0d));
+        Assert.Equal(1d, zeroed!.DriveTimeMultiplier);
+
+        var negative = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", DriveTimeMultiplier: -2d));
+        Assert.Equal(1d, negative!.DriveTimeMultiplier);
+
+        Assert.Equal(1d, (await service.ListDestinationsAsync()).Single(d => d.Id == work.Id).DriveTimeMultiplier);
+    }
+
+    [Fact]
     public async Task A_destination_keeps_how_many_round_trips_a_week_are_driven_to_it()
     {
         await using var db = await TestDatabase.CreateAsync();

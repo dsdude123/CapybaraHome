@@ -311,6 +311,68 @@ public class PropertyServiceTests
     }
 
     [Fact]
+    public async Task A_measured_drive_is_stretched_by_its_destination_and_a_typed_one_is_not()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+        var search = new HomeSearchService(db.Context, db.Clock);
+
+        var property = await service.CreateAsync(new CreatePropertyRequest("Driven"));
+        var work = await search.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", DriveTimeMultiplier: 1.25d));
+        var gym = await search.CreateDestinationAsync(new SearchDestinationRequest("Gym"));
+
+        await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured);
+        await service.SetDriveTimeAsync(property.Id, gym.Id, 20d, 10d, DriveTimeSource.Measured);
+
+        var drives = (await service.GetAsync(property.Id))!.DriveTimes;
+        var commute = drives.Single(d => d.DestinationId == work.Id);
+
+        Assert.Equal(20d, commute.Minutes);
+        Assert.Equal(25d, commute.AdjustedMinutes);
+        Assert.True(commute.IsAdjusted);
+
+        // A destination with no multiplier of its own leaves the drive where it was.
+        var other = drives.Single(d => d.DestinationId == gym.Id);
+        Assert.Equal(20d, other.AdjustedMinutes);
+        Assert.False(other.IsAdjusted);
+
+        // Typed in by hand is an observation, not an estimate, so it stands as typed.
+        await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual);
+        var typed = (await service.GetAsync(property.Id))!.DriveTimes.Single(d => d.DestinationId == work.Id);
+        Assert.Equal(20d, typed.AdjustedMinutes);
+        Assert.False(typed.IsAdjusted);
+    }
+
+    [Fact]
+    public async Task A_drive_keeps_the_toll_roads_marked_against_it_by_hand()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+        var search = new HomeSearchService(db.Context, db.Clock);
+
+        var property = await service.CreateAsync(new CreatePropertyRequest("Driven"));
+        var work = await search.CreateDestinationAsync(new SearchDestinationRequest("Work"));
+
+        // Nothing marked: the route is left in charge.
+        await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"]);
+        Assert.Null((await service.GetAsync(property.Id))!.DriveTimes.Single().TollRoadOverrideIds);
+
+        await service.SetDriveTimeAsync(
+            property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual, ["WA 520"], [3, 1, 3]);
+
+        var marked = (await service.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Equal([1, 3], marked.TollRoadOverrideIds);
+        Assert.Equal(["WA 520"], marked.TolledRoads);
+
+        // Marking none is a choice too: it charges nothing, where null would follow the route.
+        await service.SetDriveTimeAsync(
+            property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual, ["WA 520"], []);
+
+        Assert.Empty((await service.GetAsync(property.Id))!.DriveTimes.Single().TollRoadOverrideIds!);
+    }
+
+    [Fact]
     public async Task A_drive_to_or_from_something_that_is_not_there_is_not_recorded()
     {
         await using var db = await TestDatabase.CreateAsync();

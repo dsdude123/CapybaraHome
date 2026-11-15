@@ -30,6 +30,13 @@ public class SearchDestination
     /// </summary>
     public int RoundTripsPerWeek { get; set; }
 
+    /// <summary>
+    /// What a measured drive to this destination is multiplied by, for a commute the routing
+    /// service reckons shorter than the traffic actually met. One leaves it as measured, and a
+    /// time typed in by hand is never multiplied, being an observation rather than an estimate.
+    /// </summary>
+    public double DriveTimeMultiplier { get; set; } = 1d;
+
     /// <summary>What each day driven there pays back, such as a carpool credit from work.</summary>
     public decimal CarpoolCreditPerDay { get; set; }
 

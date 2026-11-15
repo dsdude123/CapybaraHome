@@ -61,8 +61,20 @@ public class DriveTimeMeasurer(
                     continue;
                 }
 
+                // A toll road marked by hand stands against the drive itself, so measuring the
+                // route again leaves that mark alone.
+                var marked = property.DriveTimes
+                    .FirstOrDefault(d => d.DestinationId == destination.Id)?.TollRoadOverrideIds;
+
                 await properties.SetDriveTimeAsync(
-                    propertyId, destination.Id, drive.Minutes, drive.Miles, DriveTimeSource.Measured, drive.TolledRoads, cancellationToken);
+                    propertyId,
+                    destination.Id,
+                    drive.Minutes,
+                    drive.Miles,
+                    DriveTimeSource.Measured,
+                    drive.TolledRoads,
+                    marked,
+                    cancellationToken);
 
                 measured++;
             }

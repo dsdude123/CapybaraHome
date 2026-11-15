@@ -164,6 +164,52 @@ public class DrivingCostCalculatorTests
     }
 
     [Fact]
+    public void A_toll_road_marked_by_hand_is_charged_though_the_route_found_none()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Marked(1, 10d, [1])]),
+            [Destination(1, "Work", trips: 3)],
+            [],
+            [Toll(1, "520", 4.50m), Toll(2, "99", 2.25m)]);
+
+        var line = cost.Lines.Single();
+        Assert.Equal(["520"], line.Tolls.Select(t => t.Road));
+        Assert.Equal(27m, line.TollsPerWeek);
+        Assert.Empty(line.UnpricedTolledRoads);
+    }
+
+    [Fact]
+    public void Marking_a_drive_takes_the_route_out_of_it_altogether()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Marked(1, 10d, [2], "WA 520", "Tacoma Narrows Bridge")]),
+            [Destination(1, "Work", trips: 3)],
+            [],
+            [Toll(1, "520", 4.50m), Toll(2, "99", 2.25m)]);
+
+        var line = cost.Lines.Single();
+
+        // The 520 the route named is not charged, the 99 marked by hand is, and a tolled road
+        // nothing prices is no longer worth flagging: the marks decide.
+        Assert.Equal(["99"], line.Tolls.Select(t => t.Road));
+        Assert.Equal(13.50m, line.TollsPerWeek);
+        Assert.Empty(line.UnpricedTolledRoads);
+    }
+
+    [Fact]
+    public void Marking_no_toll_road_charges_none_of_them()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Marked(1, 10d, [], "WA 520")]),
+            [Destination(1, "Work", trips: 3)],
+            [],
+            [Toll(1, "520", 4.50m)]);
+
+        Assert.Empty(cost.Lines.Single().Tolls);
+        Assert.Equal(0m, cost.TollsPerWeek);
+    }
+
+    [Fact]
     public void A_toll_road_matches_whatever_case_the_route_writes_it_in()
     {
         var toll = Toll(1, "evergreen point", 4.50m);
@@ -244,10 +290,17 @@ public class DrivingCostCalculatorTests
         Assert.Equal(["Work"], cost.MissingMiles);
     }
 
-    private static (int DestinationId, double? Miles, string[] Tolled) Drive(
+    private static (int DestinationId, double? Miles, string[] Tolled, int[]? Marked) Drive(
         int destinationId,
         double? miles,
-        params string[] tolled) => (destinationId, miles, tolled);
+        params string[] tolled) => (destinationId, miles, tolled, null);
+
+    /// <summary>A drive whose toll roads were marked by hand rather than taken from the route.</summary>
+    private static (int DestinationId, double? Miles, string[] Tolled, int[]? Marked) Marked(
+        int destinationId,
+        double? miles,
+        int[] marked,
+        params string[] tolled) => (destinationId, miles, tolled, marked);
 
     private static SearchDestinationView Destination(int id, string name, int trips, decimal carpool = 0m) =>
         new(id, name, null, 1m, trips, carpool, null, null, id);
@@ -257,7 +310,7 @@ public class DrivingCostCalculatorTests
 
     private static TollRoadView Toll(int id, string road, decimal price) => new(id, road, price, id);
 
-    private static PropertyView Property(IReadOnlyList<(int DestinationId, double? Miles, string[] Tolled)> drives)
+    private static PropertyView Property(IReadOnlyList<(int DestinationId, double? Miles, string[] Tolled, int[]? Marked)> drives)
     {
         return new PropertyView(
             1,
@@ -285,7 +338,9 @@ public class DrivingCostCalculatorTests
                     d.Miles,
                     d.Tolled,
                     DriveTimeSource.Manual,
-                    default))
+                    default,
+                    20d,
+                    d.Marked))
                 .ToList(),
             [],
             default,

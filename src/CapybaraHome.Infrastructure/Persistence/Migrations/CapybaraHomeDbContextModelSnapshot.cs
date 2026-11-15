@@ -283,6 +283,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("TEXT");
 
+                    b.PrimitiveCollection<string>("TollRoadOverrideIds")
+                        .HasColumnType("TEXT");
+
                     b.PrimitiveCollection<string>("TolledRoads")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -454,6 +457,11 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
 
                     b.Property<double>("CarpoolCreditPerDay")
                         .HasColumnType("REAL");
+
+                    b.Property<double>("DriveTimeMultiplier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(1.0);
 
                     b.Property<double?>("Latitude")
                         .HasColumnType("REAL");
