@@ -123,6 +123,9 @@ nothing is scored until you fill them in:
 - **Points per amenity**, **per pro** and **off per con**.
 - Each priority carries its own points, earned by a property you mark as meeting it.
 
+A property can carry the link to the listing it was found on, shown on its page and opened in a
+new tab. Only an http or https address is kept, and a plain host is read as https.
+
 A destination can also carry a drive time multiplier, for a commute the routing service reckons
 shorter than the traffic you meet. It stretches every measured drive to that destination, across
 every property, and the stretched minutes are what the page shows and the score weighs; a time

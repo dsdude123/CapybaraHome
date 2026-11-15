@@ -872,6 +872,56 @@ public class HomeSearchPagesTests
     }
 
     [Fact]
+    public async Task A_listing_link_is_saved_shown_as_a_link_and_refused_when_it_is_not_one()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var saved = await PostManyAsync(client, "/homes/new", "property-editor",
+        [
+            new("name", "Harbor Steps"),
+            new("listing", "https://example.com/listings/42"),
+            new("action", "save"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+
+        var property = await OneAsync(app);
+        Assert.Equal("https://example.com/listings/42", property.ListingUrl);
+
+        var page = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Contains(
+            "<a href=\"https://example.com/listings/42\" target=\"_blank\" rel=\"noopener noreferrer\">",
+            page);
+
+        // The box comes back filled, so editing the rest does not drop the link.
+        Assert.Contains("value=\"https://example.com/listings/42\"", await client.GetStringAsync($"/homes/{property.Id}/edit"));
+
+        // Something that is not a web address is refused, with the reason on the editor.
+        var refused = await PostManyAsync(client, $"/homes/{property.Id}/edit", "property-editor",
+        [
+            new("name", "Harbor Steps"),
+            new("listing", "javascript:alert(1)"),
+            new("action", "save"),
+        ]);
+
+        Assert.Contains("A listing link has to be a web address", await refused.Content.ReadAsStringAsync());
+        Assert.Equal("https://example.com/listings/42", (await OneAsync(app)).ListingUrl);
+
+        // Emptying the box takes the link off, and the page says there is none.
+        await PostManyAsync(client, $"/homes/{property.Id}/edit", "property-editor",
+        [
+            new("name", "Harbor Steps"),
+            new("listing", ""),
+            new("action", "save"),
+        ]);
+
+        Assert.Null((await OneAsync(app)).ListingUrl);
+        Assert.Contains("Listing:", await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("no link", await client.GetStringAsync($"/homes/{property.Id}"));
+    }
+
+    [Fact]
     public async Task A_toll_road_is_ticked_against_a_drive_and_the_route_hands_over()
     {
         await using var app = await AppFactory.CreateAsync();

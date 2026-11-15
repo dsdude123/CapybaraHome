@@ -13,6 +13,7 @@ public class PropertyConfiguration : IEntityTypeConfiguration<Property>
         builder.Property(p => p.Name).IsRequired().HasMaxLength(500);
         builder.Property(p => p.Address).HasMaxLength(1000);
         builder.Property(p => p.Internet).HasMaxLength(500);
+        builder.Property(p => p.ListingUrl).HasMaxLength(2000);
 
         // SQLite keeps a decimal as text, which cannot be compared or ordered in a query, so the
         // money columns are stored as numbers. Scoring adds them up in memory either way.

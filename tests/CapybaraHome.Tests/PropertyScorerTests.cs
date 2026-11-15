@@ -263,6 +263,7 @@ public class PropertyScorerTests
             petRent,
             deposit,
             null,
+            null,
             squareFeet,
             null,
             null,
