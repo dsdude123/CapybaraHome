@@ -19,7 +19,11 @@ public record DrivingCostLine(
     IReadOnlyList<TollRoadView> Tolls,
     decimal TollsPerWeek,
     decimal CarpoolCreditPerWeek,
-    IReadOnlyList<string> UnpricedTolledRoads);
+    IReadOnlyList<string> UnpricedTolledRoads)
+{
+    /// <summary>The week's tolls with the carpool credit taken off, which is what the drive is owed.</summary>
+    public decimal TollsLessCreditPerWeek => TollsPerWeek - CarpoolCreditPerWeek;
+}
 
 /// <summary>What the week's driving costs in one car.</summary>
 /// <param name="VehicleId">The car.</param>
@@ -58,8 +62,11 @@ public record PropertyDrivingCost(
     public decimal? LowestMonthlyCost =>
         Vehicles.Count == 0 ? null : Vehicles.Min(v => v.MonthlyCost);
 
-    /// <summary>The tolls and the carpool credit together over a month, which are the same in every car.</summary>
-    public decimal MonthlyTollsLessCredit => (TollsPerWeek - CarpoolCreditPerWeek) * DrivingCostCalculator.WeeksPerMonth;
+    /// <summary>The tolls with the carpool credit taken off, which is the same in every car.</summary>
+    public decimal TollsLessCreditPerWeek => TollsPerWeek - CarpoolCreditPerWeek;
+
+    /// <summary>The same over an average month.</summary>
+    public decimal MonthlyTollsLessCredit => TollsLessCreditPerWeek * DrivingCostCalculator.WeeksPerMonth;
 }
 
 /// <summary>

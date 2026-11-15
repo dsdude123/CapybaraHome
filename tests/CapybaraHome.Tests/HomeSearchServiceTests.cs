@@ -173,9 +173,9 @@ public class HomeSearchServiceTests
         var service = new HomeSearchService(db.Context, db.Clock);
 
         var set = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(
-            RoutingBaseUrl: " https://api.openrouteservice.org ", RoutingApiKey: "  a-key  "));
+            RoutingBaseUrl: " https://api.heigit.org ", RoutingApiKey: "  a-key  "));
 
-        Assert.Equal("https://api.openrouteservice.org", set.RoutingBaseUrl);
+        Assert.Equal("https://api.heigit.org", set.RoutingBaseUrl);
         Assert.True(set.HasRoutingApiKey);
         Assert.True(set.CanMeasureDriveTimes);
         Assert.Equal("a-key", await service.GetRoutingKeyAsync());
@@ -183,6 +183,23 @@ public class HomeSearchServiceTests
         var again = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(RoutingApiKey: "   "));
         Assert.True(again.HasRoutingApiKey);
         Assert.Equal("a-key", await service.GetRoutingKeyAsync());
+    }
+
+    [Fact]
+    public async Task Saving_the_retired_routing_host_saves_the_one_that_answers()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var moved = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(
+            RoutingBaseUrl: "https://api.openrouteservice.org"));
+
+        Assert.Equal("https://api.heigit.org", moved.RoutingBaseUrl);
+
+        var own = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(
+            RoutingBaseUrl: "http://ors.local:8080/ors/"));
+
+        Assert.Equal("http://ors.local:8080/ors", own.RoutingBaseUrl);
     }
 
     [Fact]

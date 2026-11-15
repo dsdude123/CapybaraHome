@@ -311,6 +311,7 @@ else
                         <th scope="col">Miles a week</th>
                         <th scope="col">Tolls a week</th>
                         <th scope="col">Carpool credit</th>
+                        <th scope="col">Tolls less credit</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -330,6 +331,7 @@ else
                                 }
                             </td>
                             <td>@Credit(line.CarpoolCreditPerWeek)</td>
+                            <td>@Cents(line.TollsLessCreditPerWeek)</td>
                         </tr>
                     }
                     <tr>
@@ -337,9 +339,15 @@ else
                         <td><strong>@Miles(driving.MilesPerWeek)</strong></td>
                         <td><strong>@Cents(driving.TollsPerWeek)</strong></td>
                         <td><strong>@Credit(driving.CarpoolCreditPerWeek)</strong></td>
+                        <td><strong>@Cents(driving.TollsLessCreditPerWeek)</strong></td>
                     </tr>
                 </tbody>
             </table>
+
+            <p class="muted">
+                The tolls less the carpool credit come to @Cents(driving.TollsLessCreditPerWeek) a week,
+                @Cents(driving.MonthlyTollsLessCredit) a month, whichever car the week is driven in.
+            </p>
 
             @if (vehicles.Count == 0)
             {
@@ -665,8 +673,10 @@ else
     private static string Cents(decimal value) =>
         (value < 0 ? "\u2212$" : "$") + Math.Abs(value).ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
 
+    // A credit is money back, so it is written as the amount taken off rather than as a negative
+    // cost, and the column beside it carries the tolls with the credit already off.
     private static string Credit(decimal value) =>
-        value == 0m ? "\u2014" : "\u2212" + Cents(value);
+        value == 0m ? "\u2014" : Cents(value) + " off";
 
     private static string Miles(double? value) =>
         value is null

@@ -64,15 +64,17 @@
     <h2 class="card-title">Routing service</h2>
     <p class="muted">
         Addresses are placed and drives measured through OpenRouteService. Use
-        <code>https://api.openrouteservice.org</code> with a key from their site, or the address of
+        <code>https://api.heigit.org</code> with a key from their site, or the address of
         your own instance, which needs no key. With this empty, every drive time is typed in by hand.
+        The old <code>api.openrouteservice.org</code> has been switched off; an address saved under
+        it is called at the new host instead.
     </p>
 
     <form method="post" @formname="home-routing" @onsubmit="SaveRoutingAsync" class="stack">
         <AntiforgeryToken />
         <div class="field">
             <label for="routing-url">Base address</label>
-            <input id="routing-url" type="text" name="url" value="@routingUrl" placeholder="https://api.openrouteservice.org" />
+            <input id="routing-url" type="text" name="url" value="@routingUrl" placeholder="https://api.heigit.org" />
         </div>
         <div class="field">
             <label for="routing-key">Key</label>

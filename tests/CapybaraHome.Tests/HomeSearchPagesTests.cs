@@ -409,6 +409,9 @@ public class HomeSearchPagesTests
         var page = await saved.Content.ReadAsStringAsync();
         Assert.Contains("A key is held", page);
 
+        // The old host has been switched off, so the box comes back holding the one that answers.
+        Assert.Contains("value=\"https://api.heigit.org\"", page);
+
         // The key must never be rendered back into the page it was typed on.
         Assert.DoesNotContain("a-secret-key", page);
 
@@ -858,9 +861,39 @@ public class HomeSearchPagesTests
 
         // $9 of fuel and $27 of tolls, less three days of $5 credit.
         Assert.Contains("$27.00", html);
-        Assert.Contains("\u2212$15.00", html);
+        Assert.Contains("$15.00 off", html);
         Assert.Contains("$21.00", html);
         Assert.Contains("$91.00", html);
+
+        // The credit comes off the tolls on the page, not onto them.
+        Assert.DoesNotContain("$42.00", html);
+        Assert.Contains("The tolls less the carpool credit come to $12.00 a week,", html);
+        Assert.Contains("$52.00 a month, whichever car the week is driven in.", html);
+    }
+
+    [Fact]
+    public async Task The_credit_still_comes_off_the_tolls_with_no_car_to_cost_the_fuel_in()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3, carpool: 5m);
+        await TollRoadAsync(app, "520", 4.50m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"]);
+        }
+
+        var html = System.Net.WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+
+        Assert.Contains("No cars yet.", html);
+        Assert.Contains("$15.00 off", html);
+        Assert.Contains("The tolls less the carpool credit come to $12.00 a week,", html);
+        Assert.Contains("$52.00 a month, whichever car the week is driven in.", html);
+        Assert.DoesNotContain("$42.00", html);
     }
 
     [Fact]
