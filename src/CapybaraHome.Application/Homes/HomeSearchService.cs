@@ -18,7 +18,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             .ThenBy(d => d.Id)
             .Select(d => new SearchDestinationView(
                 d.Id, d.Name, d.Address, d.Weight, d.RoundTripsPerWeek, d.CarpoolCreditPerDay,
-                d.Latitude, d.Longitude, d.SortOrder, d.DriveTimeMultiplier))
+                d.Latitude, d.Longitude, d.SortOrder, d.DriveTimeMultiplier, d.VehicleId))
             .ToListAsync(cancellationToken);
     }
 
@@ -49,17 +49,14 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
             RoundTripsPerWeek = Trips(request.RoundTripsPerWeek),
             CarpoolCreditPerDay = Positive(request.CarpoolCreditPerDay),
             DriveTimeMultiplier = Multiplier(request.DriveTimeMultiplier),
+            VehicleId = await CarAsync(request.VehicleId, cancellationToken),
             SortOrder = (last ?? -1) + 1,
         };
 
         context.SearchDestinations.Add(destination);
         await context.SaveChangesAsync(cancellationToken);
 
-        return new SearchDestinationView(
-            destination.Id, destination.Name, destination.Address, destination.Weight,
-            destination.RoundTripsPerWeek, destination.CarpoolCreditPerDay,
-            destination.Latitude, destination.Longitude, destination.SortOrder,
-            destination.DriveTimeMultiplier);
+        return Viewed(destination);
     }
 
     /// <summary>Renames a destination, or returns null when none has that id.</summary>
@@ -91,15 +88,25 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         destination.RoundTripsPerWeek = Trips(request.RoundTripsPerWeek);
         destination.CarpoolCreditPerDay = Positive(request.CarpoolCreditPerDay);
         destination.DriveTimeMultiplier = Multiplier(request.DriveTimeMultiplier);
+        destination.VehicleId = await CarAsync(request.VehicleId, cancellationToken);
 
         await context.SaveChangesAsync(cancellationToken);
 
-        return new SearchDestinationView(
-            destination.Id, destination.Name, destination.Address, destination.Weight,
+        return Viewed(destination);
+    }
+
+    /// <summary>A destination as the pages and the API see it.</summary>
+    private static SearchDestinationView Viewed(SearchDestination destination) =>
+        new(destination.Id, destination.Name, destination.Address, destination.Weight,
             destination.RoundTripsPerWeek, destination.CarpoolCreditPerDay,
             destination.Latitude, destination.Longitude, destination.SortOrder,
-            destination.DriveTimeMultiplier);
-    }
+            destination.DriveTimeMultiplier, destination.VehicleId);
+
+    // A car that has since been deleted leaves the drive shared out rather than failing the save.
+    private async Task<int?> CarAsync(int? vehicleId, CancellationToken cancellationToken) =>
+        vehicleId is { } id && await context.Vehicles.AnyAsync(v => v.Id == id, cancellationToken)
+            ? id
+            : null;
 
     /// <summary>Records where a destination is. Returns false when none has that id.</summary>
     public async Task<bool> PlaceDestinationAsync(
@@ -437,7 +444,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         return trimmed.Length > 0 ? trimmed : throw new ArgumentException(message, parameter);
     }
 
-    private static int Trips(int value) => value > 0 ? value : 0;
+    private static decimal Trips(decimal value) => value > 0m ? value : 0m;
 
     private static double Positive(double value) => value > 0d ? value : 0d;
 

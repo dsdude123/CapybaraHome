@@ -42,9 +42,9 @@ else
                 <span class="muted">@Money(board.Current.MonthlyTotal) a month</span>
             </div>
             <p class="task-meta">@Baseline(board.Current)</p>
-            @if (board.CurrentDriving is { } driving && driving.AnyDriving && driving.LowestMonthlyCost is { } monthly)
+            @if (board.CurrentDriving is { } driving && driving.AnyDriving)
             {
-                <p class="task-meta">@Money(monthly) a month driving, over @MilesAWeek(driving.MilesPerWeek)</p>
+                <p class="task-meta">@Money(driving.MonthlyCost) a month driving, over @MilesAWeek(driving.MilesPerWeek)</p>
             }
         }
     </section>
@@ -75,9 +75,9 @@ else
                             var line = scored.Score.DriveTimeLines.FirstOrDefault(d => d.DestinationId == destination.Id);
                             <span><span class="muted">@destination.Name</span> @Minutes(line?.Minutes)</span>
                         }
-                        @if (scored.Driving.LowestMonthlyCost is { } driving && scored.Driving.AnyDriving)
+                        @if (scored.Driving.AnyDriving)
                         {
-                            <span><span class="muted">Driving a month</span> @Money(driving)</span>
+                            <span><span class="muted">Driving a month</span> @Money(scored.Driving.MonthlyCost)</span>
                         }
                         <span>
                             <span class="muted">Priorities</span>

@@ -49,7 +49,7 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
             .Where(p => !p.IsCurrent)
             .Select(p => new ScoredProperty(
                 p,
-                PropertyScorer.Score(p, current, destinations, settings),
+                PropertyScorer.Score(p, current, destinations, settings, vehicles, tollRoads),
                 DrivingCostCalculator.Cost(p, destinations, vehicles, tollRoads)))
             .OrderByDescending(scored => scored.Score.Total)
             .ThenBy(scored => scored.Property.Name)
@@ -57,7 +57,7 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
 
         var currentScore = current is null
             ? null
-            : PropertyScorer.Score(current, current, destinations, settings);
+            : PropertyScorer.Score(current, current, destinations, settings, vehicles, tollRoads);
 
         var currentDriving = current is null
             ? null
@@ -84,7 +84,7 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
 
         return new ScoredProperty(
             property,
-            PropertyScorer.Score(property, current, destinations, settings),
+            PropertyScorer.Score(property, current, destinations, settings, vehicles, tollRoads),
             DrivingCostCalculator.Cost(property, destinations, vehicles, tollRoads));
     }
 }

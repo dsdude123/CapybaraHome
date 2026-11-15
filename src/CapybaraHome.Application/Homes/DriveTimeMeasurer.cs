@@ -61,6 +61,16 @@ public class DriveTimeMeasurer(
                     continue;
                 }
 
+                // A drive of no time at all is the service placing both ends on the same spot,
+                // which is not a measurement; saving it would read as a destination next door.
+                if (drive.Minutes <= 0d)
+                {
+                    problems.Add(
+                        $"{destination.Name}: the routing service measured the drive as no time at all, which "
+                        + "means both addresses landed on the same spot, so this one has to be typed in.");
+                    continue;
+                }
+
                 // A toll road marked by hand stands against the drive itself, so measuring the
                 // route again leaves that mark alone.
                 var marked = property.DriveTimes

@@ -311,7 +311,7 @@ public class PropertyServiceTests
     }
 
     [Fact]
-    public async Task A_measured_drive_is_stretched_by_its_destination_and_a_typed_one_is_not()
+    public async Task A_drive_is_stretched_by_its_destinations_multiplier_however_it_was_set()
     {
         await using var db = await TestDatabase.CreateAsync();
         var service = new PropertyService(db.Context, db.Clock);
@@ -337,11 +337,12 @@ public class PropertyServiceTests
         Assert.Equal(20d, other.AdjustedMinutes);
         Assert.False(other.IsAdjusted);
 
-        // Typed in by hand is an observation, not an estimate, so it stands as typed.
+        // A time typed in by hand is stretched too, since a routing result of nothing at all is
+        // why one gets typed in.
         await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual);
         var typed = (await service.GetAsync(property.Id))!.DriveTimes.Single(d => d.DestinationId == work.Id);
-        Assert.Equal(20d, typed.AdjustedMinutes);
-        Assert.False(typed.IsAdjusted);
+        Assert.Equal(25d, typed.AdjustedMinutes);
+        Assert.True(typed.IsAdjusted);
     }
 
     [Fact]

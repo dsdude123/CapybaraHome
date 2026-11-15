@@ -53,7 +53,7 @@ public record PropertyPhotoView(
 /// <param name="TolledRoads">Names of the tolled roads a measured route reported.</param>
 /// <param name="Source">Whether the time was measured or typed in.</param>
 /// <param name="MeasuredAt">When it was measured or last typed.</param>
-/// <param name="AdjustedMinutes">The minutes the drive is reckoned to take, a measured time having been multiplied.</param>
+/// <param name="AdjustedMinutes">The minutes the drive is reckoned to take, its destination's multiplier applied.</param>
 /// <param name="TollRoadOverrideIds">Toll roads charged whatever the route reported, or null to follow it.</param>
 public record PropertyDriveTimeView(
     int DestinationId,
@@ -221,16 +221,18 @@ public record UpdatePropertyRequest(
 /// <param name="Name">What the place is called; required.</param>
 /// <param name="Address">Street address.</param>
 /// <param name="Weight">How much its drive counts next to the others.</param>
-/// <param name="RoundTripsPerWeek">How many round trips a week are driven to it.</param>
+/// <param name="RoundTripsPerWeek">How many round trips a week are driven to it; fractions are allowed.</param>
 /// <param name="CarpoolCreditPerDay">What each day driven there pays back.</param>
-/// <param name="DriveTimeMultiplier">What a measured drive to it is multiplied by; one leaves it as measured.</param>
+/// <param name="DriveTimeMultiplier">What every drive to it is multiplied by; one leaves the times alone.</param>
+/// <param name="VehicleId">The car the drive is made in, or null to average every car that can be costed.</param>
 public record SearchDestinationRequest(
     string Name,
     string? Address = null,
     decimal Weight = 1m,
-    int RoundTripsPerWeek = 0,
+    decimal RoundTripsPerWeek = 0m,
     decimal CarpoolCreditPerDay = 0m,
-    double DriveTimeMultiplier = 1d);
+    double DriveTimeMultiplier = 1d,
+    int? VehicleId = null);
 
 /// <summary>A destination as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
@@ -242,18 +244,20 @@ public record SearchDestinationRequest(
 /// <param name="Latitude">Latitude the address was resolved to, or null.</param>
 /// <param name="Longitude">Longitude the address was resolved to, or null.</param>
 /// <param name="SortOrder">Position in the list.</param>
-/// <param name="DriveTimeMultiplier">What a measured drive to it is multiplied by.</param>
+/// <param name="DriveTimeMultiplier">What every drive to it is multiplied by.</param>
+/// <param name="VehicleId">The car the drive is made in, or null when it is averaged over them all.</param>
 public record SearchDestinationView(
     int Id,
     string Name,
     string? Address,
     decimal Weight,
-    int RoundTripsPerWeek,
+    decimal RoundTripsPerWeek,
     decimal CarpoolCreditPerDay,
     double? Latitude,
     double? Longitude,
     int SortOrder,
-    double DriveTimeMultiplier = 1d);
+    double DriveTimeMultiplier = 1d,
+    int? VehicleId = null);
 
 /// <summary>Fields accepted when adding or changing a toll road.</summary>
 /// <param name="Road">What to look for in the tolled roads' names; required.</param>

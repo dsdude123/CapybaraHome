@@ -115,7 +115,10 @@ nothing is scored until you fill them in:
 
 - **Points per dollar a month** and **points per dollar of deposit** — a candidate cheaper
   than the home you live in now earns points, a dearer one loses them. The month is rent plus
-  parking plus cat rent plus the utilities.
+  parking plus cat rent plus the utilities. What a month's driving costs is scored at the same
+  points a dollar, on its own line: the fuel of every drive plus the tolls, less the carpool
+  credit. A place with a distance still unknown has no driving difference, since the unknown
+  drive would make it look cheap.
 - **Points per minute of drive**, multiplied by each destination's own weight, against the
   same baseline. Work, driven to every day, is worth setting above one.
 - **Points per square foot** larger than the home you live in now; a smaller place loses them.
@@ -127,9 +130,9 @@ A property can carry the link to the listing it was found on, shown on its page 
 new tab. Only an http or https address is kept, and a plain host is read as https.
 
 A destination can also carry a drive time multiplier, for a commute the routing service reckons
-shorter than the traffic you meet. It stretches every measured drive to that destination, across
-every property, and the stretched minutes are what the page shows and the score weighs; a time
-typed in by hand is an observation rather than an estimate, so it is never multiplied.
+shorter than the traffic you meet. It stretches every drive to that destination, across every
+property and whether the time was measured or typed in, and the stretched minutes are what the
+page shows and the score weighs.
 
 Fees, size and drive times are differences, so they need a property ticked as *This is where I live
 now*; amenities, pros, cons and priorities stand on their own. A drive only scores where both
@@ -148,10 +151,16 @@ never what it is — and there is a button to forget it.
 ### Driving cost
 
 Each destination carries how many round trips a week you drive to it — three for a three-day
-work week — and any carpool credit a day; each car carries its average mpg and what a gallon
-costs now; and each toll road its peak toll. All of it lives under `/homes/settings`. A
-property's page then costs its usual week of driving: the fuel in every car, the tolls, and
-the carpool credit taken off, a week and over an average month.
+work week, and fractions are allowed, so somewhere visited every third week is `0.33` — the car
+that drive is made in, and any carpool credit a day; each car carries its average mpg and what a
+gallon costs now; and each toll road its peak toll. All of it lives under `/homes/settings`. A
+property's page then costs its usual week of driving, one line per drive: the fuel, the tolls,
+and the carpool credit taken off, a week and over an average month.
+
+A destination left with no car of its own is shared out: its fuel is what the drive averages over
+every car that has both a mileage and a fuel price, which is the one to leave for a commute you
+take turns driving. Naming a car charges that drive to it alone, and a named car with no mileage
+or no fuel price leaves that drive's fuel uncounted, which the page says rather than passing over.
 
 The miles come from each drive's distance, which a measured route fills in and which can be
 typed in beside the minutes. A measured route also names the tolled roads it uses, which

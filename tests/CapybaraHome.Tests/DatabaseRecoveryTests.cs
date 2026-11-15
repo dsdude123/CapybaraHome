@@ -317,10 +317,14 @@ public class DatabaseRecoveryTests : IDisposable
     }
 
     /// <summary>Overwrites the content of a page, which is what a half-written file looks like.</summary>
+    // Random bytes over a stretch of pages rather than a couple of zeroed kilobytes: zeros can
+    // land where the file holds nothing yet, and how much the schema itself takes moves the spot.
     private void Damage()
     {
         using var file = File.Open(DatabasePath, FileMode.Open, FileAccess.ReadWrite);
+        var rubbish = new byte[64 * 1024];
+        Random.Shared.NextBytes(rubbish);
         file.Seek(file.Length / 2, SeekOrigin.Begin);
-        file.Write(new byte[2048]);
+        file.Write(rubbish);
     }
 }
