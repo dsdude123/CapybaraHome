@@ -246,6 +246,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<double?>("CommuteCreditPerDayOverride")
+                        .HasColumnType("REAL");
+
                     b.Property<int>("DestinationId")
                         .HasColumnType("INTEGER");
 
@@ -256,6 +259,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasColumnType("REAL");
 
                     b.Property<double>("Minutes")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("ParkingPerDayOverride")
                         .HasColumnType("REAL");
 
                     b.Property<int>("PropertyId")
@@ -438,7 +444,7 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
-                    b.Property<double>("CarpoolCreditPerDay")
+                    b.Property<double>("CommuteCreditPerDay")
                         .HasColumnType("REAL");
 
                     b.Property<double>("DriveTimeMultiplier")
@@ -456,6 +462,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
+
+                    b.Property<double>("ParkingPerDay")
+                        .HasColumnType("REAL");
 
                     b.Property<int>("ProfileId")
                         .HasColumnType("INTEGER");

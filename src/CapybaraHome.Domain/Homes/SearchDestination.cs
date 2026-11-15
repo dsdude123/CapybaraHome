@@ -53,8 +53,14 @@ public class SearchDestination : IProfileOwned
     /// </summary>
     public double DriveTimeMultiplier { get; set; } = 1d;
 
-    /// <summary>What each day driven there pays back, such as a carpool credit from work.</summary>
-    public decimal CarpoolCreditPerDay { get; set; }
+    /// <summary>What parking there costs for a day, paid on each day driven to it.</summary>
+    public decimal ParkingPerDay { get; set; }
+
+    /// <summary>
+    /// What each day driven there pays back, such as a carpool credit from work or what taking
+    /// transit instead is paid.
+    /// </summary>
+    public decimal CommuteCreditPerDay { get; set; }
 
     /// <summary>Position in the list; lower sorts first.</summary>
     public int SortOrder { get; set; }

@@ -300,6 +300,23 @@ else
                                 : "Marked by hand, so the measured route no longer decides. Match the ticks to the route to hand it back.")
                         </p>
                     }
+                    <div class="filters">
+                        <div class="field">
+                            <label for="parking-@destination.Id">Parking a day, here</label>
+                            <input id="parking-@destination.Id" type="number" step="0.01" min="0" name="parking-@destination.Id"
+                                   value="@Fee(held?.ParkingPerDayOverride)" placeholder="@Fee(destination.ParkingPerDay)" />
+                        </div>
+                        <div class="field">
+                            <label for="commute-@destination.Id">Commute credit a day, here</label>
+                            <input id="commute-@destination.Id" type="number" step="0.01" min="0" name="commute-@destination.Id"
+                                   value="@Fee(held?.CommuteCreditPerDayOverride)" placeholder="@Fee(destination.CommuteCreditPerDay)" />
+                        </div>
+                    </div>
+                    <p class="task-meta muted">
+                        @(held is { HasFeeOverride: true }
+                            ? "This drive charges its own, whatever the destination charges. Empty the boxes to follow it again."
+                            : "Left empty, this drive follows the destination. Fill one in where this commute works differently, such as transit being there to take.")
+                    </p>
                 }
                 <div class="row">
                     <button class="btn btn-primary btn-small" type="submit">Save the times</button>
@@ -342,7 +359,7 @@ else
             <p class="muted">
                 Nothing to cost yet. This counts the round trips a week set on each
                 <a href="homes/settings">destination</a> — three for a three-day work week — against
-                the miles and the tolls of each drive, less any carpool credit.
+                the miles, the tolls and the parking of each drive, less any commute credit.
             </p>
         }
         else
@@ -355,7 +372,8 @@ else
                         <th scope="col">Miles a week</th>
                         <th scope="col">Fuel a week</th>
                         <th scope="col">Tolls a week</th>
-                        <th scope="col">Carpool credit</th>
+                        <th scope="col">Parking a week</th>
+                        <th scope="col">Commute credit</th>
                         <th scope="col">A week</th>
                     </tr>
                 </thead>
@@ -366,6 +384,10 @@ else
                             <td>
                                 @line.Name
                                 <br /><span class="muted">@Trips(line.RoundTripsPerWeek) × @Miles(line.Miles) each way</span>
+                                @if (line.HasFeeOverride)
+                                {
+                                    <br /><span class="muted">its own parking or credit</span>
+                                }
                             </td>
                             <td>@Miles(line.MilesPerWeek)</td>
                             <td>
@@ -379,7 +401,8 @@ else
                                     <br /><span class="muted">@string.Join(", ", line.Tolls.Select(t => t.Road))</span>
                                 }
                             </td>
-                            <td>@Credit(line.CarpoolCreditPerWeek)</td>
+                            <td>@Cents(line.ParkingPerWeek)</td>
+                            <td>@Credit(line.CommuteCreditPerWeek)</td>
                             <td>@Cents(line.WeeklyCost)</td>
                         </tr>
                     }
@@ -388,7 +411,8 @@ else
                         <td><strong>@Miles(driving.MilesPerWeek)</strong></td>
                         <td><strong>@Cents(driving.FuelPerWeek)</strong></td>
                         <td><strong>@Cents(driving.TollsPerWeek)</strong></td>
-                        <td><strong>@Credit(driving.CarpoolCreditPerWeek)</strong></td>
+                        <td><strong>@Cents(driving.ParkingPerWeek)</strong></td>
+                        <td><strong>@Credit(driving.CommuteCreditPerWeek)</strong></td>
                         <td><strong>@Cents(driving.WeeklyCost)</strong></td>
                     </tr>
                 </tbody>
@@ -396,10 +420,11 @@ else
             </div>
 
             <p class="muted">
-                A week is the fuel and the tolls, less the carpool credit: @Cents(driving.WeeklyCost) a
-                week, @Cents(driving.MonthlyCost) a month, over @Gallons(driving.GallonsPerWeek) gal.
-                The tolls less the credit are @Cents(driving.TollsLessCreditPerWeek) of the week,
-                @Cents(driving.MonthlyTollsLessCredit) of the month, whichever car it is driven in.
+                A week is the fuel, the tolls and the parking, less the commute credit:
+                @Cents(driving.WeeklyCost) a week, @Cents(driving.MonthlyCost) a month, over
+                @Gallons(driving.GallonsPerWeek) gal. The fees less the credit are
+                @Cents(driving.FeesLessCreditPerWeek) of the week, @Cents(driving.MonthlyFeesLessCredit)
+                of the month, whichever car it is driven in.
             </p>
 
             @if (vehicles.Count == 0)
@@ -637,7 +662,8 @@ else
 
                 // Tolls come from the measured route, so retyping the time keeps the ones it found.
                 await Properties.SetDriveTimeAsync(
-                    Id, destination.Id, minutes, miles, source, held?.TolledRoads, Marked(held, destination.Id));
+                    Id, destination.Id, minutes, miles, source, held?.TolledRoads, Marked(held, destination.Id),
+                    Fees(destination.Id));
             }
             else
             {
@@ -777,6 +803,23 @@ else
 
         return ticked.SequenceEqual(fromRoute) ? null : ticked;
     }
+
+    // An empty box leaves the drive on the destination's fee rather than charging it nothing,
+    // which is the difference between "the same as everywhere" and "free here".
+    private DriveFeeOverrides Fees(int destinationId) =>
+        new(Money($"parking-{destinationId}"), Money($"commute-{destinationId}"));
+
+    private decimal? Money(string field)
+    {
+        var posted = HttpContext?.Request.Form[field].ToString();
+
+        return decimal.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var value) && value >= 0m
+            ? value
+            : null;
+    }
+
+    private static string? Fee(decimal? value) =>
+        value?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
     private static bool Same(double? held, double? posted) =>
         held is null

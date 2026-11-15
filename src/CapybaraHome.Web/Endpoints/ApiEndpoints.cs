@@ -508,6 +508,7 @@ public static class ApiEndpoints
                     DriveTimeSource.Manual,
                     request.TolledRoads,
                     request.TollRoadOverrideIds,
+                    new DriveFeeOverrides(request.ParkingPerDayOverride, request.CommuteCreditPerDayOverride),
                     cancellationToken)
                     ? Results.NoContent()
                     : Results.NotFound();

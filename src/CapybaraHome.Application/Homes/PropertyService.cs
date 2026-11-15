@@ -294,6 +294,8 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <param name="miles">How far it is, when known.</param>
     /// <param name="source">Whether the time was measured or typed in.</param>
     /// <param name="tolledRoads">Names of the tolled roads the drive uses.</param>
+    /// <param name="tollRoadOverrideIds">Toll roads charged whatever the route reported, or null to follow it.</param>
+    /// <param name="fees">What this drive charges itself, or null to leave what it already charges.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     public async Task<bool> SetDriveTimeAsync(
         int propertyId,
@@ -303,6 +305,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         DriveTimeSource source,
         IReadOnlyList<string>? tolledRoads = null,
         IReadOnlyList<int>? tollRoadOverrideIds = null,
+        DriveFeeOverrides? fees = null,
         CancellationToken cancellationToken = default)
     {
         if (!await context.Properties.AnyAsync(p => p.Id == propertyId, cancellationToken)
@@ -328,6 +331,15 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         held.TollRoadOverrideIds = tollRoadOverrideIds?.Distinct().Order().ToList();
+
+        // Measuring a drive again says nothing about what parking costs or what the commute pays
+        // back there, so the fees are left as they were unless this save carries them.
+        if (fees is not null)
+        {
+            held.ParkingPerDayOverride = fees.ParkingPerDay;
+            held.CommuteCreditPerDayOverride = fees.CommuteCreditPerDay;
+        }
+
         held.Source = source;
         held.MeasuredAt = clock.GetUtcNow();
 
@@ -484,7 +496,9 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 d.Source,
                 d.MeasuredAt,
                 d.Minutes * d.Destination!.DriveTimeMultiplier,
-                d.TollRoadOverrideIds))
+                d.TollRoadOverrideIds,
+                d.ParkingPerDayOverride,
+                d.CommuteCreditPerDayOverride))
             .ToList(),
         property.Priorities
             .OrderBy(m => m.Priority!.SortOrder)

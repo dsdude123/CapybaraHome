@@ -346,11 +346,12 @@ public class HomeSearchServiceTests
         var car = await service.CreateVehicleAsync(new VehicleRequest("The truck", 15d, 4m));
         var toll = await service.CreateTollRoadAsync(new TollRoadRequest("520", 4.50m));
         var work = await service.CreateDestinationAsync(new SearchDestinationRequest(
-            "Work", "400 Broad St", 3m, 5m, 5m, 1.25d, car.Id));
+            "Work", "400 Broad St", 3m, 5m, 5m, 1.25d, car.Id, 12m));
 
         var property = await properties.CreateAsync(new CreatePropertyRequest("Candidate"));
         await properties.SetDriveTimeAsync(
-            property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"], [toll.Id]);
+            property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"], [toll.Id],
+            new DriveFeeOverrides(0m, 9m));
 
         var source = await service.GetActiveProfileAsync();
         var copy = await service.CopyProfileAsync(source.Id, "  Two cars  ");
@@ -376,7 +377,8 @@ public class HomeSearchServiceTests
         Assert.Equal("400 Broad St", copiedWork.Address);
         Assert.Equal(3m, copiedWork.Weight);
         Assert.Equal(5m, copiedWork.RoundTripsPerWeek);
-        Assert.Equal(5m, copiedWork.CarpoolCreditPerDay);
+        Assert.Equal(5m, copiedWork.CommuteCreditPerDay);
+        Assert.Equal(12m, copiedWork.ParkingPerDay);
         Assert.Equal(1.25d, copiedWork.DriveTimeMultiplier);
 
         // The car and the marked toll road follow the copies, not the originals.
@@ -389,6 +391,8 @@ public class HomeSearchServiceTests
         Assert.Equal(DriveTimeSource.Measured, copiedDrive.Source);
         Assert.Equal(["WA 520"], copiedDrive.TolledRoads);
         Assert.Equal([copiedToll.Id], copiedDrive.TollRoadOverrideIds);
+        Assert.Equal(0m, copiedDrive.ParkingPerDayOverride);
+        Assert.Equal(9m, copiedDrive.CommuteCreditPerDayOverride);
 
         // Changing the copy leaves the original alone.
         await service.UpdateDestinationAsync(copiedWork.Id, new SearchDestinationRequest("Work", "400 Broad St", 1m, 2m));
@@ -588,16 +592,69 @@ public class HomeSearchServiceTests
     }
 
     [Fact]
-    public async Task A_destination_keeps_its_carpool_credit_and_refuses_a_negative_one()
+    public async Task A_destination_keeps_its_commute_credit_and_refuses_a_negative_one()
     {
         await using var db = await TestDatabase.CreateAsync();
         var service = new HomeSearchService(db.Context, db.Clock);
 
         var work = await service.CreateDestinationAsync(new SearchDestinationRequest("Work", null, 3m, 3, 5m));
-        Assert.Equal(5m, work.CarpoolCreditPerDay);
+        Assert.Equal(5m, work.CommuteCreditPerDay);
 
         var negative = await service.UpdateDestinationAsync(work.Id, new SearchDestinationRequest("Work", null, 3m, 3, -5m));
-        Assert.Equal(0m, negative!.CarpoolCreditPerDay);
+        Assert.Equal(0m, negative!.CommuteCreditPerDay);
+    }
+
+    [Fact]
+    public async Task A_destination_keeps_its_parking_and_refuses_a_negative_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", null, 3m, 3, 5m, 1d, null, 12m));
+        Assert.Equal(12m, work.ParkingPerDay);
+
+        var negative = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", null, 3m, 3, 5m, 1d, null, -12m));
+        Assert.Equal(0m, negative!.ParkingPerDay);
+    }
+
+    [Fact]
+    public async Task A_drive_charges_its_own_fees_until_they_are_emptied()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", null, 1m, 3m, 5m, 1d, null, 12m));
+        var property = await properties.CreateAsync(new CreatePropertyRequest("Somewhere"));
+
+        await properties.SetDriveTimeAsync(
+            property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual, null, null,
+            new DriveFeeOverrides(0m, 9m));
+
+        var held = (await properties.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Equal(0m, held.ParkingPerDayOverride);
+        Assert.Equal(9m, held.CommuteCreditPerDayOverride);
+        Assert.True(held.HasFeeOverride);
+
+        // Measuring says nothing about the fees, so a save that carries none leaves them standing.
+        await properties.SetDriveTimeAsync(
+            property.Id, work.Id, 25d, 11d, DriveTimeSource.Measured, null, null);
+
+        var measured = (await properties.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Equal(0m, measured.ParkingPerDayOverride);
+        Assert.Equal(9m, measured.CommuteCreditPerDayOverride);
+
+        await properties.SetDriveTimeAsync(
+            property.Id, work.Id, 25d, 11d, DriveTimeSource.Manual, null, null,
+            new DriveFeeOverrides(null, null));
+
+        var cleared = (await properties.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Null(cleared.ParkingPerDayOverride);
+        Assert.Null(cleared.CommuteCreditPerDayOverride);
+        Assert.False(cleared.HasFeeOverride);
     }
 
     [Fact]

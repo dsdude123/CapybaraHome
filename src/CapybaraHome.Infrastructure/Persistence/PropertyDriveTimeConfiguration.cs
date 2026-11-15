@@ -11,6 +11,8 @@ public class PropertyDriveTimeConfiguration : IEntityTypeConfiguration<PropertyD
     public void Configure(EntityTypeBuilder<PropertyDriveTime> builder)
     {
         builder.Property(d => d.Source).HasConversion<string>().HasMaxLength(10);
+        builder.Property(d => d.ParkingPerDayOverride).HasConversion<double?>();
+        builder.Property(d => d.CommuteCreditPerDayOverride).HasConversion<double?>();
 
         // One time per property and destination, so a fresh measurement replaces the old one.
         builder.HasIndex(d => new { d.PropertyId, d.DestinationId }).IsUnique();

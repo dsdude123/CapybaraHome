@@ -167,7 +167,8 @@
         Where you drive to. The weight is how much that drive counts next to the others, so work,
         driven to every day, is worth more than one. The round trips a week are what the driving
         cost counts, so a three-day work week is three and somewhere visited every three weeks is
-        0.33, and the carpool credit is taken off for each of those days. The car is the one the
+        0.33. Parking is charged and the commute credit taken off for each of those days; a single
+        property can charge its own on its drive, for one where the commute works differently. The car is the one the
         drive is made in; left averaged, the fuel is what it comes to over every car that has a
         mileage and a fuel price, which is the one to leave for a drive you take turns at. The
         drive time multiplier stretches every drive to this destination, measured or typed in, for
@@ -205,8 +206,12 @@
                                 <input id="destination-trips-@destination.Id" type="number" step="0.01" min="0" name="trips" value="@Trips(destination.RoundTripsPerWeek)" />
                             </div>
                             <div class="field">
-                                <label for="destination-carpool-@destination.Id">Carpool credit a day</label>
-                                <input id="destination-carpool-@destination.Id" type="number" step="0.01" min="0" name="carpool" value="@Typed(destination.CarpoolCreditPerDay)" />
+                                <label for="destination-parking-@destination.Id">Parking a day</label>
+                                <input id="destination-parking-@destination.Id" type="number" step="0.01" min="0" name="parking" value="@Typed(destination.ParkingPerDay)" />
+                            </div>
+                            <div class="field">
+                                <label for="destination-commute-@destination.Id">Commute credit a day</label>
+                                <input id="destination-commute-@destination.Id" type="number" step="0.01" min="0" name="commute" value="@Typed(destination.CommuteCreditPerDay)" />
                             </div>
                             <div class="field">
                                 <label for="destination-multiplier-@destination.Id">Drive time multiplier</label>
@@ -254,8 +259,12 @@
                 <input id="new-destination-trips" type="number" step="0.01" min="0" name="trips" value="@destinationTrips" />
             </div>
             <div class="field">
-                <label for="new-destination-carpool">Carpool credit a day</label>
-                <input id="new-destination-carpool" type="number" step="0.01" min="0" name="carpool" value="@destinationCarpool" />
+                <label for="new-destination-parking">Parking a day</label>
+                <input id="new-destination-parking" type="number" step="0.01" min="0" name="parking" value="@destinationParking" />
+            </div>
+            <div class="field">
+                <label for="new-destination-commute">Commute credit a day</label>
+                <input id="new-destination-commute" type="number" step="0.01" min="0" name="commute" value="@destinationCommute" />
             </div>
             <div class="field">
                 <label for="new-destination-multiplier">Drive time multiplier</label>
@@ -508,7 +517,8 @@
     private string? destinationAddress;
     private string? destinationWeight;
     private string? destinationTrips;
-    private string? destinationCarpool;
+    private string? destinationParking;
+    private string? destinationCommute;
     private string? destinationMultiplier;
     private string? destinationVehicle;
     private string? tollRoad;
@@ -687,7 +697,8 @@
         destinationAddress = form["address"];
         destinationWeight = form["weight"];
         destinationTrips = form["trips"];
-        destinationCarpool = form["carpool"];
+        destinationParking = form["parking"];
+        destinationCommute = form["commute"];
         destinationMultiplier = form["multiplier"];
         destinationVehicle = form["vehicle"];
 
@@ -698,15 +709,17 @@
                 destinationAddress,
                 PropertyRows.Money(destinationWeight) ?? 1m,
                 Trips(destinationTrips),
-                PropertyRows.Money(destinationCarpool) ?? 0m,
+                PropertyRows.Money(destinationCommute) ?? 0m,
                 Multiplier(destinationMultiplier),
-                Car(destinationVehicle)));
+                Car(destinationVehicle),
+                PropertyRows.Money(destinationParking) ?? 0m));
 
             destinationName = null;
             destinationAddress = null;
             destinationWeight = null;
             destinationTrips = null;
-            destinationCarpool = null;
+            destinationParking = null;
+            destinationCommute = null;
             destinationMultiplier = null;
             destinationVehicle = null;
             destinationError = null;
@@ -742,9 +755,10 @@
                 form["address"].ToString(),
                 PropertyRows.Money(form["weight"]) ?? 1m,
                 Trips(form["trips"]),
-                PropertyRows.Money(form["carpool"]) ?? 0m,
+                PropertyRows.Money(form["commute"]) ?? 0m,
                 Multiplier(form["multiplier"]),
-                Car(form["vehicle"])));
+                Car(form["vehicle"]),
+                PropertyRows.Money(form["parking"]) ?? 0m));
 
             destinationError = null;
         }
