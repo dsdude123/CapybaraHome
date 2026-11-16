@@ -1,10 +1,16 @@
 namespace CapybaraHome.Domain.Homes;
 
 /// <summary>A toll road and what crossing it costs at the peak.</summary>
-public class TollRoad
+public class TollRoad : IProfileOwned
 {
     /// <summary>Primary key.</summary>
     public int Id { get; set; }
+
+    /// <summary>The scenario this toll road belongs to.</summary>
+    public int ProfileId { get; set; }
+
+    /// <summary>The profile named by <see cref="ProfileId"/>.</summary>
+    public SearchProfile? Profile { get; set; }
 
     /// <summary>
     /// What to look for in the names of the tolled roads a route reports; any road whose name

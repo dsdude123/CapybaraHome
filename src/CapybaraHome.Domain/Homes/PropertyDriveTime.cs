@@ -33,6 +33,18 @@ public class PropertyDriveTime
     /// </summary>
     public List<int>? TollRoadOverrideIds { get; set; }
 
+    /// <summary>
+    /// What parking costs for a day on this drive, whatever the destination charges, for a
+    /// property whose commute differs: null follows the destination.
+    /// </summary>
+    public decimal? ParkingPerDayOverride { get; set; }
+
+    /// <summary>
+    /// What a day on this drive pays back, whatever the destination credits, for a property where
+    /// transit or a carpool is worth a different amount: null follows the destination.
+    /// </summary>
+    public decimal? CommuteCreditPerDayOverride { get; set; }
+
     /// <summary>Whether the time was measured or typed in.</summary>
     public DriveTimeSource Source { get; set; }
 

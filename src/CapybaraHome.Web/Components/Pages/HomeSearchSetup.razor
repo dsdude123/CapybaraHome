@@ -10,7 +10,78 @@
 </div>
 
 <section class="card stack">
+    <h2 class="card-title">Scenarios</h2>
+    <p class="muted">
+        A scenario holds the scoring weights, the destinations, the cars and the toll roads, so you
+        can keep a few and switch between them: the properties, their fees and the priorities are
+        the same under all of them, and so is the routing service. Copying a scenario brings its
+        destinations, cars, tolls and the drive times already measured, so only the difference has
+        to be changed.
+    </p>
+
+    <ul class="task-list">
+        @foreach (var profile in profiles)
+        {
+            <li>
+                <form method="post" @formname="@($"profile-{profile.Id}")" @onsubmit="() => ProfileAsync(profile.Id)" class="stack">
+                    <AntiforgeryToken />
+                    <div class="task-line">
+                        <strong>@profile.Name</strong>
+                        @if (profile.IsActive)
+                        {
+                            <span class="muted">showing now</span>
+                        }
+                    </div>
+                    <p class="task-meta">@Holds(profile)</p>
+                    <div class="row">
+                        @if (!profile.IsActive)
+                        {
+                            <button class="btn btn-small btn-primary" type="submit" name="action" value="switch">Switch to it</button>
+                        }
+                        @if (profiles.Count > 1)
+                        {
+                            <button class="btn btn-small btn-danger" type="submit" name="action" value="delete">Delete it</button>
+                        }
+                    </div>
+                    <div class="filters">
+                        <div class="field">
+                            <label for="profile-name-@profile.Id">Its name</label>
+                            <input id="profile-name-@profile.Id" type="text" name="name" value="@profile.Name" />
+                            <button class="btn btn-small" type="submit" name="action" value="rename">Rename it</button>
+                        </div>
+                        <div class="field">
+                            <label for="profile-copy-@profile.Id">Copy it as</label>
+                            <input id="profile-copy-@profile.Id" type="text" name="copy-name" placeholder="@($"{profile.Name} copy")" />
+                            <button class="btn btn-small" type="submit" name="action" value="copy">Copy it</button>
+                        </div>
+                    </div>
+                </form>
+            </li>
+        }
+    </ul>
+
+    <form method="post" @formname="profile-new" @onsubmit="AddProfileAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="filters">
+            <div class="field">
+                <label for="new-profile-name">A new scenario, from scratch</label>
+                <input id="new-profile-name" type="text" name="name" value="@profileName" placeholder="Three days in the office" />
+            </div>
+        </div>
+        <div class="row">
+            <button class="btn btn-primary btn-small" type="submit">Add the scenario</button>
+        </div>
+    </form>
+
+    @if (profileError is not null)
+    {
+        <p class="error">@profileError</p>
+    }
+</section>
+
+<section class="card stack">
     <h2 class="card-title">Scoring weights</h2>
+    <p class="muted">These are @Active?.Name's weights; another scenario has its own.</p>
     <p class="muted">
         Fees, size and drive times score as the difference from your current home: a candidate that
         is cheaper, bigger or closer earns points, one that is dearer, smaller or further loses them. Every weight
@@ -96,7 +167,8 @@
         Where you drive to. The weight is how much that drive counts next to the others, so work,
         driven to every day, is worth more than one. The round trips a week are what the driving
         cost counts, so a three-day work week is three and somewhere visited every three weeks is
-        0.33, and the carpool credit is taken off for each of those days. The car is the one the
+        0.33. Parking is charged and the commute credit taken off for each of those days; a single
+        property can charge its own on its drive, for one where the commute works differently. The car is the one the
         drive is made in; left averaged, the fuel is what it comes to over every car that has a
         mileage and a fuel price, which is the one to leave for a drive you take turns at. The
         drive time multiplier stretches every drive to this destination, measured or typed in, for
@@ -134,8 +206,12 @@
                                 <input id="destination-trips-@destination.Id" type="number" step="0.01" min="0" name="trips" value="@Trips(destination.RoundTripsPerWeek)" />
                             </div>
                             <div class="field">
-                                <label for="destination-carpool-@destination.Id">Carpool credit a day</label>
-                                <input id="destination-carpool-@destination.Id" type="number" step="0.01" min="0" name="carpool" value="@Typed(destination.CarpoolCreditPerDay)" />
+                                <label for="destination-parking-@destination.Id">Parking a day</label>
+                                <input id="destination-parking-@destination.Id" type="number" step="0.01" min="0" name="parking" value="@Typed(destination.ParkingPerDay)" />
+                            </div>
+                            <div class="field">
+                                <label for="destination-commute-@destination.Id">Commute credit a day</label>
+                                <input id="destination-commute-@destination.Id" type="number" step="0.01" min="0" name="commute" value="@Typed(destination.CommuteCreditPerDay)" />
                             </div>
                             <div class="field">
                                 <label for="destination-multiplier-@destination.Id">Drive time multiplier</label>
@@ -183,8 +259,12 @@
                 <input id="new-destination-trips" type="number" step="0.01" min="0" name="trips" value="@destinationTrips" />
             </div>
             <div class="field">
-                <label for="new-destination-carpool">Carpool credit a day</label>
-                <input id="new-destination-carpool" type="number" step="0.01" min="0" name="carpool" value="@destinationCarpool" />
+                <label for="new-destination-parking">Parking a day</label>
+                <input id="new-destination-parking" type="number" step="0.01" min="0" name="parking" value="@destinationParking" />
+            </div>
+            <div class="field">
+                <label for="new-destination-commute">Commute credit a day</label>
+                <input id="new-destination-commute" type="number" step="0.01" min="0" name="commute" value="@destinationCommute" />
             </div>
             <div class="field">
                 <label for="new-destination-multiplier">Drive time multiplier</label>
@@ -418,6 +498,7 @@
     private HttpContext? HttpContext { get; set; }
 
     private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, 0m, null, false);
+    private IReadOnlyList<SearchProfileView> profiles = [];
     private IReadOnlyList<SearchDestinationView> destinations = [];
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
@@ -430,11 +511,14 @@
     private string? con;
     private string? size;
     private string? routingUrl;
+    private string? profileName;
+    private string? profileError;
     private string? destinationName;
     private string? destinationAddress;
     private string? destinationWeight;
     private string? destinationTrips;
-    private string? destinationCarpool;
+    private string? destinationParking;
+    private string? destinationCommute;
     private string? destinationMultiplier;
     private string? destinationVehicle;
     private string? tollRoad;
@@ -459,6 +543,7 @@
     private async Task LoadAsync()
     {
         settings = await Search.GetSettingsAsync();
+        profiles = await Search.ListProfilesAsync();
         destinations = await Search.ListDestinationsAsync();
         priorities = await Search.ListPrioritiesAsync();
         vehicles = await Search.ListVehiclesAsync();
@@ -472,6 +557,89 @@
         con = Typed(settings.ConPoints);
         size = Typed(settings.SizePointsPerSquareFoot);
         routingUrl = settings.RoutingBaseUrl;
+    }
+
+    private SearchProfileView? Active => profiles.FirstOrDefault(p => p.IsActive);
+
+    private static string Holds(SearchProfileView profile) =>
+        $"{Counted(profile.DestinationCount, "destination")}, {Counted(profile.VehicleCount, "car")}, "
+        + Counted(profile.TollRoadCount, "toll road");
+
+    private static string Counted(int count, string noun) =>
+        count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+
+    private async Task AddProfileAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        profileName = HttpContext.Request.Form["name"];
+
+        try
+        {
+            var made = await Search.CreateProfileAsync(profileName ?? string.Empty);
+            await Search.ActivateProfileAsync(made.Id);
+            profileName = null;
+            profileError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            profileError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task ProfileAsync(int id)
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        var action = form["action"].ToString();
+        var name = form["name"].ToString();
+
+        // An empty box copies under the name the placeholder shows.
+        var copyName = form["copy-name"].ToString() is { Length: > 0 } typed && typed.Trim().Length > 0
+            ? typed
+            : $"{name} copy";
+
+        try
+        {
+            profileError = action switch
+            {
+                "switch" => await Search.ActivateProfileAsync(id) is null ? "That scenario is gone." : null,
+                "rename" => await Search.RenameProfileAsync(id, name) is null ? "That scenario is gone." : null,
+                "copy" => await CopyProfileAsync(id, copyName),
+                "delete" => await Search.DeleteProfileAsync(id)
+                    ? null
+                    : "The search has to be scored under something, so the last scenario stays.",
+                _ => profileError,
+            };
+        }
+        catch (ArgumentException ex)
+        {
+            profileError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    // The copy is what you then edit, so it is the one left showing.
+    private async Task<string?> CopyProfileAsync(int id, string name)
+    {
+        var copied = await Search.CopyProfileAsync(id, name);
+        if (copied is null)
+        {
+            return "That scenario is gone.";
+        }
+
+        await Search.ActivateProfileAsync(copied.Id);
+        return null;
     }
 
     private async Task SaveWeightsAsync()
@@ -529,7 +697,8 @@
         destinationAddress = form["address"];
         destinationWeight = form["weight"];
         destinationTrips = form["trips"];
-        destinationCarpool = form["carpool"];
+        destinationParking = form["parking"];
+        destinationCommute = form["commute"];
         destinationMultiplier = form["multiplier"];
         destinationVehicle = form["vehicle"];
 
@@ -540,15 +709,17 @@
                 destinationAddress,
                 PropertyRows.Money(destinationWeight) ?? 1m,
                 Trips(destinationTrips),
-                PropertyRows.Money(destinationCarpool) ?? 0m,
+                PropertyRows.Money(destinationCommute) ?? 0m,
                 Multiplier(destinationMultiplier),
-                Car(destinationVehicle)));
+                Car(destinationVehicle),
+                PropertyRows.Money(destinationParking) ?? 0m));
 
             destinationName = null;
             destinationAddress = null;
             destinationWeight = null;
             destinationTrips = null;
-            destinationCarpool = null;
+            destinationParking = null;
+            destinationCommute = null;
             destinationMultiplier = null;
             destinationVehicle = null;
             destinationError = null;
@@ -584,9 +755,10 @@
                 form["address"].ToString(),
                 PropertyRows.Money(form["weight"]) ?? 1m,
                 Trips(form["trips"]),
-                PropertyRows.Money(form["carpool"]) ?? 0m,
+                PropertyRows.Money(form["commute"]) ?? 0m,
                 Multiplier(form["multiplier"]),
-                Car(form["vehicle"])));
+                Car(form["vehicle"]),
+                PropertyRows.Money(form["parking"]) ?? 0m));
 
             destinationError = null;
         }

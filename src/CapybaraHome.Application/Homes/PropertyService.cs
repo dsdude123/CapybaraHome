@@ -14,7 +14,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         return await context.Properties.AsNoTracking()
             .OrderByDescending(p => p.IsCurrent)
             .ThenBy(p => p.Name)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .ToListAsync(cancellationToken);
     }
 
@@ -23,7 +23,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
     {
         return await context.Properties.AsNoTracking()
             .Where(p => p.Id == id)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .SingleOrDefaultAsync(cancellationToken);
     }
 
@@ -33,7 +33,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         return await context.Properties.AsNoTracking()
             .Where(p => p.IsCurrent)
             .OrderBy(p => p.Id)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -294,6 +294,8 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <param name="miles">How far it is, when known.</param>
     /// <param name="source">Whether the time was measured or typed in.</param>
     /// <param name="tolledRoads">Names of the tolled roads the drive uses.</param>
+    /// <param name="tollRoadOverrideIds">Toll roads charged whatever the route reported, or null to follow it.</param>
+    /// <param name="fees">What this drive charges itself, or null to leave what it already charges.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     public async Task<bool> SetDriveTimeAsync(
         int propertyId,
@@ -303,6 +305,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         DriveTimeSource source,
         IReadOnlyList<string>? tolledRoads = null,
         IReadOnlyList<int>? tollRoadOverrideIds = null,
+        DriveFeeOverrides? fees = null,
         CancellationToken cancellationToken = default)
     {
         if (!await context.Properties.AnyAsync(p => p.Id == propertyId, cancellationToken)
@@ -328,6 +331,15 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         held.TollRoadOverrideIds = tollRoadOverrideIds?.Distinct().Order().ToList();
+
+        // Measuring a drive again says nothing about what parking costs or what the commute pays
+        // back there, so the fees are left as they were unless this save carries them.
+        if (fees is not null)
+        {
+            held.ParkingPerDayOverride = fees.ParkingPerDay;
+            held.CommuteCreditPerDayOverride = fees.CommuteCreditPerDay;
+        }
+
         held.Source = source;
         held.MeasuredAt = clock.GetUtcNow();
 
@@ -421,7 +433,15 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 : throw new ArgumentException("A listing link has to be a web address, such as https://…", parameter);
     }
 
-    private static readonly Expression<Func<Property, PropertyView>> Projection = property => new PropertyView(
+    // The drive times belong to destinations, which belong to a scenario, so a property shows the
+    // drives of the scenario being looked at and no others.
+    private async Task<int> ProfileIdAsync(CancellationToken cancellationToken) =>
+        await context.SearchProfiles.AsNoTracking()
+            .Where(p => p.IsActive)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private static Expression<Func<Property, PropertyView>> Projection(int profileId) => property => new PropertyView(
         property.Id,
         property.Name,
         property.Address,
@@ -464,6 +484,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 p.Id, p.FileName, p.ContentType, p.ByteCount, p.Caption, p.SortOrder, p.CreatedAt))
             .ToList(),
         property.DriveTimes
+            .Where(d => d.Destination!.ProfileId == profileId)
             .OrderBy(d => d.Destination!.SortOrder)
             .ThenBy(d => d.DestinationId)
             .Select(d => new PropertyDriveTimeView(
@@ -475,7 +496,9 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 d.Source,
                 d.MeasuredAt,
                 d.Minutes * d.Destination!.DriveTimeMultiplier,
-                d.TollRoadOverrideIds))
+                d.TollRoadOverrideIds,
+                d.ParkingPerDayOverride,
+                d.CommuteCreditPerDayOverride))
             .ToList(),
         property.Priorities
             .OrderBy(m => m.Priority!.SortOrder)

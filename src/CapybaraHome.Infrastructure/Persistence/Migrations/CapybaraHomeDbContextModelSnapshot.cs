@@ -140,24 +140,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("INTEGER");
 
-                    b.Property<double>("AmenityPoints")
-                        .HasColumnType("REAL");
-
-                    b.Property<double>("ConPoints")
-                        .HasColumnType("REAL");
-
-                    b.Property<double>("DepositPointsPerDollar")
-                        .HasColumnType("REAL");
-
-                    b.Property<double>("DriveTimePointsPerMinute")
-                        .HasColumnType("REAL");
-
-                    b.Property<double>("MonthlyFeePointsPerDollar")
-                        .HasColumnType("REAL");
-
-                    b.Property<double>("ProPoints")
-                        .HasColumnType("REAL");
-
                     b.Property<string>("RoutingApiKey")
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
@@ -165,9 +147,6 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Property<string>("RoutingBaseUrl")
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
-
-                    b.Property<double>("SizePointsPerSquareFoot")
-                        .HasColumnType("REAL");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
@@ -267,6 +246,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<double?>("CommuteCreditPerDayOverride")
+                        .HasColumnType("REAL");
+
                     b.Property<int>("DestinationId")
                         .HasColumnType("INTEGER");
 
@@ -277,6 +259,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasColumnType("REAL");
 
                     b.Property<double>("Minutes")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("ParkingPerDayOverride")
                         .HasColumnType("REAL");
 
                     b.Property<int>("PropertyId")
@@ -459,7 +444,7 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
-                    b.Property<double>("CarpoolCreditPerDay")
+                    b.Property<double>("CommuteCreditPerDay")
                         .HasColumnType("REAL");
 
                     b.Property<double>("DriveTimeMultiplier")
@@ -478,6 +463,12 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<double>("ParkingPerDay")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("ProfileId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<double>("RoundTripsPerWeek")
                         .HasColumnType("REAL");
 
@@ -491,6 +482,8 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasColumnType("REAL");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ProfileId");
 
                     b.HasIndex("VehicleId");
 
@@ -519,6 +512,52 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("SearchPriorities");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchProfile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("AmenityPoints")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("ConPoints")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("DepositPointsPerDollar")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("DriveTimePointsPerMinute")
+                        .HasColumnType("REAL");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("MonthlyFeePointsPerDollar")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("ProPoints")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("SizePointsPerSquareFoot")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SearchProfiles");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Homes.TollRoad", b =>
                 {
                     b.Property<int>("Id")
@@ -527,6 +566,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
 
                     b.Property<double>("PeakToll")
                         .HasColumnType("REAL");
+
+                    b.Property<int>("ProfileId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Road")
                         .IsRequired()
@@ -537,6 +579,8 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ProfileId");
 
                     b.ToTable("TollRoads");
                 });
@@ -558,10 +602,15 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("ProfileId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ProfileId");
 
                     b.ToTable("Vehicles");
                 });
@@ -1363,12 +1412,42 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchDestination", b =>
                 {
+                    b.HasOne("CapybaraHome.Domain.Homes.SearchProfile", "Profile")
+                        .WithMany("Destinations")
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("CapybaraHome.Domain.Homes.Vehicle", "Vehicle")
                         .WithMany()
                         .HasForeignKey("VehicleId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.Navigation("Profile");
+
                     b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.TollRoad", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.SearchProfile", "Profile")
+                        .WithMany("TollRoads")
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Profile");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.Vehicle", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.SearchProfile", "Profile")
+                        .WithMany("Vehicles")
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Profile");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>
@@ -1546,6 +1625,15 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchPriority", b =>
                 {
                     b.Navigation("Properties");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.SearchProfile", b =>
+                {
+                    b.Navigation("Destinations");
+
+                    b.Navigation("TollRoads");
+
+                    b.Navigation("Vehicles");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Meals.Meal", b =>

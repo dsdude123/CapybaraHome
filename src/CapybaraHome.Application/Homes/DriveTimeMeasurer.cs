@@ -84,7 +84,7 @@ public class DriveTimeMeasurer(
                     DriveTimeSource.Measured,
                     drive.TolledRoads,
                     marked,
-                    cancellationToken);
+                    cancellationToken: cancellationToken);
 
                 measured++;
             }

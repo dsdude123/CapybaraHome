@@ -1,10 +1,16 @@
 namespace CapybaraHome.Domain.Homes;
 
 /// <summary>Somewhere the drive from each property is measured to, such as work.</summary>
-public class SearchDestination
+public class SearchDestination : IProfileOwned
 {
     /// <summary>Primary key.</summary>
     public int Id { get; set; }
+
+    /// <summary>The scenario this destination belongs to.</summary>
+    public int ProfileId { get; set; }
+
+    /// <summary>The profile named by <see cref="ProfileId"/>.</summary>
+    public SearchProfile? Profile { get; set; }
 
     /// <summary>What the place is called.</summary>
     public required string Name { get; set; }
@@ -47,8 +53,14 @@ public class SearchDestination
     /// </summary>
     public double DriveTimeMultiplier { get; set; } = 1d;
 
-    /// <summary>What each day driven there pays back, such as a carpool credit from work.</summary>
-    public decimal CarpoolCreditPerDay { get; set; }
+    /// <summary>What parking there costs for a day, paid on each day driven to it.</summary>
+    public decimal ParkingPerDay { get; set; }
+
+    /// <summary>
+    /// What each day driven there pays back, such as a carpool credit from work or what taking
+    /// transit instead is paid.
+    /// </summary>
+    public decimal CommuteCreditPerDay { get; set; }
 
     /// <summary>Position in the list; lower sorts first.</summary>
     public int SortOrder { get; set; }

@@ -13,7 +13,8 @@ public class SearchDestinationConfiguration : IEntityTypeConfiguration<SearchDes
         builder.Property(d => d.Name).IsRequired().HasMaxLength(200);
         builder.Property(d => d.Address).HasMaxLength(1000);
         builder.Property(d => d.Weight).HasConversion<double>();
-        builder.Property(d => d.CarpoolCreditPerDay).HasConversion<double>();
+        builder.Property(d => d.ParkingPerDay).HasConversion<double>();
+        builder.Property(d => d.CommuteCreditPerDay).HasConversion<double>();
         builder.Property(d => d.RoundTripsPerWeek).HasConversion<double>();
 
         // Losing the car a drive is made in leaves the drive shared out rather than deleting it.
