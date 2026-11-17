@@ -66,6 +66,9 @@ public interface ICapybaraHomeDbContext
     /// <summary>Pictures of the properties.</summary>
     DbSet<PropertyPhoto> PropertyPhotos { get; }
 
+    /// <summary>The scenarios the search is scored under, one of them active.</summary>
+    DbSet<SearchProfile> SearchProfiles { get; }
+
     /// <summary>Places the drive from each property is measured to.</summary>
     DbSet<SearchDestination> SearchDestinations { get; }
 

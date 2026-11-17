@@ -7,6 +7,12 @@ namespace CapybaraHome.Application.Homes;
 /// <param name="Problems">What stopped the rest, one line each.</param>
 public record DriveTimeOutcome(int Measured, IReadOnlyList<string> Problems);
 
+/// <summary>What measuring every property's drives did.</summary>
+/// <param name="Properties">How many properties had at least one drive measured.</param>
+/// <param name="Measured">How many drives were measured in all.</param>
+/// <param name="Problems">What stopped the rest, one line each, named by property.</param>
+public record DriveTimeSweep(int Properties, int Measured, IReadOnlyList<string> Problems);
+
 /// <summary>
 /// Measures every drive from one property, placing whatever address has not been placed yet
 /// along the way. One destination failing does not stop the others.
@@ -61,8 +67,30 @@ public class DriveTimeMeasurer(
                     continue;
                 }
 
+                // A drive of no time at all is the service placing both ends on the same spot,
+                // which is not a measurement; saving it would read as a destination next door.
+                if (drive.Minutes <= 0d)
+                {
+                    problems.Add(
+                        $"{destination.Name}: the routing service measured the drive as no time at all, which "
+                        + "means both addresses landed on the same spot, so this one has to be typed in.");
+                    continue;
+                }
+
+                // A toll road marked by hand stands against the drive itself, so measuring the
+                // route again leaves that mark alone.
+                var marked = property.DriveTimes
+                    .FirstOrDefault(d => d.DestinationId == destination.Id)?.TollRoadOverrideIds;
+
                 await properties.SetDriveTimeAsync(
-                    propertyId, destination.Id, drive.Minutes, drive.Miles, DriveTimeSource.Measured, drive.TolledRoads, cancellationToken);
+                    propertyId,
+                    destination.Id,
+                    drive.Minutes,
+                    drive.Miles,
+                    DriveTimeSource.Measured,
+                    drive.TolledRoads,
+                    marked,
+                    cancellationToken: cancellationToken);
 
                 measured++;
             }
@@ -73,6 +101,65 @@ public class DriveTimeMeasurer(
         }
 
         return new DriveTimeOutcome(measured, problems);
+    }
+
+    /// <summary>
+    /// Measures the drives from every property to every destination of the active scenario,
+    /// placing whatever address has not been placed yet along the way. One property failing does
+    /// not stop the others.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    public async Task<DriveTimeSweep> MeasureAllAsync(CancellationToken cancellationToken = default)
+    {
+        // Refused up front rather than once per property, so the sweep reports a service that is
+        // not set up the same way measuring one property does.
+        if (!(await search.GetSettingsAsync(cancellationToken)).CanMeasureDriveTimes)
+        {
+            throw new RoutingException("No routing service is set up yet, so drive times have to be typed in.");
+        }
+
+        if ((await search.ListDestinationsAsync(cancellationToken)).Count == 0)
+        {
+            return new DriveTimeSweep(0, 0, ["There are no destinations to measure the drive to yet."]);
+        }
+
+        var all = await properties.ListAsync(cancellationToken);
+        var problems = new List<string>();
+        var measured = 0;
+        var touched = 0;
+
+        foreach (var property in all)
+        {
+            try
+            {
+                var outcome = await MeasureAsync(property.Id, cancellationToken);
+                if (outcome is null)
+                {
+                    continue;
+                }
+
+                measured += outcome.Measured;
+                if (outcome.Measured > 0)
+                {
+                    touched++;
+                }
+
+                problems.AddRange(outcome.Problems.Select(problem => $"{property.Name}: {problem}"));
+            }
+            catch (RoutingException ex)
+            {
+                // The routing service can fail for one address and answer for the next, so the
+                // sweep carries on and reports every property it could not measure.
+                problems.Add($"{property.Name}: {ex.Message}");
+            }
+        }
+
+        if (all.Count == 0)
+        {
+            problems.Add("There are no properties to measure the drives from yet.");
+        }
+
+        return new DriveTimeSweep(touched, measured, problems);
     }
 
     private async Task<(double Latitude, double Longitude)?> PlacePropertyAsync(

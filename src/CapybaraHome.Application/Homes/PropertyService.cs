@@ -14,7 +14,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         return await context.Properties.AsNoTracking()
             .OrderByDescending(p => p.IsCurrent)
             .ThenBy(p => p.Name)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .ToListAsync(cancellationToken);
     }
 
@@ -23,7 +23,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
     {
         return await context.Properties.AsNoTracking()
             .Where(p => p.Id == id)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .SingleOrDefaultAsync(cancellationToken);
     }
 
@@ -33,7 +33,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         return await context.Properties.AsNoTracking()
             .Where(p => p.IsCurrent)
             .OrderBy(p => p.Id)
-            .Select(Projection)
+            .Select(Projection(await ProfileIdAsync(cancellationToken)))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -57,6 +57,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             PetRent = request.PetRent,
             Deposit = request.Deposit,
             Internet = Blank(request.Internet),
+            ListingUrl = Listing(request.ListingUrl, nameof(request)),
             SquareFeet = Size(request.SquareFeet),
             Utilities = Utilities(request.Utilities),
             Amenities = Amenities(request.Amenities),
@@ -103,12 +104,32 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
 
         if (request.Address is not null)
         {
-            property.Address = Blank(request.Address);
+            var address = Blank(request.Address);
+
+            // The pin and every measured drive were worked out from the address that was held, so a
+            // new address drops both rather than leaving times measured from where it used to be.
+            // Times typed in by hand are his own figures and stay.
+            if (!string.Equals(address, property.Address, StringComparison.Ordinal))
+            {
+                property.Latitude = null;
+                property.Longitude = null;
+
+                context.PropertyDriveTimes.RemoveRange(await context.PropertyDriveTimes
+                    .Where(d => d.PropertyId == property.Id && d.Source == DriveTimeSource.Measured)
+                    .ToListAsync(cancellationToken));
+            }
+
+            property.Address = address;
         }
 
         if (request.Internet is not null)
         {
             property.Internet = Blank(request.Internet);
+        }
+
+        if (request.ListingUrl is not null)
+        {
+            property.ListingUrl = Listing(request.ListingUrl, nameof(request));
         }
 
         if (request.IsCurrent is { } current)
@@ -288,6 +309,8 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
     /// <param name="miles">How far it is, when known.</param>
     /// <param name="source">Whether the time was measured or typed in.</param>
     /// <param name="tolledRoads">Names of the tolled roads the drive uses.</param>
+    /// <param name="tollRoadOverrideIds">Toll roads charged whatever the route reported, or null to follow it.</param>
+    /// <param name="fees">What this drive charges itself, or null to leave what it already charges.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     public async Task<bool> SetDriveTimeAsync(
         int propertyId,
@@ -296,6 +319,8 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         double? miles,
         DriveTimeSource source,
         IReadOnlyList<string>? tolledRoads = null,
+        IReadOnlyList<int>? tollRoadOverrideIds = null,
+        DriveFeeOverrides? fees = null,
         CancellationToken cancellationToken = default)
     {
         if (!await context.Properties.AnyAsync(p => p.Id == propertyId, cancellationToken)
@@ -320,6 +345,16 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
             .Where(road => road.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        held.TollRoadOverrideIds = tollRoadOverrideIds?.Distinct().Order().ToList();
+
+        // Measuring a drive again says nothing about what parking costs or what the commute pays
+        // back there, so the fees are left as they were unless this save carries them.
+        if (fees is not null)
+        {
+            held.ParkingPerDayOverride = fees.ParkingPerDay;
+            held.CommuteCreditPerDayOverride = fees.CommuteCreditPerDay;
+        }
+
         held.Source = source;
         held.MeasuredAt = clock.GetUtcNow();
 
@@ -395,7 +430,33 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static readonly Expression<Func<Property, PropertyView>> Projection = property => new PropertyView(
+    // Only a web address is kept: the page turns this into a link, and a "javascript:" or "data:"
+    // address in a link is a way to run something rather than to open a listing.
+    private static string? Listing(string? value, string parameter)
+    {
+        if (Blank(value) is not { } typed)
+        {
+            return null;
+        }
+
+        var address = typed.Contains("://", StringComparison.Ordinal) ? typed : "https://" + typed;
+
+        return Uri.TryCreate(address, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && uri.Host.Length > 0
+                ? address
+                : throw new ArgumentException("A listing link has to be a web address, such as https://…", parameter);
+    }
+
+    // The drive times belong to destinations, which belong to a scenario, so a property shows the
+    // drives of the scenario being looked at and no others.
+    private async Task<int> ProfileIdAsync(CancellationToken cancellationToken) =>
+        await context.SearchProfiles.AsNoTracking()
+            .Where(p => p.IsActive)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private static Expression<Func<Property, PropertyView>> Projection(int profileId) => property => new PropertyView(
         property.Id,
         property.Name,
         property.Address,
@@ -405,6 +466,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         property.PetRent,
         property.Deposit,
         property.Internet,
+        property.ListingUrl,
         property.SquareFeet,
         property.Latitude,
         property.Longitude,
@@ -437,10 +499,21 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 p.Id, p.FileName, p.ContentType, p.ByteCount, p.Caption, p.SortOrder, p.CreatedAt))
             .ToList(),
         property.DriveTimes
+            .Where(d => d.Destination!.ProfileId == profileId)
             .OrderBy(d => d.Destination!.SortOrder)
             .ThenBy(d => d.DestinationId)
             .Select(d => new PropertyDriveTimeView(
-                d.DestinationId, d.Destination!.Name, d.Minutes, d.Miles, d.TolledRoads, d.Source, d.MeasuredAt))
+                d.DestinationId,
+                d.Destination!.Name,
+                d.Minutes,
+                d.Miles,
+                d.TolledRoads,
+                d.Source,
+                d.MeasuredAt,
+                d.Minutes * d.Destination!.DriveTimeMultiplier,
+                d.TollRoadOverrideIds,
+                d.ParkingPerDayOverride,
+                d.CommuteCreditPerDayOverride))
             .ToList(),
         property.Priorities
             .OrderBy(m => m.Priority!.SortOrder)

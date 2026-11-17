@@ -26,7 +26,9 @@ public class RoutingClientTests
         Assert.Equal(47.61d, placed!.Latitude);
         Assert.Equal(-122.33d, placed.Longitude);
         Assert.Equal("400 Broad St, Seattle, WA", placed.Label);
-        Assert.Contains("geocode/search?text=400%20Broad%20St", http.Requests[0].RequestUri!.AbsoluteUri);
+        Assert.Contains(
+            "https://api.heigit.org/pelias/v1/search?text=400%20Broad%20St",
+            http.Requests[0].RequestUri!.AbsoluteUri);
         Assert.Equal("a-key", http.Requests[0].Headers.GetValues("Authorization").Single());
     }
 
@@ -70,7 +72,9 @@ public class RoutingClientTests
         Assert.Equal(18.5d, drive!.Minutes);
         Assert.Equal(7.705d, drive.Miles, 3);
         Assert.Equal(HttpMethod.Post, http.Requests[0].Method);
-        Assert.Contains("v2/directions/driving-car", http.Requests[0].RequestUri!.ToString());
+        Assert.Equal(
+            "https://api.heigit.org/openrouteservice/v2/directions/driving-car",
+            http.Requests[0].RequestUri!.ToString());
 
         var body = System.Text.Encoding.UTF8.GetString(http.Bodies[0]);
         Assert.Contains("[-122.3,47.6]", body);
@@ -207,6 +211,32 @@ public class RoutingClientTests
         Assert.False(http.Requests[0].Headers.Contains("Authorization"));
     }
 
+    [Fact]
+    public async Task An_address_saved_under_the_retired_host_is_called_at_the_one_that_answers()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var search = new HomeSearchService(db.Context, db.Clock);
+
+        // Saved straight through the context, the way a database written before the move holds it.
+        db.Context.HomeSearchSettings.Add(new CapybaraHome.Domain.Homes.HomeSearchSettings
+        {
+            RoutingBaseUrl = "https://api.openrouteservice.org",
+            RoutingApiKey = "a-key",
+        });
+        await db.Context.SaveChangesAsync();
+
+        var http = new FakeHttp().Reply(OnePlace).Reply(OneRoute);
+        var client = new RoutingClient(http.Client(), search);
+
+        await client.PlaceAsync("400 Broad St");
+        await client.MeasureAsync(47.6d, -122.3d, 47.7d, -122.4d);
+
+        Assert.StartsWith("https://api.heigit.org/pelias/v1/search", http.Requests[0].RequestUri!.ToString());
+        Assert.Equal(
+            "https://api.heigit.org/openrouteservice/v2/directions/driving-car",
+            http.Requests[1].RequestUri!.ToString());
+    }
+
     private static async Task<(RoutingClient Client, FakeHttp Http)> ClientAsync(
         TestDatabase db,
         string payload,
@@ -214,7 +244,7 @@ public class RoutingClientTests
     {
         var search = new HomeSearchService(db.Context, db.Clock);
         await search.SaveSettingsAsync(new HomeSearchSettingsRequest(
-            RoutingBaseUrl: "https://api.openrouteservice.org", RoutingApiKey: "a-key"));
+            RoutingBaseUrl: RoutingEndpoints.HostedBaseUrl, RoutingApiKey: "a-key"));
 
         var http = new FakeHttp().Reply(payload, status);
         return (new RoutingClient(http.Client(), search), http);

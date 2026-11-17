@@ -36,6 +36,9 @@ public class Property
     /// <summary>What internet the place provides, as written, such as "fibre included, 1 Gbps".</summary>
     public string? Internet { get; set; }
 
+    /// <summary>Web address of the listing the place was found on, over http or https.</summary>
+    public string? ListingUrl { get; set; }
+
     /// <summary>Latitude the address was resolved to, or null when it has not been placed.</summary>
     public double? Latitude { get; set; }
 

@@ -3,7 +3,7 @@ using CapybaraHome.Domain.Homes;
 
 namespace CapybaraHome.Tests;
 
-/// <summary>Covers the maths that turns the week's round trips into fuel, tolls and carpool credit.</summary>
+/// <summary>Covers the maths that turns the week's round trips into fuel, tolls, parking and credit.</summary>
 public class DrivingCostCalculatorTests
 {
     [Fact]
@@ -29,14 +29,16 @@ public class DrivingCostCalculatorTests
             [Vehicle(1, "Thirsty", mpg: 20d, price: 4m), Vehicle(2, "Thrifty", mpg: 50d, price: 4m)],
             []);
 
-        var thirsty = cost.Vehicles.Single(v => v.VehicleId == 1);
-        var thrifty = cost.Vehicles.Single(v => v.VehicleId == 2);
+        // Sixty miles a week: three gallons in the thirsty one at $12, 1.2 in the thrifty one at
+        // $4.80. With no car named the drive is shared out, so the fuel is the average, $8.40.
+        var line = cost.Lines.Single();
 
-        Assert.Equal(3d, thirsty.GallonsPerWeek);
-        Assert.Equal(12m, thirsty.FuelPerWeek);
-        Assert.Equal(12m, thirsty.WeeklyCost);
-        Assert.Equal(20.80m, thrifty.MonthlyCost, 2);
-        Assert.Equal(thrifty.MonthlyCost, cost.LowestMonthlyCost);
+        Assert.Equal(["Thirsty", "Thrifty"], line.Cars);
+        Assert.True(line.IsAveraged);
+        Assert.Equal(2.1d, line.GallonsPerWeek, 2);
+        Assert.Equal(8.40m, line.FuelPerWeek, 2);
+        Assert.Equal(8.40m, cost.FuelPerWeek, 2);
+        Assert.Equal(36.40m, cost.MonthlyCost, 2);
     }
 
     [Fact]
@@ -48,10 +50,8 @@ public class DrivingCostCalculatorTests
             [Vehicle(1, "Car", mpg: 30d, price: 4.50m)],
             []);
 
-        var vehicle = cost.Vehicles.Single();
-
-        Assert.Equal(9m, vehicle.WeeklyCost, 2);
-        Assert.Equal(39m, vehicle.MonthlyCost, 2);
+        Assert.Equal(9m, cost.WeeklyCost, 2);
+        Assert.Equal(39m, cost.MonthlyCost, 2);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class DrivingCostCalculatorTests
         Assert.Equal(0d, cost.MilesPerWeek);
         Assert.False(cost.AnyDriving);
         Assert.Equal(["Work"], cost.MissingMiles);
-        Assert.Equal(0m, cost.Vehicles.Single().WeeklyCost);
+        Assert.Equal(0m, cost.WeeklyCost);
     }
 
     [Fact]
@@ -90,8 +90,10 @@ public class DrivingCostCalculatorTests
             [Vehicle(1, "No mileage", mpg: 0d, price: 4m), Vehicle(2, "No price", mpg: 30d, price: 0m)],
             []);
 
-        Assert.Empty(cost.Vehicles);
-        Assert.Null(cost.LowestMonthlyCost);
+        Assert.Equal(0m, cost.FuelPerWeek);
+        Assert.Equal(0m, cost.MonthlyCost);
+        Assert.Equal(["Work"], cost.MissingCars);
+        Assert.Empty(cost.Lines.Single().Cars);
     }
 
     [Fact]
@@ -104,8 +106,8 @@ public class DrivingCostCalculatorTests
             []);
 
         Assert.Equal(88d, cost.MilesPerWeek);
-        Assert.Equal(3.52d, cost.Vehicles.Single().GallonsPerWeek, 2);
-        Assert.Equal(14.08m, cost.Vehicles.Single().WeeklyCost, 2);
+        Assert.Equal(3.52d, cost.GallonsPerWeek, 2);
+        Assert.Equal(14.08m, cost.WeeklyCost, 2);
     }
 
     [Fact]
@@ -122,7 +124,7 @@ public class DrivingCostCalculatorTests
         Assert.Equal(["520"], line.Tolls.Select(t => t.Road));
         Assert.Equal(27m, line.TollsPerWeek);
         Assert.Equal(27m, cost.TollsPerWeek);
-        Assert.Equal(36m, cost.Vehicles.Single().WeeklyCost, 2);
+        Assert.Equal(36m, cost.WeeklyCost, 2);
         Assert.Empty(line.UnpricedTolledRoads);
     }
 
@@ -164,6 +166,52 @@ public class DrivingCostCalculatorTests
     }
 
     [Fact]
+    public void A_toll_road_marked_by_hand_is_charged_though_the_route_found_none()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Marked(1, 10d, [1])]),
+            [Destination(1, "Work", trips: 3)],
+            [],
+            [Toll(1, "520", 4.50m), Toll(2, "99", 2.25m)]);
+
+        var line = cost.Lines.Single();
+        Assert.Equal(["520"], line.Tolls.Select(t => t.Road));
+        Assert.Equal(27m, line.TollsPerWeek);
+        Assert.Empty(line.UnpricedTolledRoads);
+    }
+
+    [Fact]
+    public void Marking_a_drive_takes_the_route_out_of_it_altogether()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Marked(1, 10d, [2], "WA 520", "Tacoma Narrows Bridge")]),
+            [Destination(1, "Work", trips: 3)],
+            [],
+            [Toll(1, "520", 4.50m), Toll(2, "99", 2.25m)]);
+
+        var line = cost.Lines.Single();
+
+        // The 520 the route named is not charged, the 99 marked by hand is, and a tolled road
+        // nothing prices is no longer worth flagging: the marks decide.
+        Assert.Equal(["99"], line.Tolls.Select(t => t.Road));
+        Assert.Equal(13.50m, line.TollsPerWeek);
+        Assert.Empty(line.UnpricedTolledRoads);
+    }
+
+    [Fact]
+    public void Marking_no_toll_road_charges_none_of_them()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Marked(1, 10d, [], "WA 520")]),
+            [Destination(1, "Work", trips: 3)],
+            [],
+            [Toll(1, "520", 4.50m)]);
+
+        Assert.Empty(cost.Lines.Single().Tolls);
+        Assert.Equal(0m, cost.TollsPerWeek);
+    }
+
+    [Fact]
     public void A_toll_road_matches_whatever_case_the_route_writes_it_in()
     {
         var toll = Toll(1, "evergreen point", 4.50m);
@@ -173,19 +221,50 @@ public class DrivingCostCalculatorTests
     }
 
     [Fact]
-    public void The_carpool_credit_comes_off_each_day_driven_there()
+    public void The_commute_credit_comes_off_each_day_driven_there()
     {
         var cost = DrivingCostCalculator.Cost(
             Property([Drive(1, 10d, "WA 520")]),
-            [Destination(1, "Work", trips: 3, carpool: 5m)],
+            [Destination(1, "Work", trips: 3, commute: 5m)],
             [Vehicle(1, "Car", mpg: 30d, price: 4.50m)],
             [Toll(1, "520", 4.50m)]);
 
         // $9 of fuel and $27 of tolls, less three days at $5.
-        Assert.Equal(15m, cost.CarpoolCreditPerWeek);
-        Assert.Equal(21m, cost.Vehicles.Single().WeeklyCost, 2);
-        Assert.Equal(91m, cost.Vehicles.Single().MonthlyCost, 2);
-        Assert.Equal(52m, cost.MonthlyTollsLessCredit, 2);
+        Assert.Equal(15m, cost.CommuteCreditPerWeek);
+        Assert.Equal(21m, cost.WeeklyCost, 2);
+        Assert.Equal(91m, cost.MonthlyCost, 2);
+        Assert.Equal(12m, cost.FeesLessCreditPerWeek);
+        Assert.Equal(12m, cost.Lines.Single().FeesLessCreditPerWeek);
+        Assert.Equal(52m, cost.MonthlyFeesLessCredit, 2);
+    }
+
+    [Fact]
+    public void The_credit_comes_off_the_tolls_even_with_no_car_to_cost_the_fuel_in()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d, "WA 520")]),
+            [Destination(1, "Work", trips: 3, commute: 5m)],
+            [],
+            [Toll(1, "520", 4.50m)]);
+
+        Assert.Equal(0m, cost.FuelPerWeek);
+        Assert.Equal(27m, cost.TollsPerWeek);
+        Assert.Equal(15m, cost.CommuteCreditPerWeek);
+        Assert.Equal(12m, cost.FeesLessCreditPerWeek);
+        Assert.Equal(52m, cost.MonthlyFeesLessCredit, 2);
+    }
+
+    [Fact]
+    public void A_credit_bigger_than_the_tolls_leaves_them_owing_nothing_and_then_some()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d)]),
+            [Destination(1, "Work", trips: 3, commute: 5m)],
+            [],
+            []);
+
+        Assert.Equal(-15m, cost.FeesLessCreditPerWeek);
+        Assert.Equal(-65m, cost.MonthlyFeesLessCredit, 2);
     }
 
     [Fact]
@@ -193,19 +272,19 @@ public class DrivingCostCalculatorTests
     {
         var cost = DrivingCostCalculator.Cost(
             Property([Drive(1, 2d)]),
-            [Destination(1, "Work", trips: 3, carpool: 5m)],
+            [Destination(1, "Work", trips: 3, commute: 5m)],
             [Vehicle(1, "Car", mpg: 30d, price: 4.50m)],
             []);
 
-        Assert.True(cost.Vehicles.Single().WeeklyCost < 0m);
+        Assert.True(cost.WeeklyCost < 0m);
     }
 
     [Fact]
-    public void A_carpool_credit_alone_still_counts_as_driving_to_cost()
+    public void A_commute_credit_alone_still_counts_as_driving_to_cost()
     {
         var cost = DrivingCostCalculator.Cost(
             Property([]),
-            [Destination(1, "Work", trips: 3, carpool: 5m)],
+            [Destination(1, "Work", trips: 3, commute: 5m)],
             [],
             []);
 
@@ -213,26 +292,211 @@ public class DrivingCostCalculatorTests
         Assert.Equal(["Work"], cost.MissingMiles);
     }
 
-    private static (int DestinationId, double? Miles, string[] Tolled) Drive(
+    [Fact]
+    public void Parking_is_charged_for_each_day_driven_there()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d)]),
+            [Destination(1, "Work", trips: 3, parking: 12m)],
+            [],
+            []);
+
+        // Three days at $12, with nothing else to pay.
+        Assert.Equal(36m, cost.ParkingPerWeek);
+        Assert.Equal(36m, cost.Lines.Single().ParkingPerWeek);
+        Assert.Equal(36m, cost.FeesLessCreditPerWeek);
+        Assert.Equal(156m, cost.MonthlyCost, 2);
+    }
+
+    [Fact]
+    public void Parking_alone_still_counts_as_driving_to_cost()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([]),
+            [Destination(1, "Work", trips: 2, parking: 8m)],
+            [],
+            []);
+
+        Assert.True(cost.AnyDriving);
+        Assert.Equal(16m, cost.ParkingPerWeek);
+    }
+
+    [Fact]
+    public void A_drive_charging_its_own_parking_and_credit_leaves_the_destinations_alone()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Charging(1, 10d, parking: 0m, credit: 9m), Charging(2, 10d)]),
+            [
+                Destination(1, "Work", trips: 2, commute: 5m, parking: 12m),
+                Destination(2, "Other work", trips: 2, commute: 5m, parking: 12m),
+            ],
+            [],
+            []);
+
+        var transit = cost.Lines.First(l => l.DestinationId == 1);
+        var usual = cost.Lines.First(l => l.DestinationId == 2);
+
+        // Transit is there from the first property, so it parks for nothing and is paid $9 a day,
+        // while the second follows the destination at $12 parking and $5 back.
+        Assert.True(transit.HasFeeOverride);
+        Assert.Equal(0m, transit.ParkingPerWeek);
+        Assert.Equal(18m, transit.CommuteCreditPerWeek);
+        Assert.Equal(-18m, transit.FeesLessCreditPerWeek);
+
+        Assert.False(usual.HasFeeOverride);
+        Assert.Equal(24m, usual.ParkingPerWeek);
+        Assert.Equal(10m, usual.CommuteCreditPerWeek);
+
+        Assert.Equal(24m, cost.ParkingPerWeek);
+        Assert.Equal(28m, cost.CommuteCreditPerWeek);
+    }
+
+    [Fact]
+    public void A_drive_can_override_the_parking_alone_and_keep_the_destinations_credit()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Charging(1, 10d, parking: 20m)]),
+            [Destination(1, "Work", trips: 1, commute: 5m, parking: 12m)],
+            [],
+            []);
+
+        var line = cost.Lines.Single();
+
+        Assert.Equal(20m, line.ParkingPerWeek);
+        Assert.Equal(5m, line.CommuteCreditPerWeek);
+        Assert.True(line.HasFeeOverride);
+    }
+
+    [Fact]
+    public void A_drive_can_override_the_credit_alone_and_keep_the_destinations_parking()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Charging(1, 10d, credit: 0m)]),
+            [Destination(1, "Work", trips: 1, commute: 5m, parking: 12m)],
+            [],
+            []);
+
+        var line = cost.Lines.Single();
+
+        Assert.Equal(12m, line.ParkingPerWeek);
+        Assert.Equal(0m, line.CommuteCreditPerWeek);
+        Assert.True(line.HasFeeOverride);
+    }
+
+    [Fact]
+    public void A_drive_with_a_car_of_its_own_is_costed_in_that_car_alone()
+    {
+        var cars = new List<VehicleView> { Vehicle(1, "Thirsty", 20d, 4m), Vehicle(2, "Thrifty", 50d, 4m) };
+
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d), Drive(2, 10d)]),
+            [
+                Destination(1, "Parents", trips: 3, vehicleId: 1),
+                Destination(2, "Work", trips: 3),
+            ],
+            cars,
+            []);
+
+        var parents = cost.Lines.Single(l => l.DestinationId == 1);
+        var work = cost.Lines.Single(l => l.DestinationId == 2);
+
+        // The parents' drive is his own car's three gallons at $4; the work drive alternates, so
+        // it is the average of $12 and $4.80.
+        Assert.Equal(["Thirsty"], parents.Cars);
+        Assert.False(parents.IsAveraged);
+        Assert.Equal(12m, parents.FuelPerWeek, 2);
+
+        Assert.Equal(["Thirsty", "Thrifty"], work.Cars);
+        Assert.Equal(8.40m, work.FuelPerWeek, 2);
+        Assert.Equal(20.40m, cost.FuelPerWeek, 2);
+        Assert.Empty(cost.MissingCars);
+    }
+
+    [Fact]
+    public void A_drive_whose_car_cannot_be_costed_is_named_rather_than_averaged()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 10d)]),
+            [Destination(1, "Parents", trips: 1, vehicleId: 1)],
+            [Vehicle(1, "No price", 30d, 0m), Vehicle(2, "Costable", 30d, 4m)],
+            []);
+
+        Assert.Empty(cost.Lines.Single().Cars);
+        Assert.Equal(0m, cost.FuelPerWeek);
+        Assert.Equal(["Parents"], cost.MissingCars);
+    }
+
+    [Fact]
+    public void A_fraction_of_a_round_trip_a_week_costs_that_fraction()
+    {
+        var cost = DrivingCostCalculator.Cost(
+            Property([Drive(1, 30d, "WA 520")]),
+            [Destination(1, "Parents", trips: 0.5m, commute: 4m)],
+            [Vehicle(1, "Car", 30d, 4.50m)],
+            [Toll(1, "520", 4m)]);
+
+        var line = cost.Lines.Single();
+
+        // Half a round trip a week: 30 miles, one gallon at $4.50, one crossing each way at $4,
+        // less half a day's $4 credit.
+        Assert.Equal(0.5m, line.RoundTripsPerWeek);
+        Assert.Equal(30d, cost.MilesPerWeek);
+        Assert.Equal(4.50m, cost.FuelPerWeek, 2);
+        Assert.Equal(4m, cost.TollsPerWeek, 2);
+        Assert.Equal(2m, cost.CommuteCreditPerWeek, 2);
+        Assert.Equal(6.50m, cost.WeeklyCost, 2);
+    }
+
+    private static Row Drive(
         int destinationId,
         double? miles,
-        params string[] tolled) => (destinationId, miles, tolled);
+        params string[] tolled) => new(destinationId, miles, tolled, null);
 
-    private static SearchDestinationView Destination(int id, string name, int trips, decimal carpool = 0m) =>
-        new(id, name, null, 1m, trips, carpool, null, null, id);
+    /// <summary>A drive charging its own parking or credit rather than its destination's.</summary>
+    private static Row Charging(
+        int destinationId,
+        double? miles,
+        decimal? parking = null,
+        decimal? credit = null) => new(destinationId, miles, [], null, parking, credit);
+
+    /// <summary>A drive whose toll roads were marked by hand rather than taken from the route.</summary>
+    private static Row Marked(
+        int destinationId,
+        double? miles,
+        int[] marked,
+        params string[] tolled) => new(destinationId, miles, tolled, marked);
+
+    /// <summary>One held drive, as the cases set it up.</summary>
+    private record Row(
+        int DestinationId,
+        double? Miles,
+        string[] Tolled,
+        int[]? Marked,
+        decimal? Parking = null,
+        decimal? Credit = null);
+
+    private static SearchDestinationView Destination(
+        int id,
+        string name,
+        decimal trips,
+        decimal commute = 0m,
+        int? vehicleId = null,
+        decimal parking = 0m) =>
+        new(id, name, null, 1m, trips, commute, null, null, id, 1d, vehicleId, parking);
 
     private static VehicleView Vehicle(int id, string name, double mpg, decimal price) =>
         new(id, name, mpg, price, id);
 
     private static TollRoadView Toll(int id, string road, decimal price) => new(id, road, price, id);
 
-    private static PropertyView Property(IReadOnlyList<(int DestinationId, double? Miles, string[] Tolled)> drives)
+    private static PropertyView Property(IReadOnlyList<Row> drives)
     {
         return new PropertyView(
             1,
             "Somewhere",
             null,
             IsCurrent: false,
+            null,
             null,
             null,
             null,
@@ -254,7 +518,11 @@ public class DrivingCostCalculatorTests
                     d.Miles,
                     d.Tolled,
                     DriveTimeSource.Manual,
-                    default))
+                    default,
+                    20d,
+                    d.Marked,
+                    d.Parking,
+                    d.Credit))
                 .ToList(),
             [],
             default,

@@ -11,6 +11,7 @@ using CapybaraHome.Domain.Homes;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Web.Auth;
+using CapybaraHome.Web.Security;
 
 namespace CapybaraHome.Web.Endpoints;
 
@@ -20,7 +21,9 @@ public static class ApiEndpoints
     /// <summary>Maps every endpoint under <c>/api</c>. All of them require a signed-in user or a token.</summary>
     public static void MapApi(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api").RequireAuthorization(AuthenticationSetup.ApiPolicyName);
+        var api = app.MapGroup("/api")
+            .RequireAuthorization(AuthenticationSetup.ApiPolicyName)
+            .RequireRateLimiting(RateLimiting.ApiPolicy);
 
         MapTasks(api);
         MapAutomations(api);
@@ -501,9 +504,31 @@ public static class ApiEndpoints
             }
 
             return await service.SetDriveTimeAsync(
-                id, destinationId, request.Minutes.Value, request.Miles, DriveTimeSource.Manual, request.TolledRoads, cancellationToken)
+                    id,
+                    destinationId,
+                    request.Minutes.Value,
+                    request.Miles,
+                    DriveTimeSource.Manual,
+                    request.TolledRoads,
+                    request.TollRoadOverrideIds,
+                    new DriveFeeOverrides(request.ParkingPerDayOverride, request.CommuteCreditPerDayOverride),
+                    cancellationToken)
                     ? Results.NoContent()
                     : Results.NotFound();
+        });
+
+        properties.MapPost("/drives/measure", async (
+            DriveTimeMeasurer measurer,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await measurer.MeasureAllAsync(cancellationToken));
+            }
+            catch (RoutingException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         });
 
         properties.MapPost("/{id:int}/drives/measure", async (

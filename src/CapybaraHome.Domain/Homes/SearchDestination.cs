@@ -1,10 +1,16 @@
 namespace CapybaraHome.Domain.Homes;
 
 /// <summary>Somewhere the drive from each property is measured to, such as work.</summary>
-public class SearchDestination
+public class SearchDestination : IProfileOwned
 {
     /// <summary>Primary key.</summary>
     public int Id { get; set; }
+
+    /// <summary>The scenario this destination belongs to.</summary>
+    public int ProfileId { get; set; }
+
+    /// <summary>The profile named by <see cref="ProfileId"/>.</summary>
+    public SearchProfile? Profile { get; set; }
 
     /// <summary>What the place is called.</summary>
     public required string Name { get; set; }
@@ -26,12 +32,35 @@ public class SearchDestination
 
     /// <summary>
     /// How many round trips a week are driven to it, which is what the fuel cost counts. Three
-    /// covers a three-day work week; zero leaves the destination out of the fuel cost.
+    /// covers a three-day work week, a third covers somewhere visited every three weeks, and zero
+    /// leaves the destination out of the fuel cost.
     /// </summary>
-    public int RoundTripsPerWeek { get; set; }
+    public decimal RoundTripsPerWeek { get; set; }
 
-    /// <summary>What each day driven there pays back, such as a carpool credit from work.</summary>
-    public decimal CarpoolCreditPerDay { get; set; }
+    /// <summary>
+    /// The car this drive is made in, or null when it is shared out: whoever drives varies, so the
+    /// fuel is averaged over every car that can be costed.
+    /// </summary>
+    public int? VehicleId { get; set; }
+
+    /// <summary>The car named by <see cref="VehicleId"/>.</summary>
+    public Vehicle? Vehicle { get; set; }
+
+    /// <summary>
+    /// What every drive to this destination is multiplied by, for a commute the routing service
+    /// reckons shorter than the traffic actually met. One leaves the times alone, and a time typed
+    /// in by hand is stretched like a measured one.
+    /// </summary>
+    public double DriveTimeMultiplier { get; set; } = 1d;
+
+    /// <summary>What parking there costs for a day, paid on each day driven to it.</summary>
+    public decimal ParkingPerDay { get; set; }
+
+    /// <summary>
+    /// What each day driven there pays back, such as a carpool credit from work or what taking
+    /// transit instead is paid.
+    /// </summary>
+    public decimal CommuteCreditPerDay { get; set; }
 
     /// <summary>Position in the list; lower sorts first.</summary>
     public int SortOrder { get; set; }

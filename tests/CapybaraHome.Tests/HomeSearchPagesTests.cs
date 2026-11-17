@@ -409,6 +409,9 @@ public class HomeSearchPagesTests
         var page = await saved.Content.ReadAsStringAsync();
         Assert.Contains("A key is held", page);
 
+        // The old host has been switched off, so the box comes back holding the one that answers.
+        Assert.Contains("value=\"https://api.heigit.org\"", page);
+
         // The key must never be rendered back into the page it was typed on.
         Assert.DoesNotContain("a-secret-key", page);
 
@@ -627,6 +630,63 @@ public class HomeSearchPagesTests
         Assert.Equal(18.5d, (await ReadAsync(app, property.Id)).DriveTimes.Single().Minutes);
     }
 
+    [Fact]
+    public async Task Remeasuring_them_all_from_the_list_measures_every_property_and_says_how_many()
+    {
+        const string Place = """
+        { "features": [ { "geometry": { "coordinates": [-122.33, 47.61] }, "properties": { "label": "Somewhere" } } ] }
+        """;
+
+        const string Route = """
+        { "routes": [ { "summary": { "distance": 12400.0, "duration": 1110.0 } } ] }
+        """;
+
+        var routing = new FakeHttp().ReplyTo("search", Place).ReplyTo("directions", Route);
+
+        await using var app = await AppFactory.CreateAsync(configureServices: services =>
+            services.AddHttpClient<RoutingClient>().ConfigurePrimaryHttpMessageHandler(routing.Handler));
+
+        var client = Client(app);
+
+        Assert.Contains("Remeasure all drives", await client.GetStringAsync("/homes"));
+
+        await PostAsync(client, "/homes/settings", "home-routing", new()
+        {
+            ["action"] = "save",
+            ["url"] = "https://api.openrouteservice.org",
+            ["key"] = "a-key",
+        });
+
+        var here = await CreateAsync(app, new CreatePropertyRequest("Here", Address: "1221 1st Ave"));
+        var there = await CreateAsync(app, new CreatePropertyRequest("There", Address: "500 Pine St"));
+        await DestinationAsync(app, "Work", address: "400 Broad St");
+
+        var swept = await PostAsync(client, "/homes", "board-measure-all", []);
+
+        var html = await swept.Content.ReadAsStringAsync();
+        Assert.Contains("Measured 2 drive(s) across 2 property(s).", html);
+        Assert.Equal(18.5d, (await ReadAsync(app, here.Id)).DriveTimes.Single().Minutes);
+        Assert.Equal(18.5d, (await ReadAsync(app, there.Id)).DriveTimes.Single().Minutes);
+    }
+
+    [Fact]
+    public async Task Remeasuring_them_all_with_no_routing_service_says_what_is_missing()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await CreateAsync(app, new CreatePropertyRequest("Here", Address: "1221 1st Ave"));
+        await DestinationAsync(app, "Work", address: "400 Broad St");
+
+        var page = await client.GetStringAsync("/homes");
+        Assert.Matches("Remeasure all drives[\\s\\S]{0,120}", page);
+        Assert.Contains("Measuring needs a routing service", page);
+
+        var pressed = await PostAsync(client, "/homes", "board-measure-all", []);
+
+        Assert.Contains("No routing service is set up yet", await pressed.Content.ReadAsStringAsync());
+    }
+
     private static List<KeyValuePair<string, string>> Lines(string list, IEnumerable<string> values)
     {
         var fields = new List<KeyValuePair<string, string>>();
@@ -779,7 +839,7 @@ public class HomeSearchPagesTests
 
         await VehicleAsync(app, "Unpriced", 30d, 0m);
         var noPrice = await client.GetStringAsync($"/homes/{property.Id}");
-        Assert.Contains("None of the cars has both a mileage and a fuel price yet", noPrice);
+        Assert.Contains("The drive to Work has no car with both a mileage and a fuel price", noPrice);
     }
 
     [Fact]
@@ -815,22 +875,34 @@ public class HomeSearchPagesTests
     }
 
     [Fact]
-    public async Task The_carpool_credit_is_saved_with_the_destination()
+    public async Task The_commute_credit_and_the_parking_are_saved_with_the_destination()
     {
         await using var app = await AppFactory.CreateAsync();
         var client = Client(app);
 
         await PostAsync(client, "/homes/settings", "destination-new",
-            new() { ["name"] = "Work", ["weight"] = "3", ["trips"] = "3", ["carpool"] = "5" });
+            new() { ["name"] = "Work", ["weight"] = "3", ["trips"] = "3", ["commute"] = "5", ["parking"] = "12" });
 
-        Assert.Equal(5m, (await DestinationsAsync(app)).Single().CarpoolCreditPerDay);
+        var saved = (await DestinationsAsync(app)).Single();
+        Assert.Equal(5m, saved.CommuteCreditPerDay);
+        Assert.Equal(12m, saved.ParkingPerDay);
 
-        var id = (await DestinationsAsync(app)).Single().Id;
+        var id = saved.Id;
 
         await PostAsync(client, "/homes/settings", $"destination-{id}",
-            new() { ["action"] = "save", ["name"] = "Work", ["weight"] = "3", ["trips"] = "3", ["carpool"] = "4.50" });
+            new()
+            {
+                ["action"] = "save",
+                ["name"] = "Work",
+                ["weight"] = "3",
+                ["trips"] = "3",
+                ["commute"] = "4.50",
+                ["parking"] = "14",
+            });
 
-        Assert.Equal(4.50m, (await DestinationsAsync(app)).Single().CarpoolCreditPerDay);
+        var changed = (await DestinationsAsync(app)).Single();
+        Assert.Equal(4.50m, changed.CommuteCreditPerDay);
+        Assert.Equal(14m, changed.ParkingPerDay);
     }
 
     [Fact]
@@ -840,7 +912,7 @@ public class HomeSearchPagesTests
         var client = Client(app);
 
         var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
-        var work = await DestinationAsync(app, "Work", trips: 3, carpool: 5m);
+        var work = await DestinationAsync(app, "Work", trips: 3, commute: 5m);
         await VehicleAsync(app, "The hatchback", 30d, 4.50m);
         await TollRoadAsync(app, "520", 4.50m);
         await TollRoadAsync(app, "99", 2.25m);
@@ -858,9 +930,374 @@ public class HomeSearchPagesTests
 
         // $9 of fuel and $27 of tolls, less three days of $5 credit.
         Assert.Contains("$27.00", html);
-        Assert.Contains("\u2212$15.00", html);
+        Assert.Contains("$15.00 off", html);
         Assert.Contains("$21.00", html);
         Assert.Contains("$91.00", html);
+
+        // The credit comes off the tolls on the page, not onto them.
+        Assert.DoesNotContain("$42.00", html);
+        Assert.Contains("The fees less the credit are", html);
+        Assert.Contains("$12.00 of the week, $52.00", html);
+        Assert.Contains("of the month, whichever car it is driven in.", html);
+    }
+
+    [Fact]
+    public async Task A_listing_link_is_saved_shown_as_a_link_and_refused_when_it_is_not_one()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var saved = await PostManyAsync(client, "/homes/new", "property-editor",
+        [
+            new("name", "Harbor Steps"),
+            new("listing", "https://example.com/listings/42"),
+            new("action", "save"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+
+        var property = await OneAsync(app);
+        Assert.Equal("https://example.com/listings/42", property.ListingUrl);
+
+        var page = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Contains(
+            "<a href=\"https://example.com/listings/42\" target=\"_blank\" rel=\"noopener noreferrer\">",
+            page);
+
+        // The box comes back filled, so editing the rest does not drop the link.
+        Assert.Contains("value=\"https://example.com/listings/42\"", await client.GetStringAsync($"/homes/{property.Id}/edit"));
+
+        // Something that is not a web address is refused, with the reason on the editor.
+        var refused = await PostManyAsync(client, $"/homes/{property.Id}/edit", "property-editor",
+        [
+            new("name", "Harbor Steps"),
+            new("listing", "javascript:alert(1)"),
+            new("action", "save"),
+        ]);
+
+        Assert.Contains("A listing link has to be a web address", await refused.Content.ReadAsStringAsync());
+        Assert.Equal("https://example.com/listings/42", (await OneAsync(app)).ListingUrl);
+
+        // Emptying the box takes the link off, and the page says there is none.
+        await PostManyAsync(client, $"/homes/{property.Id}/edit", "property-editor",
+        [
+            new("name", "Harbor Steps"),
+            new("listing", ""),
+            new("action", "save"),
+        ]);
+
+        Assert.Null((await OneAsync(app)).ListingUrl);
+        Assert.Contains("Listing:", await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("no link", await client.GetStringAsync($"/homes/{property.Id}"));
+    }
+
+    [Fact]
+    public async Task A_toll_road_is_ticked_against_a_drive_and_the_route_hands_over()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        var bridge = await TollRoadAsync(app, "520", 4.50m);
+        var tunnel = await TollRoadAsync(app, "99", 2.25m);
+
+        // A route that crosses nothing tolled: both boxes start clear and nothing is charged.
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, []);
+        }
+
+        var fresh = await client.GetStringAsync($"/homes/{property.Id}");
+        Assert.Matches($"id=\"toll-{work.Id}-{bridge.Id}\"[^>]*(?!checked)", fresh);
+        Assert.Contains("Ticked from the measured route.", WebUtility.HtmlDecode(fresh));
+        Assert.DoesNotContain("$27.00", fresh);
+
+        // He takes the tolled way in practice, so he ticks it.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+            new($"toll-{work.Id}", bridge.Id.ToString()),
+        ]);
+
+        var marked = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("$27.00", marked);
+
+        // Ticking a box is not retyping the time, so the drive is still a measured one.
+        Assert.Equal(DriveTimeSource.Measured, (await OneDriveAsync(app, property.Id)).Source);
+        Assert.Contains("Marked by hand, so the measured route no longer decides.", marked);
+        Assert.Equal([bridge.Id], (await OneDriveAsync(app, property.Id)).TollRoadOverrideIds);
+
+        // Both of them, to prove the second box works as well as the first.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+            new($"toll-{work.Id}", bridge.Id.ToString()),
+            new($"toll-{work.Id}", tunnel.Id.ToString()),
+        ]);
+
+        Assert.Equal([bridge.Id, tunnel.Id], (await OneDriveAsync(app, property.Id)).TollRoadOverrideIds);
+        Assert.Contains("$40.50", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
+
+        // Clearing every box where the route found none of them is the route's own answer, so the
+        // marks come off and a later measurement counts again.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+        ]);
+
+        var handedBack = await OneDriveAsync(app, property.Id);
+        Assert.Null(handedBack.TollRoadOverrideIds);
+        Assert.DoesNotContain("$27.00", await client.GetStringAsync($"/homes/{property.Id}"));
+    }
+
+    [Fact]
+    public async Task Ticks_that_match_the_route_leave_it_in_charge()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        var bridge = await TollRoadAsync(app, "520", 4.50m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"]);
+        }
+
+        // The box the route ticked is left as it is, so the route keeps the drive.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "22"),
+            new($"miles-{work.Id}", "10"),
+            new($"toll-{work.Id}", bridge.Id.ToString()),
+        ]);
+
+        var drive = await OneDriveAsync(app, property.Id);
+        Assert.Null(drive.TollRoadOverrideIds);
+        Assert.Equal(["WA 520"], drive.TolledRoads);
+        Assert.Contains("$27.00", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
+
+        // Unticking it is a mark, and the charge goes with it.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "22"),
+            new($"miles-{work.Id}", "10"),
+        ]);
+
+        Assert.Empty((await OneDriveAsync(app, property.Id)).TollRoadOverrideIds!);
+        Assert.DoesNotContain("$27.00", await client.GetStringAsync($"/homes/{property.Id}"));
+    }
+
+    [Fact]
+    public async Task A_destination_can_be_given_one_car_or_left_averaged_over_them_all()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var parents = await DestinationAsync(app, "Parents", trips: 1);
+        var thirsty = await VehicleAsync(app, "The truck", 15d, 4m);
+        await VehicleAsync(app, "The hatchback", 60d, 4m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, parents.Id, 30d, 30d, DriveTimeSource.Measured, []);
+        }
+
+        // Left averaged: 60 miles a week is 4 gallons in the truck at $16 and 1 in the hatchback
+        // at $4, so $10 between them.
+        var averaged = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("averaged over 2 cars", averaged);
+        Assert.Contains("$10.00", averaged);
+
+        // Set to the truck, the fuel is the truck's alone.
+        await PostAsync(client, "/homes/settings", $"destination-{parents.Id}",
+            new() { ["action"] = "save", ["name"] = "Parents", ["trips"] = "1", ["vehicle"] = thirsty.Id.ToString() });
+
+        Assert.Equal(thirsty.Id, (await DestinationsAsync(app)).Single().VehicleId);
+
+        var named = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("The truck", named);
+        Assert.Contains("$16.00", named);
+
+        // And back to averaged by picking the empty option.
+        await PostAsync(client, "/homes/settings", $"destination-{parents.Id}",
+            new() { ["action"] = "save", ["name"] = "Parents", ["trips"] = "1", ["vehicle"] = string.Empty });
+
+        Assert.Null((await DestinationsAsync(app)).Single().VehicleId);
+        Assert.Contains("averaged over 2 cars", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
+    }
+
+    [Fact]
+    public async Task A_fraction_of_a_round_trip_a_week_is_saved_and_costed()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var parents = await DestinationAsync(app, "Parents", trips: 1);
+        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, parents.Id, 40d, 30d, DriveTimeSource.Measured, []);
+        }
+
+        await PostAsync(client, "/homes/settings", $"destination-{parents.Id}",
+            new() { ["action"] = "save", ["name"] = "Parents", ["trips"] = "0.5" });
+
+        Assert.Equal(0.5m, (await DestinationsAsync(app)).Single().RoundTripsPerWeek);
+
+        // Half a round trip is 30 miles a week, one gallon at $4.50.
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("0.5 \u00d7 30 mi each way", page);
+        Assert.Contains("$4.50", page);
+
+        // The box is filled with the fraction rather than rounded off.
+        Assert.Contains("value=\"0.5\"", await client.GetStringAsync("/homes/settings"));
+    }
+
+    [Fact]
+    public async Task One_properties_drive_can_charge_its_own_parking_and_credit()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("On the bus line"));
+        var work = await DestinationAsync(app, "Work", trips: 2, commute: 5m, parking: 12m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, []);
+        }
+
+        // The destination's own fees: two days at $12 parking, less two at $5.
+        var usual = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("$24.00", usual);
+        Assert.Contains("$10.00 off", usual);
+        Assert.Contains("Left empty, this drive follows the destination.", usual);
+
+        // Transit is there from this one, so it parks for nothing and is paid $9 a day instead.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+            new($"parking-{work.Id}", "0"),
+            new($"commute-{work.Id}", "9"),
+        ]);
+
+        var own = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("its own parking or credit", own);
+        Assert.Contains("$18.00 off", own);
+        Assert.Contains("This drive charges its own, whatever the destination charges.", own);
+        Assert.Contains("The fees less the credit are", own);
+        Assert.Contains("\u2212$18.00 of the week, \u2212$78.00", own);
+
+        // The destination is untouched, so anywhere else still parks at $12.
+        var destination = (await DestinationsAsync(app)).Single();
+        Assert.Equal(12m, destination.ParkingPerDay);
+        Assert.Equal(5m, destination.CommuteCreditPerDay);
+
+        // Emptying the boxes hands the drive back to the destination.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+            new($"parking-{work.Id}", string.Empty),
+            new($"commute-{work.Id}", string.Empty),
+        ]);
+
+        var back = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.DoesNotContain("its own parking or credit", back);
+        Assert.Contains("$24.00", back);
+        Assert.Contains("$10.00 off", back);
+    }
+
+    [Fact]
+    public async Task Every_drive_to_a_destination_is_stretched_by_its_multiplier()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+
+        await PostAsync(client, "/homes/settings", $"destination-{work.Id}",
+            new() { ["action"] = "save", ["name"] = "Work", ["trips"] = "3", ["multiplier"] = "1.25" });
+
+        Assert.Equal(1.25d, (await DestinationsAsync(app)).Single().DriveTimeMultiplier);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, []);
+        }
+
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("20 min \u00d71.25", page);
+        Assert.Contains("= 25 min counted", page);
+
+        // The list shows the stretched drive too, since that is what the score is weighed in.
+        Assert.Contains("25 min", WebUtility.HtmlDecode(await client.GetStringAsync("/homes")));
+
+        // Saving the form without touching the numbers leaves the measurement, and the stretch,
+        // where they were.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "20"),
+            new($"miles-{work.Id}", "10"),
+        ]);
+
+        Assert.Contains("= 25 min counted", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}")));
+
+        // A time typed in by hand is stretched as well: the routing service coming up short is
+        // the reason to type one in at all.
+        await PostManyAsync(client, $"/homes/{property.Id}", "property-drives",
+        [
+            new($"drive-{work.Id}", "32"),
+            new($"miles-{work.Id}", "10"),
+        ]);
+
+        var typed = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("typed in", typed);
+        Assert.Contains("32 min \u00d71.25", typed);
+        Assert.Contains("= 40 min counted", typed);
+    }
+
+    [Fact]
+    public async Task The_credit_still_comes_off_the_tolls_with_no_car_to_cost_the_fuel_in()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Driven"));
+        var work = await DestinationAsync(app, "Work", trips: 3, commute: 5m);
+        await TollRoadAsync(app, "520", 4.50m);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PropertyService>().SetDriveTimeAsync(
+                property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"]);
+        }
+
+        var html = System.Net.WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+
+        Assert.Contains("No cars yet.", html);
+        Assert.Contains("$15.00 off", html);
+        Assert.Contains("The fees less the credit are", html);
+        Assert.Contains("$12.00 of the week, $52.00", html);
+        Assert.Contains("of the month, whichever car it is driven in.", html);
+        Assert.DoesNotContain("$42.00", html);
     }
 
     [Fact]
@@ -947,10 +1384,150 @@ public class HomeSearchPagesTests
         Assert.Contains("$39", page);
     }
 
+    [Fact]
+    public async Task The_score_carries_a_line_for_what_a_month_of_driving_costs()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
+                .SaveSettingsAsync(new HomeSearchSettingsRequest(MonthlyFeePointsPerDollar: 0.05m));
+        }
+
+        var current = await CreateAsync(app, new CreatePropertyRequest("Now", IsCurrent: true));
+        var candidate = await CreateAsync(app, new CreatePropertyRequest("There"));
+        var work = await DestinationAsync(app, "Work", trips: 3);
+        await VehicleAsync(app, "The hatchback", 30d, 4.50m);
+
+        await PostAsync(client, $"/homes/{current.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "40", [$"miles-{work.Id}"] = "20" });
+        await PostAsync(client, $"/homes/{candidate.Id}", "property-drives",
+            new() { [$"drive-{work.Id}"] = "20", [$"miles-{work.Id}"] = "10" });
+
+        // Sixty miles a week fewer at thirty to the gallon and $4.50 a gallon: $9 a week, $39 a
+        // month, which at a twentieth of a point a dollar is a point and a bit.
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{candidate.Id}"));
+
+        Assert.Contains("Driving a month", page);
+        Assert.Contains("$39", page);
+        Assert.Contains("+1.95", page);
+
+        // The current home scores nothing against itself, so the line reads as no difference.
+        Assert.DoesNotContain(
+            "+1.95", WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{current.Id}")));
+    }
+
+    [Fact]
+    public async Task A_scenario_is_switched_from_the_board_and_the_scores_follow_it()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var current = await CreateAsync(app, new CreatePropertyRequest("Now", IsCurrent: true, Rent: 2100m));
+        await CreateAsync(app, new CreatePropertyRequest("There", Rent: 1900m));
+
+        // The first scenario scores the fees; a second one does not.
+        await PostAsync(client, "/homes/settings", "home-weights", new() { ["fees"] = "0.05" });
+
+        var board = WebUtility.HtmlDecode(await client.GetStringAsync("/homes"));
+        Assert.Contains("Scored under Default", board);
+        Assert.Contains("+10", board);
+
+        await PostAsync(client, "/homes/settings", "profile-new", new() { ["name"] = "No weights" });
+
+        var profiles = await ProfilesAsync(app);
+        var second = profiles.Single(p => p.Name == "No weights");
+        Assert.True(second.IsActive);
+
+        // A dropdown appears once there is more than one, and switching changes the scores.
+        var switcher = await client.GetStringAsync("/homes");
+        Assert.Contains("board-profile", switcher);
+        Assert.DoesNotContain("+10", WebUtility.HtmlDecode(switcher));
+
+        var first = profiles.Single(p => p.Name == HomeSearchService.DefaultProfileName);
+        await PostAsync(client, "/homes", "board-profile", new() { ["profile"] = first.Id.ToString() });
+
+        Assert.True((await ProfilesAsync(app)).Single(p => p.Id == first.Id).IsActive);
+        Assert.Contains("+10", WebUtility.HtmlDecode(await client.GetStringAsync("/homes")));
+
+        // The current home is still the current home: properties are not part of a scenario.
+        Assert.Contains(current.Name, await client.GetStringAsync("/homes"));
+    }
+
+    [Fact]
+    public async Task A_scenario_is_copied_renamed_and_deleted_from_the_settings_page()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await PostAsync(client, "/homes/settings", "home-weights", new() { ["fees"] = "0.05" });
+        await DestinationAsync(app, "Work", trips: 5);
+
+        var first = (await ProfilesAsync(app)).Single();
+
+        // Copying with the box left empty uses the name the placeholder shows, and the copy is
+        // what is then being edited.
+        await PostAsync(client, "/homes/settings", $"profile-{first.Id}",
+            new() { ["action"] = "copy", ["name"] = first.Name, ["copy-name"] = string.Empty });
+
+        var copy = (await ProfilesAsync(app)).Single(p => p.Name == "Default copy");
+        Assert.True(copy.IsActive);
+        Assert.Equal(1, copy.DestinationCount);
+        Assert.Equal(0.05m, (await SettingsAsync(app)).MonthlyFeePointsPerDollar);
+
+        // Renaming it, and editing its destination, leaves the original alone.
+        await PostAsync(client, "/homes/settings", $"profile-{copy.Id}",
+            new() { ["action"] = "rename", ["name"] = "Two cars" });
+
+        Assert.Equal("Two cars", (await ProfilesAsync(app)).Single(p => p.Id == copy.Id).Name);
+
+        var copiedWork = (await DestinationsAsync(app)).Single();
+        await PostAsync(client, "/homes/settings", $"destination-{copiedWork.Id}",
+            new() { ["action"] = "save", ["name"] = "Work", ["trips"] = "3" });
+
+        await PostAsync(client, "/homes/settings", $"profile-{first.Id}", new() { ["action"] = "switch", ["name"] = "Default" });
+        Assert.Equal(5m, (await DestinationsAsync(app)).Single().RoundTripsPerWeek);
+
+        // The page says what each scenario holds, and the last one cannot be deleted.
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync("/homes/settings"));
+        Assert.Contains("showing now", page);
+        Assert.Contains("1 destination, 0 cars, 0 toll roads", page);
+
+        await PostAsync(client, "/homes/settings", $"profile-{copy.Id}", new() { ["action"] = "delete", ["name"] = "Two cars" });
+        Assert.Single(await ProfilesAsync(app));
+
+        var refused = await PostAsync(client, "/homes/settings", $"profile-{first.Id}",
+            new() { ["action"] = "delete", ["name"] = "Default" });
+
+        Assert.Contains("the last scenario stays", await refused.Content.ReadAsStringAsync());
+        Assert.Single(await ProfilesAsync(app));
+    }
+
+    private static async Task<IReadOnlyList<SearchProfileView>> ProfilesAsync(AppFactory app)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<HomeSearchService>().ListProfilesAsync();
+    }
+
+    private static async Task<HomeSearchSettingsView> SettingsAsync(AppFactory app)
+    {
+        using var scope = app.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<HomeSearchService>().GetSettingsAsync();
+    }
+
     private static async Task<PropertyView> OneAsync(AppFactory app)
     {
         using var scope = app.Services.CreateScope();
         return (await scope.ServiceProvider.GetRequiredService<PropertyService>().ListAsync()).Single();
+    }
+
+    private static async Task<PropertyDriveTimeView> OneDriveAsync(AppFactory app, int propertyId)
+    {
+        using var scope = app.Services.CreateScope();
+        return (await scope.ServiceProvider.GetRequiredService<PropertyService>().GetAsync(propertyId))!
+            .DriveTimes.Single();
     }
 
     private static async Task<SearchDestinationView> DestinationAsync(
@@ -959,11 +1536,13 @@ public class HomeSearchPagesTests
         decimal weight = 1m,
         string? address = null,
         int trips = 0,
-        decimal carpool = 0m)
+        decimal commute = 0m,
+        decimal parking = 0m)
     {
         using var scope = app.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
-            .CreateDestinationAsync(new SearchDestinationRequest(name, address, weight, trips, carpool));
+            .CreateDestinationAsync(new SearchDestinationRequest(
+                name, address, weight, trips, commute, 1d, null, parking));
     }
 
     private static async Task<TollRoadView> TollRoadAsync(AppFactory app, string road, decimal price)

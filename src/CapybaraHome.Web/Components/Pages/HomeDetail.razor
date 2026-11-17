@@ -62,6 +62,11 @@ else
                     <td>@Points(score.Deposit)</td>
                 </tr>
                 <tr>
+                    <td>Driving a month</td>
+                    <td>@Money(score.DrivingDifference)</td>
+                    <td>@Points(score.Driving)</td>
+                </tr>
+                <tr>
                     <td>Size</td>
                     <td>@SizeDifference(score.SizeDifference)</td>
                     <td>@Points(score.Size)</td>
@@ -130,6 +135,17 @@ else
             </tbody>
         </table>
         <p class="muted">Internet: @(property.Internet is { Length: > 0 } ? property.Internet : "not recorded")</p>
+        <p class="muted">
+            Listing:
+            @if (property.ListingUrl is { Length: > 0 } listing)
+            {
+                <a href="@listing" target="_blank" rel="noopener noreferrer">@listing</a>
+            }
+            else
+            {
+                @("no link")
+            }
+        </p>
     </section>
 
     <div class="card-grid">
@@ -240,6 +256,13 @@ else
                         {
                             <span class="muted">— @(held.Source == DriveTimeSource.Measured ? "measured" : "typed in")</span>
                         }
+                        @if (held is { IsAdjusted: true })
+                        {
+                            <span class="muted">
+                                — @Minutes(held.Minutes) @Factor(destination.DriveTimeMultiplier)
+                                = @Minutes(held.AdjustedMinutes) counted
+                            </span>
+                        }
                     </p>
                     <div class="filters">
                         <div class="field">
@@ -257,6 +280,43 @@ else
                     {
                         <p class="task-meta">Tolled roads on the route: @string.Join(", ", held.TolledRoads)</p>
                     }
+                    @if (tollRoads.Count > 0)
+                    {
+                        <div class="choice-line">
+                            <span class="muted">Charge these toll roads</span>
+                            @foreach (var toll in tollRoads)
+                            {
+                                <label for="toll-@destination.Id-@toll.Id">
+                                    <input id="toll-@destination.Id-@toll.Id" type="checkbox"
+                                           name="toll-@destination.Id" value="@toll.Id"
+                                           checked="@Charged(held, toll)" />
+                                    @toll.Road
+                                </label>
+                            }
+                        </div>
+                        <p class="task-meta muted">
+                            @(held?.TollRoadOverrideIds is null
+                                ? "Ticked from the measured route. Tick one the route missed and that choice stands instead, measure or no measure."
+                                : "Marked by hand, so the measured route no longer decides. Match the ticks to the route to hand it back.")
+                        </p>
+                    }
+                    <div class="filters">
+                        <div class="field">
+                            <label for="parking-@destination.Id">Parking a day, here</label>
+                            <input id="parking-@destination.Id" type="number" step="0.01" min="0" name="parking-@destination.Id"
+                                   value="@Fee(held?.ParkingPerDayOverride)" placeholder="@Fee(destination.ParkingPerDay)" />
+                        </div>
+                        <div class="field">
+                            <label for="commute-@destination.Id">Commute credit a day, here</label>
+                            <input id="commute-@destination.Id" type="number" step="0.01" min="0" name="commute-@destination.Id"
+                                   value="@Fee(held?.CommuteCreditPerDayOverride)" placeholder="@Fee(destination.CommuteCreditPerDay)" />
+                        </div>
+                    </div>
+                    <p class="task-meta muted">
+                        @(held is { HasFeeOverride: true }
+                            ? "This drive charges its own, whatever the destination charges. Empty the boxes to follow it again."
+                            : "Left empty, this drive follows the destination. Fill one in where this commute works differently, such as transit being there to take.")
+                    </p>
                 }
                 <div class="row">
                     <button class="btn btn-primary btn-small" type="submit">Save the times</button>
@@ -299,18 +359,22 @@ else
             <p class="muted">
                 Nothing to cost yet. This counts the round trips a week set on each
                 <a href="homes/settings">destination</a> — three for a three-day work week — against
-                the miles and the tolls of each drive, less any carpool credit.
+                the miles, the tolls and the parking of each drive, less any commute credit.
             </p>
         }
         else
         {
+            <div class="table-wide">
             <table>
                 <thead>
                     <tr>
                         <th scope="col">Drive</th>
                         <th scope="col">Miles a week</th>
+                        <th scope="col">Fuel a week</th>
                         <th scope="col">Tolls a week</th>
-                        <th scope="col">Carpool credit</th>
+                        <th scope="col">Parking a week</th>
+                        <th scope="col">Commute credit</th>
+                        <th scope="col">A week</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -319,9 +383,17 @@ else
                         <tr>
                             <td>
                                 @line.Name
-                                <br /><span class="muted">@line.RoundTripsPerWeek × @Miles(line.Miles) each way</span>
+                                <br /><span class="muted">@Trips(line.RoundTripsPerWeek) × @Miles(line.Miles) each way</span>
+                                @if (line.HasFeeOverride)
+                                {
+                                    <br /><span class="muted">its own parking or credit</span>
+                                }
                             </td>
                             <td>@Miles(line.MilesPerWeek)</td>
+                            <td>
+                                @Cents(line.FuelPerWeek)
+                                <br /><span class="muted">@Cars(line)</span>
+                            </td>
                             <td>
                                 @Cents(line.TollsPerWeek)
                                 @if (line.Tolls.Count > 0)
@@ -329,17 +401,31 @@ else
                                     <br /><span class="muted">@string.Join(", ", line.Tolls.Select(t => t.Road))</span>
                                 }
                             </td>
-                            <td>@Credit(line.CarpoolCreditPerWeek)</td>
+                            <td>@Cents(line.ParkingPerWeek)</td>
+                            <td>@Credit(line.CommuteCreditPerWeek)</td>
+                            <td>@Cents(line.WeeklyCost)</td>
                         </tr>
                     }
                     <tr>
                         <td><strong>A week in all</strong></td>
                         <td><strong>@Miles(driving.MilesPerWeek)</strong></td>
+                        <td><strong>@Cents(driving.FuelPerWeek)</strong></td>
                         <td><strong>@Cents(driving.TollsPerWeek)</strong></td>
-                        <td><strong>@Credit(driving.CarpoolCreditPerWeek)</strong></td>
+                        <td><strong>@Cents(driving.ParkingPerWeek)</strong></td>
+                        <td><strong>@Credit(driving.CommuteCreditPerWeek)</strong></td>
+                        <td><strong>@Cents(driving.WeeklyCost)</strong></td>
                     </tr>
                 </tbody>
             </table>
+            </div>
+
+            <p class="muted">
+                A week is the fuel, the tolls and the parking, less the commute credit:
+                @Cents(driving.WeeklyCost) a week, @Cents(driving.MonthlyCost) a month, over
+                @Gallons(driving.GallonsPerWeek) gal. The fees less the credit are
+                @Cents(driving.FeesLessCreditPerWeek) of the week, @Cents(driving.MonthlyFeesLessCredit)
+                of the month, whichever car it is driven in.
+            </p>
 
             @if (vehicles.Count == 0)
             {
@@ -348,40 +434,13 @@ else
                     gallon costs</a> and the fuel is costed here too.
                 </p>
             }
-            else if (driving.Vehicles.Count == 0)
+            @foreach (var name in driving.MissingCars)
             {
                 <p class="muted">
-                    None of the cars has both a mileage and a fuel price yet, so there is nothing to
-                    cost the miles with.
+                    The drive to @name has no car with both a mileage and a fuel price, so its fuel
+                    is not counted. <a href="homes/settings">Set its car</a>, or fill in the mpg and
+                    the fuel price.
                 </p>
-            }
-            else
-            {
-                <table>
-                    <thead>
-                        <tr>
-                            <th scope="col">Car</th>
-                            <th scope="col">Fuel a week</th>
-                            <th scope="col">A week</th>
-                            <th scope="col">A month</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var cost in driving.Vehicles)
-                        {
-                            <tr>
-                                <td>@cost.Name</td>
-                                <td>
-                                    @Cents(cost.FuelPerWeek)
-                                    <br /><span class="muted">@Gallons(cost.GallonsPerWeek) gal</span>
-                                </td>
-                                <td>@Cents(cost.WeeklyCost)</td>
-                                <td>@Cents(cost.MonthlyCost)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                <p class="muted">A week is the fuel and the tolls, less the carpool credit.</p>
             }
         }
 
@@ -523,6 +582,7 @@ else
     private IReadOnlyList<SearchDestinationView> destinations = [];
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
+    private IReadOnlyList<TollRoadView> tollRoads = [];
     private PropertyDrivingCost? driving;
     private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private decimal priorityPoints;
@@ -553,6 +613,7 @@ else
         destinations = await Search.ListDestinationsAsync();
         priorities = await Search.ListPrioritiesAsync();
         vehicles = await Search.ListVehiclesAsync();
+        tollRoads = await Search.ListTollRoadsAsync();
         settings = await Search.GetSettingsAsync();
         priorityPoints = priorities.Sum(p => Math.Abs(p.Points));
     }
@@ -591,11 +652,18 @@ else
                     ? typed
                     : (double?)null;
 
-                // Tolls come only from a measured route, so retyping the time keeps the ones it found.
-                var tolled = property!.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id)?.TolledRoads;
+                var held = property!.DriveTimes.FirstOrDefault(d => d.DestinationId == destination.Id);
 
+                // Leaving the numbers as they are and ticking a toll road does not turn a measured
+                // drive into a typed one, which would take its multiplier off as well.
+                var source = held is not null && Same(held.Minutes, minutes) && Same(held.Miles, miles)
+                    ? held.Source
+                    : DriveTimeSource.Manual;
+
+                // Tolls come from the measured route, so retyping the time keeps the ones it found.
                 await Properties.SetDriveTimeAsync(
-                    Id, destination.Id, minutes, miles, DriveTimeSource.Manual, tolled);
+                    Id, destination.Id, minutes, miles, source, held?.TolledRoads, Marked(held, destination.Id),
+                    Fees(destination.Id));
             }
             else
             {
@@ -665,13 +733,26 @@ else
     private static string Cents(decimal value) =>
         (value < 0 ? "\u2212$" : "$") + Math.Abs(value).ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
 
+    // A credit is money back, so it is written as the amount taken off rather than as a negative
+    // cost, and the column beside it carries the tolls with the credit already off.
     private static string Credit(decimal value) =>
-        value == 0m ? "\u2014" : "\u2212" + Cents(value);
+        value == 0m ? "\u2014" : Cents(value) + " off";
 
     private static string Miles(double? value) =>
         value is null
             ? "\u2014"
             : value.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " mi";
+
+    private static string Trips(decimal value) =>
+        value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    // Named where one car is charged, counted where the fuel is shared out over several.
+    private static string Cars(DrivingCostLine line) => line.Cars.Count switch
+    {
+        0 => "no car costed",
+        1 => line.Cars[0],
+        var count => $"averaged over {count} cars",
+    };
 
     private static string Gallons(double value) =>
         value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
@@ -690,6 +771,66 @@ else
             ? (known > 0 ? "+" : known < 0 ? "\u2212" : string.Empty)
                 + Math.Abs(known).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " sq ft"
             : "\u2014";
+
+    // Which toll roads the drive is charged: the ones marked by hand, or the ones the measured
+    // route named.
+    private bool Charged(PropertyDriveTimeView? held, TollRoadView toll) =>
+        held?.TollRoadOverrideIds is { } chosen
+            ? chosen.Contains(toll.Id)
+            : held is not null && held.TolledRoads.Any(toll.Prices);
+
+    // Ticks matching the route exactly leave the route in charge, so a later measurement still
+    // counts; anything else is his own mark and stands.
+    private IReadOnlyList<int>? Marked(PropertyDriveTimeView? held, int destinationId)
+    {
+        if (tollRoads.Count == 0 || HttpContext is null)
+        {
+            return held?.TollRoadOverrideIds;
+        }
+
+        var ticked = HttpContext.Request.Form[$"toll-{destinationId}"]
+            .Select(value => int.TryParse(value, out var id) ? id : 0)
+            .Where(id => tollRoads.Any(toll => toll.Id == id))
+            .Distinct()
+            .Order()
+            .ToList();
+
+        var fromRoute = tollRoads
+            .Where(toll => held is not null && held.TolledRoads.Any(toll.Prices))
+            .Select(toll => toll.Id)
+            .Order()
+            .ToList();
+
+        return ticked.SequenceEqual(fromRoute) ? null : ticked;
+    }
+
+    // An empty box leaves the drive on the destination's fee rather than charging it nothing,
+    // which is the difference between "the same as everywhere" and "free here".
+    private DriveFeeOverrides Fees(int destinationId) =>
+        new(Money($"parking-{destinationId}"), Money($"commute-{destinationId}"));
+
+    private decimal? Money(string field)
+    {
+        var posted = HttpContext?.Request.Form[field].ToString();
+
+        return decimal.TryParse(posted, System.Globalization.CultureInfo.InvariantCulture, out var value) && value >= 0m
+            ? value
+            : null;
+    }
+
+    private static string? Fee(decimal? value) =>
+        value?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static bool Same(double? held, double? posted) =>
+        held is null
+            ? posted is null
+            : posted is not null && Math.Abs(held.Value - posted.Value) < 0.005d;
+
+    private static string Minutes(double value) =>
+        value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " min";
+
+    private static string Factor(double value) =>
+        "\u00d7" + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string Points(decimal value) =>
         (value > 0 ? "+" : string.Empty) + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);

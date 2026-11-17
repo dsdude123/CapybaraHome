@@ -571,6 +571,11 @@ table {
     width: 100%;
 }
 
+/* The driving table has a column per part of the cost, which is wider than a phone. */
+.table-wide {
+    overflow-x: auto;
+}
+
 th,
 td {
     border-bottom: 1px solid var(--border);

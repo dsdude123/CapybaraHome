@@ -19,6 +19,7 @@ public record ScoredProperty(PropertyView Property, PropertyScore Score, Propert
 /// <param name="TollRoads">The toll roads and what each crossing costs.</param>
 /// <param name="CurrentDriving">What the current home's driving costs, or null when none is marked.</param>
 /// <param name="Settings">The weights the scores were worked out under.</param>
+/// <param name="Profiles">The scenarios the search can be scored under, the active one marked.</param>
 public record HomeSearchBoard(
     PropertyView? Current,
     IReadOnlyList<ScoredProperty> Candidates,
@@ -28,7 +29,12 @@ public record HomeSearchBoard(
     IReadOnlyList<VehicleView> Vehicles,
     IReadOnlyList<TollRoadView> TollRoads,
     PropertyDrivingCost? CurrentDriving,
-    HomeSearchSettingsView Settings);
+    HomeSearchSettingsView Settings,
+    IReadOnlyList<SearchProfileView> Profiles)
+{
+    /// <summary>The scenario the board is showing.</summary>
+    public SearchProfileView? Profile => Profiles.FirstOrDefault(p => p.IsActive);
+}
 
 /// <summary>Puts the properties, the setup and the scores together.</summary>
 public class HomeSearchBoardService(PropertyService properties, HomeSearchService search)
@@ -36,6 +42,7 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
     /// <summary>Returns the whole search, with every property scored.</summary>
     public async Task<HomeSearchBoard> GetAsync(CancellationToken cancellationToken = default)
     {
+        var profiles = await search.ListProfilesAsync(cancellationToken);
         var all = await properties.ListAsync(cancellationToken);
         var destinations = await search.ListDestinationsAsync(cancellationToken);
         var priorities = await search.ListPrioritiesAsync(cancellationToken);
@@ -49,7 +56,7 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
             .Where(p => !p.IsCurrent)
             .Select(p => new ScoredProperty(
                 p,
-                PropertyScorer.Score(p, current, destinations, settings),
+                PropertyScorer.Score(p, current, destinations, settings, vehicles, tollRoads),
                 DrivingCostCalculator.Cost(p, destinations, vehicles, tollRoads)))
             .OrderByDescending(scored => scored.Score.Total)
             .ThenBy(scored => scored.Property.Name)
@@ -57,14 +64,15 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
 
         var currentScore = current is null
             ? null
-            : PropertyScorer.Score(current, current, destinations, settings);
+            : PropertyScorer.Score(current, current, destinations, settings, vehicles, tollRoads);
 
         var currentDriving = current is null
             ? null
             : DrivingCostCalculator.Cost(current, destinations, vehicles, tollRoads);
 
         return new HomeSearchBoard(
-            current, candidates, currentScore, destinations, priorities, vehicles, tollRoads, currentDriving, settings);
+            current, candidates, currentScore, destinations, priorities, vehicles, tollRoads, currentDriving,
+            settings, profiles);
     }
 
     /// <summary>Returns one property with its score, or null when no property has that id.</summary>
@@ -84,7 +92,7 @@ public class HomeSearchBoardService(PropertyService properties, HomeSearchServic
 
         return new ScoredProperty(
             property,
-            PropertyScorer.Score(property, current, destinations, settings),
+            PropertyScorer.Score(property, current, destinations, settings, vehicles, tollRoads),
             DrivingCostCalculator.Cost(property, destinations, vehicles, tollRoads));
     }
 }

@@ -317,10 +317,18 @@ public class DatabaseRecoveryTests : IDisposable
     }
 
     /// <summary>Overwrites the content of a page, which is what a half-written file looks like.</summary>
+    // The last pages of the file, which are the filler rows written above: damaging the middle
+    // instead depends on where the schema leaves those rows, so a migration that adds a table
+    // could move the damage into pages holding nothing and the integrity check would pass, while
+    // damaging the whole file takes the schema with it and nothing can be read at all.
     private void Damage()
     {
         using var file = File.Open(DatabasePath, FileMode.Open, FileAccess.ReadWrite);
-        file.Seek(file.Length / 2, SeekOrigin.Begin);
-        file.Write(new byte[2048]);
+
+        var from = file.Length * 3 / 4;
+        var rubbish = new byte[file.Length - from];
+        Random.Shared.NextBytes(rubbish);
+        file.Seek(from, SeekOrigin.Begin);
+        file.Write(rubbish);
     }
 }

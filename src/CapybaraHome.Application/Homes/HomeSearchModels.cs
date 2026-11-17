@@ -50,9 +50,13 @@ public record PropertyPhotoView(
 /// <param name="DestinationName">What that place is called.</param>
 /// <param name="Minutes">How long the drive takes.</param>
 /// <param name="Miles">How far it is, when it was measured or typed in.</param>
-/// <param name="TolledRoads">Names of the tolled roads it uses.</param>
+/// <param name="TolledRoads">Names of the tolled roads a measured route reported.</param>
 /// <param name="Source">Whether the time was measured or typed in.</param>
 /// <param name="MeasuredAt">When it was measured or last typed.</param>
+/// <param name="AdjustedMinutes">The minutes the drive is reckoned to take, its destination's multiplier applied.</param>
+/// <param name="TollRoadOverrideIds">Toll roads charged whatever the route reported, or null to follow it.</param>
+/// <param name="ParkingPerDayOverride">What parking costs a day on this drive, or null to follow the destination.</param>
+/// <param name="CommuteCreditPerDayOverride">What a day on this drive pays back, or null to follow the destination.</param>
 public record PropertyDriveTimeView(
     int DestinationId,
     string DestinationName,
@@ -60,7 +64,18 @@ public record PropertyDriveTimeView(
     double? Miles,
     IReadOnlyList<string> TolledRoads,
     DriveTimeSource Source,
-    DateTimeOffset MeasuredAt);
+    DateTimeOffset MeasuredAt,
+    double AdjustedMinutes,
+    IReadOnlyList<int>? TollRoadOverrideIds,
+    decimal? ParkingPerDayOverride = null,
+    decimal? CommuteCreditPerDayOverride = null)
+{
+    /// <summary>Whether the minutes shown differ from the ones measured or typed.</summary>
+    public bool IsAdjusted => Math.Abs(AdjustedMinutes - Minutes) > 0.005d;
+
+    /// <summary>Whether this drive charges its own parking or credit rather than the destination's.</summary>
+    public bool HasFeeOverride => ParkingPerDayOverride is not null || CommuteCreditPerDayOverride is not null;
+}
 
 /// <summary>How a property was marked against one priority.</summary>
 /// <param name="PriorityId">The priority.</param>
@@ -79,6 +94,7 @@ public record PropertyPriorityView(int PriorityId, string Name, decimal Points, 
 /// <param name="PetRent">Monthly pet rent.</param>
 /// <param name="Deposit">Deposit, which is paid once.</param>
 /// <param name="Internet">What internet the place provides, as written.</param>
+/// <param name="ListingUrl">Web address of the listing it was found on, or null.</param>
 /// <param name="SquareFeet">How big the place is, in square feet.</param>
 /// <param name="Latitude">Latitude the address was resolved to, or null.</param>
 /// <param name="Longitude">Longitude the address was resolved to, or null.</param>
@@ -101,6 +117,7 @@ public record PropertyView(
     decimal? PetRent,
     decimal? Deposit,
     string? Internet,
+    string? ListingUrl,
     int? SquareFeet,
     double? Latitude,
     double? Longitude,
@@ -152,6 +169,7 @@ public record PropertyPointInput(PropertyPointKind Kind, string Text);
 /// <param name="PetRent">Monthly pet rent.</param>
 /// <param name="Deposit">Deposit, which is paid once.</param>
 /// <param name="Internet">What internet the place provides.</param>
+/// <param name="ListingUrl">Web address of the listing it was found on, over http or https.</param>
 /// <param name="SquareFeet">How big the place is, in square feet.</param>
 /// <param name="Utilities">The utility breakdown.</param>
 /// <param name="Amenities">What the place offers, in the order given.</param>
@@ -165,6 +183,7 @@ public record CreatePropertyRequest(
     decimal? PetRent = null,
     decimal? Deposit = null,
     string? Internet = null,
+    string? ListingUrl = null,
     int? SquareFeet = null,
     IReadOnlyList<PropertyUtilityInput>? Utilities = null,
     IReadOnlyList<string>? Amenities = null,
@@ -180,6 +199,7 @@ public record CreatePropertyRequest(
 /// <param name="Deposit">New deposit.</param>
 /// <param name="ClearMoney">When true, the money fields and the square footage left null in this request are cleared.</param>
 /// <param name="Internet">New internet description; pass an empty string to clear it.</param>
+/// <param name="ListingUrl">New listing address; pass an empty string to clear it.</param>
 /// <param name="SquareFeet">New size in square feet.</param>
 /// <param name="Utilities">The whole utility breakdown, replacing the one held.</param>
 /// <param name="Amenities">The whole list of amenities, replacing the one held.</param>
@@ -196,6 +216,7 @@ public record UpdatePropertyRequest(
     decimal? Deposit = null,
     bool ClearMoney = false,
     string? Internet = null,
+    string? ListingUrl = null,
     int? SquareFeet = null,
     IReadOnlyList<PropertyUtilityInput>? Utilities = null,
     IReadOnlyList<string>? Amenities = null,
@@ -203,18 +224,41 @@ public record UpdatePropertyRequest(
     double? Latitude = null,
     double? Longitude = null);
 
+/// <summary>A scenario of the search as the pages see it.</summary>
+/// <param name="Id">Primary key.</param>
+/// <param name="Name">What the scenario is called.</param>
+/// <param name="IsActive">Whether this is the profile the pages are showing.</param>
+/// <param name="SortOrder">Position in the list.</param>
+/// <param name="DestinationCount">How many destinations it drives to.</param>
+/// <param name="VehicleCount">How many cars it drives.</param>
+/// <param name="TollRoadCount">How many toll roads it prices.</param>
+public record SearchProfileView(
+    int Id,
+    string Name,
+    bool IsActive,
+    int SortOrder,
+    int DestinationCount,
+    int VehicleCount,
+    int TollRoadCount);
+
 /// <summary>Fields accepted when creating or updating a destination.</summary>
 /// <param name="Name">What the place is called; required.</param>
 /// <param name="Address">Street address.</param>
 /// <param name="Weight">How much its drive counts next to the others.</param>
-/// <param name="RoundTripsPerWeek">How many round trips a week are driven to it.</param>
-/// <param name="CarpoolCreditPerDay">What each day driven there pays back.</param>
+/// <param name="RoundTripsPerWeek">How many round trips a week are driven to it; fractions are allowed.</param>
+/// <param name="CommuteCreditPerDay">What each day driven there pays back.</param>
+/// <param name="DriveTimeMultiplier">What every drive to it is multiplied by; one leaves the times alone.</param>
+/// <param name="VehicleId">The car the drive is made in, or null to average every car that can be costed.</param>
+/// <param name="ParkingPerDay">What parking there costs for a day.</param>
 public record SearchDestinationRequest(
     string Name,
     string? Address = null,
     decimal Weight = 1m,
-    int RoundTripsPerWeek = 0,
-    decimal CarpoolCreditPerDay = 0m);
+    decimal RoundTripsPerWeek = 0m,
+    decimal CommuteCreditPerDay = 0m,
+    double DriveTimeMultiplier = 1d,
+    int? VehicleId = null,
+    decimal ParkingPerDay = 0m);
 
 /// <summary>A destination as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
@@ -222,20 +266,26 @@ public record SearchDestinationRequest(
 /// <param name="Address">Street address.</param>
 /// <param name="Weight">How much its drive counts next to the others.</param>
 /// <param name="RoundTripsPerWeek">How many round trips a week are driven to it.</param>
-/// <param name="CarpoolCreditPerDay">What each day driven there pays back.</param>
+/// <param name="CommuteCreditPerDay">What each day driven there pays back.</param>
 /// <param name="Latitude">Latitude the address was resolved to, or null.</param>
 /// <param name="Longitude">Longitude the address was resolved to, or null.</param>
 /// <param name="SortOrder">Position in the list.</param>
+/// <param name="DriveTimeMultiplier">What every drive to it is multiplied by.</param>
+/// <param name="VehicleId">The car the drive is made in, or null when it is averaged over them all.</param>
+/// <param name="ParkingPerDay">What parking there costs for a day.</param>
 public record SearchDestinationView(
     int Id,
     string Name,
     string? Address,
     decimal Weight,
-    int RoundTripsPerWeek,
-    decimal CarpoolCreditPerDay,
+    decimal RoundTripsPerWeek,
+    decimal CommuteCreditPerDay,
     double? Latitude,
     double? Longitude,
-    int SortOrder);
+    int SortOrder,
+    double DriveTimeMultiplier = 1d,
+    int? VehicleId = null,
+    decimal ParkingPerDay = 0m);
 
 /// <summary>Fields accepted when adding or changing a toll road.</summary>
 /// <param name="Road">What to look for in the tolled roads' names; required.</param>
@@ -354,11 +404,22 @@ public record PropertyNoteRequest(string Body);
 /// <param name="Meets">Whether it meets the priority, or null to go back to unmarked.</param>
 public record PropertyPriorityRequest(bool? Meets);
 
+/// <summary>What one drive charges itself, whatever its destination charges.</summary>
+/// <param name="ParkingPerDay">What parking costs a day on this drive, or null to follow the destination.</param>
+/// <param name="CommuteCreditPerDay">What a day on this drive pays back, or null to follow the destination.</param>
+public record DriveFeeOverrides(decimal? ParkingPerDay, decimal? CommuteCreditPerDay);
+
 /// <summary>Fields accepted when recording a drive time by hand.</summary>
 /// <param name="Minutes">How long the drive takes, or null to forget the time held.</param>
 /// <param name="Miles">How far it is, when known.</param>
-/// <param name="TolledRoads">Names of the tolled roads it uses.</param>
+/// <param name="TolledRoads">Names of the tolled roads a measured route reported.</param>
+/// <param name="TollRoadOverrideIds">Toll roads to charge whatever the route reported, or null to follow it.</param>
+/// <param name="ParkingPerDayOverride">What parking costs a day on this drive, or null to follow the destination.</param>
+/// <param name="CommuteCreditPerDayOverride">What a day on this drive pays back, or null to follow the destination.</param>
 public record PropertyDriveTimeRequest(
     double? Minutes,
     double? Miles = null,
-    IReadOnlyList<string>? TolledRoads = null);
+    IReadOnlyList<string>? TolledRoads = null,
+    IReadOnlyList<int>? TollRoadOverrideIds = null,
+    decimal? ParkingPerDayOverride = null,
+    decimal? CommuteCreditPerDayOverride = null);

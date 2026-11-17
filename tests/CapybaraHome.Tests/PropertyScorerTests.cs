@@ -205,6 +205,133 @@ public class PropertyScorerTests
         Assert.Equal(5m + 2m + 2m + 7.5m + 3m + 2m - 4m + 10m, score.Total);
     }
 
+    [Fact]
+    public void A_drive_is_scored_on_the_minutes_it_is_reckoned_to_take_not_the_ones_measured()
+    {
+        var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, 0, 0m, null, null, 0, 1.25d) };
+
+        var current = Stretched(Property(1, "Now", drives: [(1, 30d)]), 1, 30d, 37.5d);
+        var candidate = Stretched(Property(2, "Candidate", drives: [(1, 20d)]), 1, 20d, 25d);
+
+        // 37.5 against 25 is 12.5 minutes saved, not the 10 the measurements alone would show.
+        var score = PropertyScorer.Score(candidate, current, destinations, Weights);
+
+        Assert.Equal(18.75m, score.DriveTimes);
+        Assert.Equal(25d, score.DriveTimeLines.Single().Minutes);
+        Assert.Equal(37.5d, score.DriveTimeLines.Single().CurrentMinutes);
+    }
+
+    [Fact]
+    public void A_cheaper_month_of_driving_earns_points_at_the_monthly_fee_weight()
+    {
+        var destinations = new List<SearchDestinationView>
+        {
+            new(1, "Work", null, 1m, 5, 0m, null, null, 0),
+        };
+
+        var cars = new List<VehicleView> { new(1, "Civic", 30d, 4.50m, 0) };
+
+        // Ten miles each way against thirty: 100 miles a week against 300, so 200 miles saved,
+        // which is 6.67 gallons at $4.50, or $30 a week and $130 a month.
+        var current = Driven(Property(1, "Now"), 1, 30d);
+        var candidate = Driven(Property(2, "There"), 1, 10d);
+
+        var score = PropertyScorer.Score(candidate, current, destinations, Weights, cars, []);
+
+        Assert.Equal(130m, score.DrivingDifference!.Value, 0);
+        Assert.Equal(6.5m, score.Driving, 1);
+        Assert.Equal(6.5m, score.Total, 1);
+
+        // The dearer way round loses the same points.
+        var dearer = PropertyScorer.Score(current with { Id = 3 }, candidate, destinations, Weights, cars, []);
+        Assert.Equal(-6.5m, dearer.Driving, 1);
+    }
+
+    [Fact]
+    public void The_tolls_less_the_carpool_credit_score_where_no_car_is_costed()
+    {
+        var destinations = new List<SearchDestinationView>
+        {
+            new(1, "Work", null, 1m, 5, 3m, null, null, 0),
+        };
+
+        var tolls = new List<TollRoadView> { new(1, "520", 4m, 0) };
+
+        // The current home crosses the toll both ways on five days, $40 a week, less $15 of
+        // carpool credit; the candidate crosses none and keeps the same credit.
+        var current = Driven(Property(1, "Now"), 1, 10d, ["WA 520"]);
+        var candidate = Driven(Property(2, "There"), 1, 10d);
+
+        var score = PropertyScorer.Score(candidate, current, destinations, Weights, [], tolls);
+
+        Assert.Equal(173.33m, score.DrivingDifference!.Value, 2);
+        Assert.Equal(8.67m, score.Driving, 2);
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public void The_driving_difference_needs_every_distance_on_both_sides(bool mine, bool theirs, bool scored)
+    {
+        var destinations = new List<SearchDestinationView>
+        {
+            new(1, "Work", null, 1m, 5, 0m, null, null, 0),
+        };
+
+        var cars = new List<VehicleView> { new(1, "Civic", 30d, 4.50m, 0) };
+
+        var current = theirs ? Driven(Property(1, "Now"), 1, 30d) : Property(1, "Now", drives: [(1, 40d)]);
+        var candidate = mine ? Driven(Property(2, "There"), 1, 10d) : Property(2, "There", drives: [(1, 20d)]);
+
+        var score = PropertyScorer.Score(candidate, current, destinations, Weights, cars, []);
+
+        Assert.Equal(scored, score.DrivingDifference is not null);
+        if (!scored)
+        {
+            Assert.Equal(0m, score.Driving);
+        }
+    }
+
+    [Fact]
+    public void There_is_no_driving_difference_without_a_current_home()
+    {
+        var destinations = new List<SearchDestinationView>
+        {
+            new(1, "Work", null, 1m, 5, 0m, null, null, 0),
+        };
+
+        var score = PropertyScorer.Score(
+            Driven(Property(2, "There"), 1, 10d), null, destinations, Weights,
+            [new VehicleView(1, "Civic", 30d, 4.50m, 0)], []);
+
+        Assert.Null(score.DrivingDifference);
+        Assert.Equal(0m, score.Driving);
+    }
+
+    // The driving cost is worked out from the distances, so a drive for it carries miles.
+    private static PropertyView Driven(
+        PropertyView property, int destinationId, double miles, IReadOnlyList<string>? tolled = null) =>
+        property with
+        {
+            DriveTimes =
+            [
+                new PropertyDriveTimeView(
+                    destinationId, "Work", 20d, miles, tolled ?? [], DriveTimeSource.Measured, default, 20d, null),
+            ],
+        };
+
+    // The multiplier is applied where the view is built, so a scorer test states both figures.
+    private static PropertyView Stretched(PropertyView property, int destinationId, double minutes, double adjusted) =>
+        property with
+        {
+            DriveTimes =
+            [
+                new PropertyDriveTimeView(
+                    destinationId, "Work", minutes, null, [], DriveTimeSource.Measured, default, adjusted, null),
+            ],
+        };
+
     private static PropertyView Property(
         int id,
         string name,
@@ -236,6 +363,7 @@ public class PropertyScorerTests
             petRent,
             deposit,
             null,
+            null,
             squareFeet,
             null,
             null,
@@ -248,7 +376,8 @@ public class PropertyScorerTests
             [],
             (drives ?? [])
                 .Select(d => new PropertyDriveTimeView(
-                    d.DestinationId, $"Destination {d.DestinationId}", d.Minutes, null, [], DriveTimeSource.Manual, default))
+                    d.DestinationId, $"Destination {d.DestinationId}", d.Minutes, null, [], DriveTimeSource.Manual,
+                    default, d.Minutes, null))
                 .ToList(),
             (priorities ?? [])
                 .Select(p => new PropertyPriorityView(p.PriorityId, $"Priority {p.PriorityId}", p.Points, p.Meets))

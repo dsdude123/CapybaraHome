@@ -311,6 +311,69 @@ public class PropertyServiceTests
     }
 
     [Fact]
+    public async Task A_drive_is_stretched_by_its_destinations_multiplier_however_it_was_set()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+        var search = new HomeSearchService(db.Context, db.Clock);
+
+        var property = await service.CreateAsync(new CreatePropertyRequest("Driven"));
+        var work = await search.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", DriveTimeMultiplier: 1.25d));
+        var gym = await search.CreateDestinationAsync(new SearchDestinationRequest("Gym"));
+
+        await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured);
+        await service.SetDriveTimeAsync(property.Id, gym.Id, 20d, 10d, DriveTimeSource.Measured);
+
+        var drives = (await service.GetAsync(property.Id))!.DriveTimes;
+        var commute = drives.Single(d => d.DestinationId == work.Id);
+
+        Assert.Equal(20d, commute.Minutes);
+        Assert.Equal(25d, commute.AdjustedMinutes);
+        Assert.True(commute.IsAdjusted);
+
+        // A destination with no multiplier of its own leaves the drive where it was.
+        var other = drives.Single(d => d.DestinationId == gym.Id);
+        Assert.Equal(20d, other.AdjustedMinutes);
+        Assert.False(other.IsAdjusted);
+
+        // A time typed in by hand is stretched too, since a routing result of nothing at all is
+        // why one gets typed in.
+        await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual);
+        var typed = (await service.GetAsync(property.Id))!.DriveTimes.Single(d => d.DestinationId == work.Id);
+        Assert.Equal(25d, typed.AdjustedMinutes);
+        Assert.True(typed.IsAdjusted);
+    }
+
+    [Fact]
+    public async Task A_drive_keeps_the_toll_roads_marked_against_it_by_hand()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+        var search = new HomeSearchService(db.Context, db.Clock);
+
+        var property = await service.CreateAsync(new CreatePropertyRequest("Driven"));
+        var work = await search.CreateDestinationAsync(new SearchDestinationRequest("Work"));
+
+        // Nothing marked: the route is left in charge.
+        await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"]);
+        Assert.Null((await service.GetAsync(property.Id))!.DriveTimes.Single().TollRoadOverrideIds);
+
+        await service.SetDriveTimeAsync(
+            property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual, ["WA 520"], [3, 1, 3]);
+
+        var marked = (await service.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Equal([1, 3], marked.TollRoadOverrideIds);
+        Assert.Equal(["WA 520"], marked.TolledRoads);
+
+        // Marking none is a choice too: it charges nothing, where null would follow the route.
+        await service.SetDriveTimeAsync(
+            property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual, ["WA 520"], []);
+
+        Assert.Empty((await service.GetAsync(property.Id))!.DriveTimes.Single().TollRoadOverrideIds!);
+    }
+
+    [Fact]
     public async Task A_drive_to_or_from_something_that_is_not_there_is_not_recorded()
     {
         await using var db = await TestDatabase.CreateAsync();
@@ -322,6 +385,43 @@ public class PropertyServiceTests
 
         Assert.False(await service.SetDriveTimeAsync(404, destination.Id, 10d, null, DriveTimeSource.Manual));
         Assert.False(await service.SetDriveTimeAsync(property.Id, 404, 10d, null, DriveTimeSource.Manual));
+    }
+
+    [Fact]
+    public async Task A_listing_link_is_kept_filled_out_and_refused_when_it_is_not_a_web_address()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+
+        var created = await service.CreateAsync(new CreatePropertyRequest(
+            "Harbor Steps", ListingUrl: "  https://example.com/listings/42?ref=a  "));
+
+        Assert.Equal("https://example.com/listings/42?ref=a", created.ListingUrl);
+
+        // A plain host is what people copy out of an address bar, so it is read as https.
+        var typedPlainly = await service.UpdateAsync(
+            created.Id, new UpdatePropertyRequest(ListingUrl: "example.com/listings/42"));
+        Assert.Equal("https://example.com/listings/42", typedPlainly!.ListingUrl);
+
+        // Plain http is a web address too, and stays as it was given.
+        var insecure = await service.UpdateAsync(
+            created.Id, new UpdatePropertyRequest(ListingUrl: "http://example.com/listings/42"));
+        Assert.Equal("http://example.com/listings/42", insecure!.ListingUrl);
+
+        var cleared = await service.UpdateAsync(created.Id, new UpdatePropertyRequest(ListingUrl: "  "));
+        Assert.Null(cleared!.ListingUrl);
+
+        // A link is something the page hands the browser, so nothing that could run is kept.
+        foreach (var refused in new[] { "javascript:alert(1)", "data:text/html,<script>alert(1)</script>", "file:///etc/passwd" })
+        {
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => service.UpdateAsync(created.Id, new UpdatePropertyRequest(ListingUrl: refused)));
+
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => service.CreateAsync(new CreatePropertyRequest("Dodgy", ListingUrl: refused)));
+        }
+
+        Assert.Null((await service.GetAsync(created.Id))!.ListingUrl);
     }
 
     [Fact]
@@ -338,6 +438,35 @@ public class PropertyServiceTests
         var cleared = await service.UpdateAsync(property.Id, new UpdatePropertyRequest(Address: "  ", Internet: ""));
         Assert.Null(cleared!.Address);
         Assert.Null(cleared.Internet);
+    }
+
+    [Fact]
+    public async Task A_new_address_drops_the_pin_and_forgets_the_drives_measured_from_the_old_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+        var search = new HomeSearchService(db.Context, db.Clock);
+
+        var work = await search.CreateDestinationAsync(new SearchDestinationRequest("Work"));
+        var shop = await search.CreateDestinationAsync(new SearchDestinationRequest("Shop"));
+
+        var property = await service.CreateAsync(new CreatePropertyRequest("Candidate", Address: "1221 1st Ave"));
+        await service.UpdateAsync(property.Id, new UpdatePropertyRequest(Latitude: 47.6d, Longitude: -122.3d));
+        await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 8d, DriveTimeSource.Measured);
+        await service.SetDriveTimeAsync(property.Id, shop.Id, 35d, null, DriveTimeSource.Manual);
+
+        var same = await service.UpdateAsync(property.Id, new UpdatePropertyRequest(Address: "1221 1st Ave"));
+        Assert.Equal(47.6d, same!.Latitude);
+        Assert.Equal(2, same.DriveTimes.Count);
+
+        var moved = await service.UpdateAsync(property.Id, new UpdatePropertyRequest(Address: "500 Pine St"));
+
+        Assert.Null(moved!.Latitude);
+        Assert.Null(moved.Longitude);
+
+        var held = Assert.Single(moved.DriveTimes);
+        Assert.Equal(shop.Id, held.DestinationId);
+        Assert.Equal(35d, held.Minutes);
     }
 
     [Fact]

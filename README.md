@@ -80,8 +80,8 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
   score. A property (`/homes/{id}`) holds its size, rent, parking, cat rent, deposit, a utility
   breakdown by kind, what internet is provided, amenities, pros and cons, notes and pictures,
   and the drive time and distance to each destination, with what a week of driving costs in
-  fuel and tolls. **Search settings** (`/homes/settings`) holds the scoring weights, the
-  destinations, the priorities, the cars and the toll roads.
+  fuel and tolls. **Search settings** (`/homes/settings`) holds the scenarios, the scoring
+  weights, the destinations, the priorities, the cars and the toll roads.
 - **Morning report** (`/report`) — one page of the day: the forecast, the tasks due within a
   week, what is planned to eat, the next thirty days of your calendars, the holidays, today's
   fixtures and the headlines. **Download PDF** is exactly the sheet that is printed, and
@@ -110,12 +110,34 @@ deliberate — a dead circuit would otherwise leave buttons that do nothing and 
 
 ## The home search
 
-Scoring is entirely yours to set, under `/homes/settings`. Every weight starts at zero, so
-nothing is scored until you fill them in:
+### Scenarios
+
+The search can be kept under more than one scenario, and `/homes/settings` switches between
+them; with more than one, the board at `/homes` carries a dropdown of its own. A scenario holds
+the scoring weights, the destinations with their weight, round trips, parking, credit, car and
+multiplier, the cars and the toll roads, so the scores and the driving costs follow whichever one is showing.
+Everything else is shared: the properties and their fees, the priorities and how each property
+is marked against them, and the routing service, which is one account.
+
+Copying a scenario brings its weights, destinations, cars and toll roads, the car each
+destination drives, the toll roads and the fees marked by hand on each drive, and the drive times
+already measured, so
+only the difference has to be changed; the copy is the one left showing. Deleting one takes its
+destinations, cars, tolls and their drive times with it, and the last scenario stays, since the
+search has to be scored under something. A search that has never named one is scored under
+*Default*, which is everything already set up.
+
+### Scoring
+
+Scoring is entirely yours to set, under `/homes/settings`. Every weight belongs to the scenario
+showing, and starts at zero, so nothing is scored until you fill them in:
 
 - **Points per dollar a month** and **points per dollar of deposit** — a candidate cheaper
   than the home you live in now earns points, a dearer one loses them. The month is rent plus
-  parking plus cat rent plus the utilities.
+  parking plus cat rent plus the utilities. What a month's driving costs is scored at the same
+  points a dollar, on its own line: the fuel of every drive plus the tolls and the parking, less
+  the commute credit. A place with a distance still unknown has no driving difference, since the unknown
+  drive would make it look cheap.
 - **Points per minute of drive**, multiplied by each destination's own weight, against the
   same baseline. Work, driven to every day, is worth setting above one.
 - **Points per square foot** larger than the home you live in now; a smaller place loses them.
@@ -123,33 +145,62 @@ nothing is scored until you fill them in:
 - **Points per amenity**, **per pro** and **off per con**.
 - Each priority carries its own points, earned by a property you mark as meeting it.
 
+A property can carry the link to the listing it was found on, shown on its page and opened in a
+new tab. Only an http or https address is kept, and a plain host is read as https.
+
+A destination can also carry a drive time multiplier, for a commute the routing service reckons
+shorter than the traffic you meet. It stretches every drive to that destination, across every
+property and whether the time was measured or typed in, and the stretched minutes are what the
+page shows and the score weighs.
+
 Fees, size and drive times are differences, so they need a property ticked as *This is where I live
 now*; amenities, pros, cons and priorities stand on their own. A drive only scores where both
 ends are known, so a destination you have not measured for both places counts for nothing
 rather than inventing a saving.
 
 Drive times can always be typed in. To have them measured instead, put an OpenRouteService
-address and key under **Routing service**: `https://api.openrouteservice.org` with a key from
-their site, or your own instance, which needs no key. The same service places an address the
+address and key under **Routing service**: `https://api.heigit.org` with a key from
+their site, or your own instance, which needs no key. HeiGIT retired
+`api.openrouteservice.org`, and the hosted API serves routing under `/openrouteservice` and
+geocoding under `/pelias/v1`, which the app works out from the address it is given; an address
+still saved under the old host is called at the new one. The same service places an address the
 first time a drive is measured. The key is write-only — the page says whether one is held,
 never what it is — and there is a button to forget it.
 
 ### Driving cost
 
 Each destination carries how many round trips a week you drive to it — three for a three-day
-work week — and any carpool credit a day; each car carries its average mpg and what a gallon
-costs now; and each toll road its peak toll. All of it lives under `/homes/settings`. A
-property's page then costs its usual week of driving: the fuel in every car, the tolls, and
-the carpool credit taken off, a week and over an average month.
+work week, and fractions are allowed, so somewhere visited every third week is `0.33` — the car
+that drive is made in, what parking there costs a day, and any commute credit a day, which is
+what a day there pays back; each car carries its average mpg and what a gallon costs now; and
+each toll road its peak toll. All of it lives under `/homes/settings`. A property's page then
+costs its usual week of driving, one line per drive: the fuel, the tolls, the parking, and the
+commute credit taken off, a week and over an average month.
+
+One property can sit where the commute to a destination works differently — transit is there to
+take, so nothing is parked and taking it is paid for. Its drive carries a parking and a commute
+credit of its own, beside the minutes on the property's page. Left empty the drive follows the
+destination; filled in, that drive alone charges its own, and the destination and every other
+property are untouched. Measuring the drive again leaves them standing, since a measurement says
+nothing about what parking costs there.
+
+A destination left with no car of its own is shared out: its fuel is what the drive averages over
+every car that has both a mileage and a fuel price, which is the one to leave for a commute you
+take turns driving. Naming a car charges that drive to it alone, and a named car with no mileage
+or no fuel price leaves that drive's fuel uncounted, which the page says rather than passing over.
 
 The miles come from each drive's distance, which a measured route fills in and which can be
 typed in beside the minutes. A measured route also names the tolled roads it uses, which
 OpenRouteService marks from OpenStreetMap's toll tags without a price. A toll road under
 settings prices every tolled road whose name contains what you type, so `520` covers the
 SR 520 bridge, and each crossing is charged its peak toll in both directions. A tolled road
-the route used that nothing prices yet is named on the property's page. Tolls come only from
-a measured route, so a drive typed in by hand carries none. Driving cost is shown, not scored — it is not part
-of the points.
+the route used that nothing prices yet is named on the property's page.
+
+Each drive on a property's page carries a tick box per toll road. Left alone they follow the
+measured route; tick one the route did not use — the tolled way you would take in practice,
+for much the same time — and the ticks decide instead, for that drive, measurement or no
+measurement. Match them back to the route and it takes the drive over again. What the month's
+driving comes to is scored, at the points a dollar a month already carries.
 
 Pictures are kept as files rather than in the database, so an export stays a readable
 document. `Photos__Path` says where, `/data/photos` in the container.

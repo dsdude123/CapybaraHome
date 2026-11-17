@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using CapybaraHome.Application.Homes;
+using CapybaraHome.Domain.Homes;
 
 namespace CapybaraHome.Tests;
 
@@ -40,6 +41,33 @@ public class HomeSearchServiceTests
         var moved = await service.UpdateDestinationAsync(destination.Id, new SearchDestinationRequest("The office", "999 Elsewhere"));
         Assert.Null(moved!.Latitude);
         Assert.Null(moved.Longitude);
+    }
+
+    [Fact]
+    public async Task Moving_a_destination_forgets_the_drives_measured_to_the_old_address()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+
+        var destination = await service.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+        await service.PlaceDestinationAsync(destination.Id, 47.6d, -122.3d);
+
+        var measured = await properties.CreateAsync(new CreatePropertyRequest("Measured"));
+        var typed = await properties.CreateAsync(new CreatePropertyRequest("Typed"));
+
+        await properties.SetDriveTimeAsync(
+            measured.Id, destination.Id, 20d, 8d, CapybaraHome.Domain.Homes.DriveTimeSource.Measured);
+        await properties.SetDriveTimeAsync(
+            typed.Id, destination.Id, 35d, null, CapybaraHome.Domain.Homes.DriveTimeSource.Manual);
+
+        await service.UpdateDestinationAsync(destination.Id, new SearchDestinationRequest("Work", "400 Broad St"));
+        Assert.Single((await properties.GetAsync(measured.Id))!.DriveTimes);
+
+        await service.UpdateDestinationAsync(destination.Id, new SearchDestinationRequest("Work", "999 Elsewhere"));
+
+        Assert.Empty((await properties.GetAsync(measured.Id))!.DriveTimes);
+        Assert.Equal(35d, (await properties.GetAsync(typed.Id))!.DriveTimes.Single().Minutes);
     }
 
     [Fact]
@@ -173,9 +201,9 @@ public class HomeSearchServiceTests
         var service = new HomeSearchService(db.Context, db.Clock);
 
         var set = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(
-            RoutingBaseUrl: " https://api.openrouteservice.org ", RoutingApiKey: "  a-key  "));
+            RoutingBaseUrl: " https://api.heigit.org ", RoutingApiKey: "  a-key  "));
 
-        Assert.Equal("https://api.openrouteservice.org", set.RoutingBaseUrl);
+        Assert.Equal("https://api.heigit.org", set.RoutingBaseUrl);
         Assert.True(set.HasRoutingApiKey);
         Assert.True(set.CanMeasureDriveTimes);
         Assert.Equal("a-key", await service.GetRoutingKeyAsync());
@@ -183,6 +211,23 @@ public class HomeSearchServiceTests
         var again = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(RoutingApiKey: "   "));
         Assert.True(again.HasRoutingApiKey);
         Assert.Equal("a-key", await service.GetRoutingKeyAsync());
+    }
+
+    [Fact]
+    public async Task Saving_the_retired_routing_host_saves_the_one_that_answers()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var moved = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(
+            RoutingBaseUrl: "https://api.openrouteservice.org"));
+
+        Assert.Equal("https://api.heigit.org", moved.RoutingBaseUrl);
+
+        var own = await service.SaveSettingsAsync(new HomeSearchSettingsRequest(
+            RoutingBaseUrl: "http://ors.local:8080/ors/"));
+
+        Assert.Equal("http://ors.local:8080/ors", own.RoutingBaseUrl);
     }
 
     [Fact]
@@ -207,6 +252,33 @@ public class HomeSearchServiceTests
     }
 
     [Fact]
+    public async Task A_destination_keeps_its_drive_time_multiplier_and_refuses_a_useless_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", DriveTimeMultiplier: 1.25d));
+
+        Assert.Equal(1.25d, work.DriveTimeMultiplier);
+
+        // Nothing typed is one, and so is anything that would wipe the drive out instead of
+        // stretching it.
+        var plain = await service.CreateDestinationAsync(new SearchDestinationRequest("Gym"));
+        Assert.Equal(1d, plain.DriveTimeMultiplier);
+
+        var zeroed = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", DriveTimeMultiplier: 0d));
+        Assert.Equal(1d, zeroed!.DriveTimeMultiplier);
+
+        var negative = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", DriveTimeMultiplier: -2d));
+        Assert.Equal(1d, negative!.DriveTimeMultiplier);
+
+        Assert.Equal(1d, (await service.ListDestinationsAsync()).Single(d => d.Id == work.Id).DriveTimeMultiplier);
+    }
+
+    [Fact]
     public async Task A_destination_keeps_how_many_round_trips_a_week_are_driven_to_it()
     {
         await using var db = await TestDatabase.CreateAsync();
@@ -225,6 +297,259 @@ public class HomeSearchServiceTests
         var none = await service.UpdateDestinationAsync(
             work.Id, new SearchDestinationRequest("Work", "400 Broad St", 3m, -4));
         Assert.Equal(0, none!.RoundTripsPerWeek);
+
+        // Somewhere visited every third week is a third of a round trip.
+        var parents = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", "400 Broad St", 3m, 0.33m));
+        Assert.Equal(0.33m, parents!.RoundTripsPerWeek);
+        Assert.Equal(0.33m, (await service.ListDestinationsAsync()).Single().RoundTripsPerWeek);
+    }
+
+    [Fact]
+    public async Task The_first_scenario_is_made_on_demand_and_holds_what_is_already_there()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        await service.CreateDestinationAsync(new SearchDestinationRequest("Work"));
+
+        var only = Assert.Single(await service.ListProfilesAsync());
+
+        Assert.Equal(HomeSearchService.DefaultProfileName, only.Name);
+        Assert.True(only.IsActive);
+        Assert.Equal(1, only.DestinationCount);
+        Assert.Equal(only.Id, (await service.GetActiveProfileAsync()).Id);
+    }
+
+    [Fact]
+    public async Task Each_scenario_keeps_its_own_weights_destinations_cars_and_tolls()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        await service.SaveSettingsAsync(new HomeSearchSettingsRequest(
+            MonthlyFeePointsPerDollar: 0.05m, RoutingBaseUrl: "https://api.heigit.org"));
+        await service.CreateDestinationAsync(new SearchDestinationRequest("Work", RoundTripsPerWeek: 5m));
+        await service.CreateVehicleAsync(new VehicleRequest("The truck", 15d, 4m));
+        await service.CreateTollRoadAsync(new TollRoadRequest("520", 4.50m));
+
+        var other = await service.CreateProfileAsync("Three days in the office");
+        await service.ActivateProfileAsync(other.Id);
+
+        // A fresh scenario starts empty, and the weights with it.
+        Assert.Empty(await service.ListDestinationsAsync());
+        Assert.Empty(await service.ListVehiclesAsync());
+        Assert.Empty(await service.ListTollRoadsAsync());
+
+        var fresh = await service.GetSettingsAsync();
+        Assert.Equal(0m, fresh.MonthlyFeePointsPerDollar);
+
+        // The routing service is one account, so it is the same under every scenario.
+        Assert.Equal("https://api.heigit.org", fresh.RoutingBaseUrl);
+
+        await service.SaveSettingsAsync(new HomeSearchSettingsRequest(MonthlyFeePointsPerDollar: 0.2m));
+        await service.CreateDestinationAsync(new SearchDestinationRequest("Office", RoundTripsPerWeek: 3m));
+
+        // Switching back finds the first scenario as it was left.
+        var first = (await service.ListProfilesAsync()).First(p => p.Name == HomeSearchService.DefaultProfileName);
+        await service.ActivateProfileAsync(first.Id);
+
+        Assert.Equal(0.05m, (await service.GetSettingsAsync()).MonthlyFeePointsPerDollar);
+        Assert.Equal("Work", Assert.Single(await service.ListDestinationsAsync()).Name);
+        Assert.Equal("The truck", Assert.Single(await service.ListVehiclesAsync()).Name);
+        Assert.Equal("520", Assert.Single(await service.ListTollRoadsAsync()).Road);
+    }
+
+    [Fact]
+    public async Task Copying_a_scenario_brings_its_weights_setup_and_measured_drives()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+
+        await service.SaveSettingsAsync(new HomeSearchSettingsRequest(
+            MonthlyFeePointsPerDollar: 0.05m, DriveTimePointsPerMinute: 1.5m));
+
+        var car = await service.CreateVehicleAsync(new VehicleRequest("The truck", 15d, 4m));
+        var toll = await service.CreateTollRoadAsync(new TollRoadRequest("520", 4.50m));
+        var work = await service.CreateDestinationAsync(new SearchDestinationRequest(
+            "Work", "400 Broad St", 3m, 5m, 5m, 1.25d, car.Id, 12m));
+
+        var property = await properties.CreateAsync(new CreatePropertyRequest("Candidate"));
+        await properties.SetDriveTimeAsync(
+            property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured, ["WA 520"], [toll.Id],
+            new DriveFeeOverrides(0m, 9m));
+
+        var source = await service.GetActiveProfileAsync();
+        var copy = await service.CopyProfileAsync(source.Id, "  Two cars  ");
+
+        Assert.Equal("Two cars", copy!.Name);
+        Assert.Equal(1, copy.DestinationCount);
+        Assert.Equal(1, copy.VehicleCount);
+        Assert.Equal(1, copy.TollRoadCount);
+
+        // The copy is a scenario of its own: the original is untouched by editing it.
+        await service.ActivateProfileAsync(copy.Id);
+
+        Assert.Equal(0.05m, (await service.GetSettingsAsync()).MonthlyFeePointsPerDollar);
+
+        var copiedCar = Assert.Single(await service.ListVehiclesAsync());
+        var copiedToll = Assert.Single(await service.ListTollRoadsAsync());
+        var copiedWork = Assert.Single(await service.ListDestinationsAsync());
+
+        Assert.NotEqual(car.Id, copiedCar.Id);
+        Assert.NotEqual(toll.Id, copiedToll.Id);
+        Assert.NotEqual(work.Id, copiedWork.Id);
+
+        Assert.Equal("400 Broad St", copiedWork.Address);
+        Assert.Equal(3m, copiedWork.Weight);
+        Assert.Equal(5m, copiedWork.RoundTripsPerWeek);
+        Assert.Equal(5m, copiedWork.CommuteCreditPerDay);
+        Assert.Equal(12m, copiedWork.ParkingPerDay);
+        Assert.Equal(1.25d, copiedWork.DriveTimeMultiplier);
+
+        // The car and the marked toll road follow the copies, not the originals.
+        Assert.Equal(copiedCar.Id, copiedWork.VehicleId);
+
+        var copiedDrive = Assert.Single((await properties.GetAsync(property.Id))!.DriveTimes);
+        Assert.Equal(copiedWork.Id, copiedDrive.DestinationId);
+        Assert.Equal(20d, copiedDrive.Minutes);
+        Assert.Equal(10d, copiedDrive.Miles);
+        Assert.Equal(DriveTimeSource.Measured, copiedDrive.Source);
+        Assert.Equal(["WA 520"], copiedDrive.TolledRoads);
+        Assert.Equal([copiedToll.Id], copiedDrive.TollRoadOverrideIds);
+        Assert.Equal(0m, copiedDrive.ParkingPerDayOverride);
+        Assert.Equal(9m, copiedDrive.CommuteCreditPerDayOverride);
+
+        // Changing the copy leaves the original alone.
+        await service.UpdateDestinationAsync(copiedWork.Id, new SearchDestinationRequest("Work", "400 Broad St", 1m, 2m));
+        await service.ActivateProfileAsync(source.Id);
+
+        var original = Assert.Single(await service.ListDestinationsAsync());
+        Assert.Equal(3m, original.Weight);
+        Assert.Equal(5m, original.RoundTripsPerWeek);
+        Assert.Equal(car.Id, original.VehicleId);
+    }
+
+    [Fact]
+    public async Task Copying_a_scenario_that_is_gone_is_no_copy_at_all()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        Assert.Null(await service.CopyProfileAsync(404, "Nowhere"));
+        Assert.Null(await service.ActivateProfileAsync(404));
+        Assert.Null(await service.RenameProfileAsync(404, "Nowhere"));
+        Assert.False(await service.DeleteProfileAsync(404));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateProfileAsync("   "));
+    }
+
+    [Fact]
+    public async Task A_scenario_can_be_renamed_and_deleted_but_never_the_last_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var first = await service.GetActiveProfileAsync();
+        var second = await service.CreateProfileAsync("Two cars");
+
+        Assert.Equal("Both cars", (await service.RenameProfileAsync(second.Id, " Both cars "))!.Name);
+
+        // Deleting the one being shown leaves another showing rather than nothing.
+        await service.ActivateProfileAsync(second.Id);
+        Assert.True(await service.DeleteProfileAsync(second.Id));
+        Assert.Equal(first.Id, (await service.GetActiveProfileAsync()).Id);
+
+        // And the last one stays, since the search has to be scored under something.
+        Assert.False(await service.DeleteProfileAsync(first.Id));
+        Assert.Single(await service.ListProfilesAsync());
+    }
+
+    [Fact]
+    public async Task Deleting_a_scenario_takes_its_destinations_cars_tolls_and_drives_with_it()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+
+        var keep = await service.GetActiveProfileAsync();
+        var going = await service.CreateProfileAsync("Scrapped");
+        await service.ActivateProfileAsync(going.Id);
+
+        var work = await service.CreateDestinationAsync(new SearchDestinationRequest("Work", RoundTripsPerWeek: 5m));
+        await service.CreateVehicleAsync(new VehicleRequest("The truck", 15d, 4m));
+        await service.CreateTollRoadAsync(new TollRoadRequest("520", 4.50m));
+
+        var property = await properties.CreateAsync(new CreatePropertyRequest("Candidate"));
+        await properties.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured);
+
+        Assert.True(await service.DeleteProfileAsync(going.Id));
+
+        Assert.Equal(keep.Id, (await service.GetActiveProfileAsync()).Id);
+        Assert.Empty(await service.ListDestinationsAsync());
+        Assert.Empty((await properties.GetAsync(property.Id))!.DriveTimes);
+    }
+
+    [Fact]
+    public async Task A_property_shows_only_the_drives_of_the_scenario_being_looked_at()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(new SearchDestinationRequest("Work", RoundTripsPerWeek: 5m));
+        var property = await properties.CreateAsync(new CreatePropertyRequest("Candidate"));
+        await properties.SetDriveTimeAsync(property.Id, work.Id, 20d, 10d, DriveTimeSource.Measured);
+
+        var other = await service.CreateProfileAsync("Three days in the office");
+        await service.ActivateProfileAsync(other.Id);
+
+        Assert.Empty((await properties.GetAsync(property.Id))!.DriveTimes);
+
+        var office = await service.CreateDestinationAsync(new SearchDestinationRequest("Office", RoundTripsPerWeek: 3m));
+        await properties.SetDriveTimeAsync(property.Id, office.Id, 35d, 18d, DriveTimeSource.Manual);
+
+        var under = Assert.Single((await properties.GetAsync(property.Id))!.DriveTimes);
+        Assert.Equal("Office", under.DestinationName);
+
+        // The first scenario's drive is still there, waiting under it.
+        var first = (await service.ListProfilesAsync()).First(p => p.Name == HomeSearchService.DefaultProfileName);
+        await service.ActivateProfileAsync(first.Id);
+        Assert.Equal("Work", Assert.Single((await properties.GetAsync(property.Id))!.DriveTimes).DestinationName);
+    }
+
+    [Fact]
+    public async Task A_destination_keeps_the_car_its_drive_is_made_in_or_none_to_average_them()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var car = await service.CreateVehicleAsync(new VehicleRequest("The hatchback", 30d, 4.50m));
+
+        var parents = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Parents", VehicleId: car.Id));
+        Assert.Equal(car.Id, parents.VehicleId);
+
+        // Nothing named is the drive shared out over every car.
+        var work = await service.CreateDestinationAsync(new SearchDestinationRequest("Work"));
+        Assert.Null(work.VehicleId);
+
+        var shared = await service.UpdateDestinationAsync(
+            parents.Id, new SearchDestinationRequest("Parents", VehicleId: null));
+        Assert.Null(shared!.VehicleId);
+
+        // A car that does not exist is no car at all rather than a failed save.
+        var invented = await service.UpdateDestinationAsync(
+            parents.Id, new SearchDestinationRequest("Parents", VehicleId: 404));
+        Assert.Null(invented!.VehicleId);
+
+        // Losing the car leaves the drive shared out instead of deleting it.
+        await service.UpdateDestinationAsync(parents.Id, new SearchDestinationRequest("Parents", VehicleId: car.Id));
+        Assert.True(await service.DeleteVehicleAsync(car.Id));
+
+        var orphaned = (await service.ListDestinationsAsync()).Single(d => d.Id == parents.Id);
+        Assert.Null(orphaned.VehicleId);
     }
 
     [Fact]
@@ -294,16 +619,69 @@ public class HomeSearchServiceTests
     }
 
     [Fact]
-    public async Task A_destination_keeps_its_carpool_credit_and_refuses_a_negative_one()
+    public async Task A_destination_keeps_its_commute_credit_and_refuses_a_negative_one()
     {
         await using var db = await TestDatabase.CreateAsync();
         var service = new HomeSearchService(db.Context, db.Clock);
 
         var work = await service.CreateDestinationAsync(new SearchDestinationRequest("Work", null, 3m, 3, 5m));
-        Assert.Equal(5m, work.CarpoolCreditPerDay);
+        Assert.Equal(5m, work.CommuteCreditPerDay);
 
         var negative = await service.UpdateDestinationAsync(work.Id, new SearchDestinationRequest("Work", null, 3m, 3, -5m));
-        Assert.Equal(0m, negative!.CarpoolCreditPerDay);
+        Assert.Equal(0m, negative!.CommuteCreditPerDay);
+    }
+
+    [Fact]
+    public async Task A_destination_keeps_its_parking_and_refuses_a_negative_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", null, 3m, 3, 5m, 1d, null, 12m));
+        Assert.Equal(12m, work.ParkingPerDay);
+
+        var negative = await service.UpdateDestinationAsync(
+            work.Id, new SearchDestinationRequest("Work", null, 3m, 3, 5m, 1d, null, -12m));
+        Assert.Equal(0m, negative!.ParkingPerDay);
+    }
+
+    [Fact]
+    public async Task A_drive_charges_its_own_fees_until_they_are_emptied()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+
+        var work = await service.CreateDestinationAsync(
+            new SearchDestinationRequest("Work", null, 1m, 3m, 5m, 1d, null, 12m));
+        var property = await properties.CreateAsync(new CreatePropertyRequest("Somewhere"));
+
+        await properties.SetDriveTimeAsync(
+            property.Id, work.Id, 20d, 10d, DriveTimeSource.Manual, null, null,
+            new DriveFeeOverrides(0m, 9m));
+
+        var held = (await properties.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Equal(0m, held.ParkingPerDayOverride);
+        Assert.Equal(9m, held.CommuteCreditPerDayOverride);
+        Assert.True(held.HasFeeOverride);
+
+        // Measuring says nothing about the fees, so a save that carries none leaves them standing.
+        await properties.SetDriveTimeAsync(
+            property.Id, work.Id, 25d, 11d, DriveTimeSource.Measured, null, null);
+
+        var measured = (await properties.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Equal(0m, measured.ParkingPerDayOverride);
+        Assert.Equal(9m, measured.CommuteCreditPerDayOverride);
+
+        await properties.SetDriveTimeAsync(
+            property.Id, work.Id, 25d, 11d, DriveTimeSource.Manual, null, null,
+            new DriveFeeOverrides(null, null));
+
+        var cleared = (await properties.GetAsync(property.Id))!.DriveTimes.Single();
+        Assert.Null(cleared.ParkingPerDayOverride);
+        Assert.Null(cleared.CommuteCreditPerDayOverride);
+        Assert.False(cleared.HasFeeOverride);
     }
 
     [Fact]
