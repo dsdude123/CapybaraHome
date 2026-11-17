@@ -11,6 +11,7 @@ using CapybaraHome.Domain.Homes;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Web.Auth;
+using CapybaraHome.Web.Security;
 
 namespace CapybaraHome.Web.Endpoints;
 
@@ -20,7 +21,9 @@ public static class ApiEndpoints
     /// <summary>Maps every endpoint under <c>/api</c>. All of them require a signed-in user or a token.</summary>
     public static void MapApi(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api").RequireAuthorization(AuthenticationSetup.ApiPolicyName);
+        var api = app.MapGroup("/api")
+            .RequireAuthorization(AuthenticationSetup.ApiPolicyName)
+            .RequireRateLimiting(RateLimiting.ApiPolicy);
 
         MapTasks(api);
         MapAutomations(api);
