@@ -1,6 +1,7 @@
 @page "/homes"
 @inject HomeSearchBoardService Board
 @inject HomeSearchService Search
+@inject DriveTimeMeasurer Measurer
 
 <PageTitle>Homes</PageTitle>
 
@@ -51,6 +52,41 @@ else
             and pros and cons.
         </p>
     }
+
+    <section class="card stack">
+        <h2 class="card-title">Drive times</h2>
+        <p class="muted">
+            Measured drives are worked out from the addresses held at the time, so changing a
+            property's address, or a destination's in the scenario, drops the drives measured to
+            where it used to be. Remeasure them here, for every property at once.
+        </p>
+        <form method="post" @formname="board-measure-all" @onsubmit="MeasureAllAsync">
+            <AntiforgeryToken />
+            <div class="row">
+                <button class="btn btn-small" type="submit" disabled="@(!board.Settings.CanMeasureDriveTimes)">
+                    Remeasure all drives
+                </button>
+            </div>
+        </form>
+
+        @if (!board.Settings.CanMeasureDriveTimes)
+        {
+            <p class="muted">
+                Measuring needs a routing service. <a href="homes/settings">Set one up</a>, or type
+                the minutes in on each property.
+            </p>
+        }
+
+        @if (swept is not null)
+        {
+            <p class="notice">@swept</p>
+        }
+
+        @foreach (var problem in problems)
+        {
+            <p class="error">@problem</p>
+        }
+    </section>
 
     <section class="card stack">
         <h2 class="card-title">Where I live now</h2>
@@ -127,6 +163,10 @@ else
 
     private HomeSearchBoard? board;
 
+    private string? swept;
+
+    private List<string> problems = [];
+
     /// <summary>Loads the properties, the setup and the scores.</summary>
     protected override async Task OnParametersSetAsync()
     {
@@ -146,6 +186,22 @@ else
             out var id))
         {
             await Search.ActivateProfileAsync(id);
+        }
+
+        board = await Board.GetAsync();
+    }
+
+    private async Task MeasureAllAsync()
+    {
+        try
+        {
+            var sweep = await Measurer.MeasureAllAsync();
+            swept = $"Measured {sweep.Measured} drive(s) across {sweep.Properties} property(s).";
+            problems = sweep.Problems.ToList();
+        }
+        catch (RoutingException ex)
+        {
+            problems = [ex.Message];
         }
 
         board = await Board.GetAsync();

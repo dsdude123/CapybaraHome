@@ -514,6 +514,20 @@ public static class ApiEndpoints
                     : Results.NotFound();
         });
 
+        properties.MapPost("/drives/measure", async (
+            DriveTimeMeasurer measurer,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await measurer.MeasureAllAsync(cancellationToken));
+            }
+            catch (RoutingException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
         properties.MapPost("/{id:int}/drives/measure", async (
             int id,
             DriveTimeMeasurer measurer,

@@ -44,6 +44,33 @@ public class HomeSearchServiceTests
     }
 
     [Fact]
+    public async Task Moving_a_destination_forgets_the_drives_measured_to_the_old_address()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+
+        var destination = await service.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+        await service.PlaceDestinationAsync(destination.Id, 47.6d, -122.3d);
+
+        var measured = await properties.CreateAsync(new CreatePropertyRequest("Measured"));
+        var typed = await properties.CreateAsync(new CreatePropertyRequest("Typed"));
+
+        await properties.SetDriveTimeAsync(
+            measured.Id, destination.Id, 20d, 8d, CapybaraHome.Domain.Homes.DriveTimeSource.Measured);
+        await properties.SetDriveTimeAsync(
+            typed.Id, destination.Id, 35d, null, CapybaraHome.Domain.Homes.DriveTimeSource.Manual);
+
+        await service.UpdateDestinationAsync(destination.Id, new SearchDestinationRequest("Work", "400 Broad St"));
+        Assert.Single((await properties.GetAsync(measured.Id))!.DriveTimes);
+
+        await service.UpdateDestinationAsync(destination.Id, new SearchDestinationRequest("Work", "999 Elsewhere"));
+
+        Assert.Empty((await properties.GetAsync(measured.Id))!.DriveTimes);
+        Assert.Equal(35d, (await properties.GetAsync(typed.Id))!.DriveTimes.Single().Minutes);
+    }
+
+    [Fact]
     public async Task A_destination_takes_the_drive_times_with_it_when_it_goes()
     {
         await using var db = await TestDatabase.CreateAsync();

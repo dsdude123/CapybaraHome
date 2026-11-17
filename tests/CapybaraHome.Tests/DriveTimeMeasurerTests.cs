@@ -232,6 +232,117 @@ public class DriveTimeMeasurerTests
         Assert.Equal([toll.Id], drive.TollRoadOverrideIds);
     }
 
+    [Fact]
+    public async Task A_sweep_measures_the_drives_from_every_property()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var http = new FakeHttp().Reply(OneRoute);
+        var (measurer, properties, search) = Services(db, http);
+
+        var first = await properties.CreateAsync(new CreatePropertyRequest("Here", Address: "1221 1st Ave"));
+        await properties.UpdateAsync(first.Id, new UpdatePropertyRequest(Latitude: 47.6d, Longitude: -122.3d));
+
+        var second = await properties.CreateAsync(new CreatePropertyRequest("There", Address: "500 Pine St"));
+        await properties.UpdateAsync(second.Id, new UpdatePropertyRequest(Latitude: 47.5d, Longitude: -122.2d));
+
+        var destination = await search.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+        await search.PlaceDestinationAsync(destination.Id, 47.7d, -122.4d);
+
+        var sweep = await measurer.MeasureAllAsync();
+
+        Assert.Equal(2, sweep.Measured);
+        Assert.Equal(2, sweep.Properties);
+        Assert.Empty(sweep.Problems);
+
+        Assert.Equal(18.5d, (await properties.GetAsync(first.Id))!.DriveTimes.Single().Minutes);
+        Assert.Equal(18.5d, (await properties.GetAsync(second.Id))!.DriveTimes.Single().Minutes);
+    }
+
+    [Fact]
+    public async Task A_sweep_names_the_property_it_could_not_measure_and_carries_on()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var http = new FakeHttp().Reply(OneRoute);
+        var (measurer, properties, search) = Services(db, http);
+
+        await properties.CreateAsync(new CreatePropertyRequest("Nowhere"));
+
+        var placed = await properties.CreateAsync(new CreatePropertyRequest("There", Address: "500 Pine St"));
+        await properties.UpdateAsync(placed.Id, new UpdatePropertyRequest(Latitude: 47.5d, Longitude: -122.2d));
+
+        var destination = await search.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+        await search.PlaceDestinationAsync(destination.Id, 47.7d, -122.4d);
+
+        var sweep = await measurer.MeasureAllAsync();
+
+        Assert.Equal(1, sweep.Measured);
+        Assert.Equal(1, sweep.Properties);
+        Assert.Contains("Nowhere", Assert.Single(sweep.Problems));
+    }
+
+    [Fact]
+    public async Task A_sweep_with_no_destinations_says_so_once()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var (measurer, properties, _) = Services(db, new FakeHttp().Reply(OneRoute));
+
+        await properties.CreateAsync(new CreatePropertyRequest("Here", Address: "1221 1st Ave"));
+        await properties.CreateAsync(new CreatePropertyRequest("There", Address: "500 Pine St"));
+
+        var sweep = await measurer.MeasureAllAsync();
+
+        Assert.Equal(0, sweep.Measured);
+        Assert.Contains("no destinations", Assert.Single(sweep.Problems));
+    }
+
+    [Fact]
+    public async Task A_sweep_with_no_properties_says_so()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var (measurer, _, search) = Services(db, new FakeHttp().Reply(OneRoute));
+
+        await search.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+
+        var sweep = await measurer.MeasureAllAsync();
+
+        Assert.Equal(0, sweep.Properties);
+        Assert.Contains("no properties", Assert.Single(sweep.Problems));
+    }
+
+    [Fact]
+    public async Task A_sweep_with_no_routing_service_is_refused_outright()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var search = new HomeSearchService(db.Context, db.Clock);
+        var properties = new PropertyService(db.Context, db.Clock);
+        var routing = new RoutingClient(new FakeHttp().Reply(OnePlace).Client(), search);
+        var measurer = new DriveTimeMeasurer(properties, search, routing);
+
+        await properties.CreateAsync(new CreatePropertyRequest("Here", Address: "1221 1st Ave"));
+        await properties.CreateAsync(new CreatePropertyRequest("There", Address: "500 Pine St"));
+        await search.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+
+        await Assert.ThrowsAsync<RoutingException>(() => measurer.MeasureAllAsync());
+    }
+
+    [Fact]
+    public async Task A_sweep_reports_the_addresses_the_geocoder_refused_and_carries_on()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var http = new FakeHttp().ReplyTo("search", NoPlace).ReplyTo("directions", OneRoute);
+        var (measurer, properties, search) = Services(db, http);
+
+        await properties.CreateAsync(new CreatePropertyRequest("Here", Address: "1221 1st Ave"));
+        await properties.CreateAsync(new CreatePropertyRequest("There", Address: "500 Pine St"));
+        await search.CreateDestinationAsync(new SearchDestinationRequest("Work", "400 Broad St"));
+
+        var sweep = await measurer.MeasureAllAsync();
+
+        Assert.Equal(0, sweep.Measured);
+        Assert.Equal(2, sweep.Problems.Count);
+        Assert.Contains(sweep.Problems, problem => problem.StartsWith("Here", StringComparison.Ordinal));
+    }
+
     private static (DriveTimeMeasurer Measurer, PropertyService Properties, HomeSearchService Search) Services(
         TestDatabase db,
         FakeHttp http)

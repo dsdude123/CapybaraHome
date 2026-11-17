@@ -104,7 +104,22 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
 
         if (request.Address is not null)
         {
-            property.Address = Blank(request.Address);
+            var address = Blank(request.Address);
+
+            // The pin and every measured drive were worked out from the address that was held, so a
+            // new address drops both rather than leaving times measured from where it used to be.
+            // Times typed in by hand are his own figures and stay.
+            if (!string.Equals(address, property.Address, StringComparison.Ordinal))
+            {
+                property.Latitude = null;
+                property.Longitude = null;
+
+                context.PropertyDriveTimes.RemoveRange(await context.PropertyDriveTimes
+                    .Where(d => d.PropertyId == property.Id && d.Source == DriveTimeSource.Measured)
+                    .ToListAsync(cancellationToken));
+            }
+
+            property.Address = address;
         }
 
         if (request.Internet is not null)

@@ -630,6 +630,63 @@ public class HomeSearchPagesTests
         Assert.Equal(18.5d, (await ReadAsync(app, property.Id)).DriveTimes.Single().Minutes);
     }
 
+    [Fact]
+    public async Task Remeasuring_them_all_from_the_list_measures_every_property_and_says_how_many()
+    {
+        const string Place = """
+        { "features": [ { "geometry": { "coordinates": [-122.33, 47.61] }, "properties": { "label": "Somewhere" } } ] }
+        """;
+
+        const string Route = """
+        { "routes": [ { "summary": { "distance": 12400.0, "duration": 1110.0 } } ] }
+        """;
+
+        var routing = new FakeHttp().ReplyTo("search", Place).ReplyTo("directions", Route);
+
+        await using var app = await AppFactory.CreateAsync(configureServices: services =>
+            services.AddHttpClient<RoutingClient>().ConfigurePrimaryHttpMessageHandler(routing.Handler));
+
+        var client = Client(app);
+
+        Assert.Contains("Remeasure all drives", await client.GetStringAsync("/homes"));
+
+        await PostAsync(client, "/homes/settings", "home-routing", new()
+        {
+            ["action"] = "save",
+            ["url"] = "https://api.openrouteservice.org",
+            ["key"] = "a-key",
+        });
+
+        var here = await CreateAsync(app, new CreatePropertyRequest("Here", Address: "1221 1st Ave"));
+        var there = await CreateAsync(app, new CreatePropertyRequest("There", Address: "500 Pine St"));
+        await DestinationAsync(app, "Work", address: "400 Broad St");
+
+        var swept = await PostAsync(client, "/homes", "board-measure-all", []);
+
+        var html = await swept.Content.ReadAsStringAsync();
+        Assert.Contains("Measured 2 drive(s) across 2 property(s).", html);
+        Assert.Equal(18.5d, (await ReadAsync(app, here.Id)).DriveTimes.Single().Minutes);
+        Assert.Equal(18.5d, (await ReadAsync(app, there.Id)).DriveTimes.Single().Minutes);
+    }
+
+    [Fact]
+    public async Task Remeasuring_them_all_with_no_routing_service_says_what_is_missing()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        await CreateAsync(app, new CreatePropertyRequest("Here", Address: "1221 1st Ave"));
+        await DestinationAsync(app, "Work", address: "400 Broad St");
+
+        var page = await client.GetStringAsync("/homes");
+        Assert.Matches("Remeasure all drives[\\s\\S]{0,120}", page);
+        Assert.Contains("Measuring needs a routing service", page);
+
+        var pressed = await PostAsync(client, "/homes", "board-measure-all", []);
+
+        Assert.Contains("No routing service is set up yet", await pressed.Content.ReadAsStringAsync());
+    }
+
     private static List<KeyValuePair<string, string>> Lines(string list, IEnumerable<string> values)
     {
         var fields = new List<KeyValuePair<string, string>>();
