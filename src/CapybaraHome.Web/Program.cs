@@ -98,6 +98,7 @@ builder.Services.AddHostedService<DailyReportRunner>();
 // The wizard's pages render statically, so what step one learned is held here between posts.
 builder.Services.AddSingleton<JiraWizardStore>();
 
+builder.Services.AddSingleton<OAuthIssuer>();
 builder.Services.AddCapybaraAuthentication();
 builder.Services.AddCapybaraForwardedHeaders(builder.Configuration);
 
@@ -141,7 +142,9 @@ if (!app.Environment.IsDevelopment())
 // rather than having a page re-executed over it, which would turn a 401 into a sign-in redirect.
 app.UseWhen(
     context => !context.Request.Path.StartsWithSegments("/api")
-        && !context.Request.Path.StartsWithSegments("/mcp"),
+        && !context.Request.Path.StartsWithSegments("/mcp")
+        && !context.Request.Path.StartsWithSegments("/oauth")
+        && !context.Request.Path.StartsWithSegments("/.well-known"),
     branch => branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 
 // Before authorization, so an installation with no accounts sends a browser to setup rather
@@ -157,6 +160,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapApi();
+app.MapOAuth();
 app.MapSettings();
 app.MapHomeSearch();
 app.MapReport();

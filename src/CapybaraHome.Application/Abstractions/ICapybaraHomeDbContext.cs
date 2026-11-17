@@ -120,6 +120,15 @@ public interface ICapybaraHomeDbContext
     /// <summary>Bearer tokens issued to the connector.</summary>
     DbSet<ApiToken> ApiTokens { get; }
 
+    /// <summary>OAuth clients that may ask for access, such as a Claude connector.</summary>
+    DbSet<OAuthClient> OAuthClients { get; }
+
+    /// <summary>Authorization codes waiting to be redeemed.</summary>
+    DbSet<OAuthAuthorizationCode> OAuthAuthorizationCodes { get; }
+
+    /// <summary>Access and refresh tokens issued to the OAuth clients.</summary>
+    DbSet<OAuthToken> OAuthTokens { get; }
+
     /// <summary>Writes the pending changes.</summary>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

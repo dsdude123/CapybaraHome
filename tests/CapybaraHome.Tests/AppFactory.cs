@@ -32,11 +32,17 @@ public class AppFactory : WebApplicationFactory<Program>
     private readonly string databasePath;
     private readonly bool stubSignIn;
     private readonly Action<IServiceCollection>? configureServices;
+    private readonly IReadOnlyDictionary<string, string>? settings;
 
-    private AppFactory(bool stubSignIn, Action<IServiceCollection>? configureServices, string? databasePath)
+    private AppFactory(
+        bool stubSignIn,
+        Action<IServiceCollection>? configureServices,
+        string? databasePath,
+        IReadOnlyDictionary<string, string>? settings)
     {
         this.stubSignIn = stubSignIn;
         this.configureServices = configureServices;
+        this.settings = settings;
         this.databasePath = databasePath
             ?? Path.Combine(Path.GetTempPath(), $"capybarahome-tests-{Guid.NewGuid():N}.db");
     }
@@ -49,13 +55,15 @@ public class AppFactory : WebApplicationFactory<Program>
     /// <param name="seedFirstUser">Whether the installation already has its first account.</param>
     /// <param name="configureServices">Replaces services for the test, such as the JIRA client's handler.</param>
     /// <param name="databasePath">An existing database file to start against, instead of a fresh one.</param>
+    /// <param name="settings">Configuration values the host starts with, such as the OAuth issuer.</param>
     public static async Task<AppFactory> CreateAsync(
         bool stubSignIn = true,
         bool seedFirstUser = true,
         Action<IServiceCollection>? configureServices = null,
-        string? databasePath = null)
+        string? databasePath = null,
+        IReadOnlyDictionary<string, string>? settings = null)
     {
-        var factory = new AppFactory(stubSignIn, configureServices, databasePath);
+        var factory = new AppFactory(stubSignIn, configureServices, databasePath, settings);
 
         if (seedFirstUser)
         {
@@ -77,6 +85,11 @@ public class AppFactory : WebApplicationFactory<Program>
         builder.UseEnvironment(Environments.Production);
         builder.UseSetting("ConnectionStrings:CapybaraHome", $"Data Source={databasePath}");
         builder.UseSetting("Backups:Enabled", "false");
+
+        foreach (var setting in settings ?? new Dictionary<string, string>())
+        {
+            builder.UseSetting(setting.Key, setting.Value);
+        }
 
         // The report reads the open web. Here every one of its sources answers from inside the
         // process, so a test is neither slow nor at the mercy of a news site, and a test that

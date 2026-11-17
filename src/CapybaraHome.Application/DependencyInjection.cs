@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<DashboardService>();
         services.AddScoped<UserService>();
         services.AddScoped<ApiTokenService>();
+        services.AddScoped<OAuthService>();
         services.AddScoped<DataTransferService>();
         services.AddScoped<DailyReportService>();
         services.AddScoped<DailyReportSettingsService>();
