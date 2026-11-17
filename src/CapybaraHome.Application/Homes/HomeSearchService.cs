@@ -346,6 +346,12 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         {
             destination.Latitude = null;
             destination.Longitude = null;
+
+            // Every drive measured to it was measured to where it used to be, so those times go
+            // with the pin; the ones typed in by hand are his own figures and stay.
+            context.PropertyDriveTimes.RemoveRange(await context.PropertyDriveTimes
+                .Where(d => d.DestinationId == id && d.Source == DriveTimeSource.Measured)
+                .ToListAsync(cancellationToken));
         }
 
         destination.Name = Required(request.Name, "A destination needs a name.", nameof(request));

@@ -312,6 +312,25 @@ public class HomeSearchApiTests
     }
 
     [Fact]
+    public async Task Measuring_them_all_reports_every_property_it_could_not_measure()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        // Nothing can be measured without a service, which is refused rather than reported per property.
+        var nowhere = await client.PostAsync("/api/properties/drives/measure", null);
+        Assert.Equal(HttpStatusCode.BadRequest, nowhere.StatusCode);
+        Assert.Contains("No routing service", await nowhere.Content.ReadAsStringAsync());
+
+        await client.PutAsJsonAsync("/api/home-search/settings",
+            new HomeSearchSettingsRequest(RoutingBaseUrl: "https://api.openrouteservice.org", RoutingApiKey: "a-key"), Json);
+
+        var swept = await client.PostAsync("/api/properties/drives/measure", null);
+        Assert.Equal(HttpStatusCode.OK, swept.StatusCode);
+        Assert.Contains("no destinations", await swept.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task A_picture_cannot_be_read_without_signing_in()
     {
         await using var app = await AppFactory.CreateAsync(stubSignIn: false);

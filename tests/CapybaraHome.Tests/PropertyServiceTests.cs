@@ -441,6 +441,35 @@ public class PropertyServiceTests
     }
 
     [Fact]
+    public async Task A_new_address_drops_the_pin_and_forgets_the_drives_measured_from_the_old_one()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+        var search = new HomeSearchService(db.Context, db.Clock);
+
+        var work = await search.CreateDestinationAsync(new SearchDestinationRequest("Work"));
+        var shop = await search.CreateDestinationAsync(new SearchDestinationRequest("Shop"));
+
+        var property = await service.CreateAsync(new CreatePropertyRequest("Candidate", Address: "1221 1st Ave"));
+        await service.UpdateAsync(property.Id, new UpdatePropertyRequest(Latitude: 47.6d, Longitude: -122.3d));
+        await service.SetDriveTimeAsync(property.Id, work.Id, 20d, 8d, DriveTimeSource.Measured);
+        await service.SetDriveTimeAsync(property.Id, shop.Id, 35d, null, DriveTimeSource.Manual);
+
+        var same = await service.UpdateAsync(property.Id, new UpdatePropertyRequest(Address: "1221 1st Ave"));
+        Assert.Equal(47.6d, same!.Latitude);
+        Assert.Equal(2, same.DriveTimes.Count);
+
+        var moved = await service.UpdateAsync(property.Id, new UpdatePropertyRequest(Address: "500 Pine St"));
+
+        Assert.Null(moved!.Latitude);
+        Assert.Null(moved.Longitude);
+
+        var held = Assert.Single(moved.DriveTimes);
+        Assert.Equal(shop.Id, held.DestinationId);
+        Assert.Equal(35d, held.Minutes);
+    }
+
+    [Fact]
     public async Task Reading_or_changing_a_property_that_is_not_there_gives_nothing_back()
     {
         await using var db = await TestDatabase.CreateAsync();
