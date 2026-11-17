@@ -87,7 +87,7 @@
 
 <section class="card stack" style="margin-top:1rem">
     <h2 class="card-title">Review queued and available meals</h2>
-    <p class="muted">Available first, then queued, then pooled, longest since cooking first. Nothing has to be chosen from here.</p>
+    <p class="muted">Available first, then queued, longest since cooking first. Nothing has to be chosen from here.</p>
     <MealPlanRows Options="review" Slot="nextSlot" Prefix="review" Plan="PlanAsync" ChooseLink="ChooseLink" Return="@CurrentLink" />
 </section>
 
@@ -202,14 +202,14 @@
     }
 
     /// <summary>
-    /// Reads the meals worth a look before searching: available first, then queued, then pooled,
-    /// each in the order they have gone longest without being cooked.
+    /// Reads the meals worth a look before searching: available first, then queued, each in the
+    /// order they have gone longest without being cooked. Pooled meals belong to the search only.
     /// </summary>
     private async Task<IReadOnlyList<MealPlanOption>> ReviewAsync()
     {
         var rows = new List<MealPlanOption>();
 
-        foreach (var status in new[] { MealStatus.Available, MealStatus.Queued, MealStatus.Pooled })
+        foreach (var status in new[] { MealStatus.Available, MealStatus.Queued })
         {
             if (rows.Count >= ListSize)
             {

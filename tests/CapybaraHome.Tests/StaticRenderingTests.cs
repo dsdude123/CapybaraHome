@@ -2885,6 +2885,33 @@ public class StaticRenderingTests
             "The review list has to come before the search.");
     }
 
+    [Fact]
+    public async Task The_review_list_leaves_out_pooled_meals()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<CapybaraHomeDbContext>();
+            context.Meals.Add(new Domain.Meals.Meal { Name = "A pooled meal", Status = MealStatus.Pooled });
+            context.Meals.Add(new Domain.Meals.Meal { Name = "An available meal", Status = MealStatus.Available });
+            context.Meals.Add(new Domain.Meals.Meal { Name = "A queued meal", Status = MealStatus.Queued });
+
+            await context.SaveChangesAsync();
+        }
+
+        var page = await client.GetStringAsync("/meals/plan");
+        var start = page.IndexOf("Review queued and available meals", StringComparison.Ordinal);
+        var end = page.IndexOf("Search meals", StringComparison.Ordinal);
+        var review = page[start..end];
+
+        Assert.Contains("An available meal", review);
+        Assert.Contains("A queued meal", review);
+        Assert.DoesNotContain("A pooled meal", review);
+        Assert.Contains("A pooled meal", page[end..]);
+    }
+
     private static async Task<HttpResponseMessage> PostAsync(
         HttpClient client,
         string path,
