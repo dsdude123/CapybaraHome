@@ -107,6 +107,51 @@ public class OAuthFlowTests
             challenge);
     }
 
+    [Theory]
+    [InlineData("/.well-known/oauth-protected-resource")]
+    [InlineData("/.well-known/oauth-protected-resource/mcp")]
+    [InlineData("/.well-known/oauth-authorization-server")]
+    public async Task A_browser_based_client_can_ask_whether_it_may_read_the_documents(string path)
+    {
+        await using var app = await AppFactory.CreateAsync(stubSignIn: false);
+        var client = Client(app);
+
+        using var request = new HttpRequestMessage(HttpMethod.Options, path);
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal("*", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+        Assert.Contains("GET", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Methods")));
+        Assert.Contains("Authorization", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Headers")));
+    }
+
+    [Theory]
+    [InlineData("not-base64-at-all!!")]
+    [InlineData("bm8tY29sb24taW4taGVyZQ==")]
+    public async Task A_basic_header_that_cannot_be_read_leaves_the_client_unnamed(string parameter)
+    {
+        await using var app = await AppFactory.CreateAsync(stubSignIn: false);
+        var client = Client(app);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/oauth/token")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "authorization_code",
+                ["code"] = "whatever",
+                ["redirect_uri"] = Callback,
+                ["code_verifier"] = Verifier,
+            }),
+        };
+        request.Headers.Authorization = new("Basic", parameter);
+
+        var response = await client.SendAsync(request);
+
+        // Nothing names a client, so this is an unknown client rather than a bad secret.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("invalid_client", (await JsonAsync(response)).GetProperty("error").GetString());
+    }
+
     [Fact]
     public async Task A_client_registers_itself_and_is_given_a_client_id_and_no_secret()
     {

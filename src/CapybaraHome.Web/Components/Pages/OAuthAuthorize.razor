@@ -133,8 +133,9 @@ else if (client is not null)
         }
     }
 
-    private string RedirectHost =>
-        Uri.TryCreate(RedirectUri, UriKind.Absolute, out var uri) ? uri.Authority : RedirectUri ?? "(none)";
+    // Only reached once the redirect URI has been matched against the client's registration,
+    // which every registered one is absolute, so there is nothing here to fall back to.
+    private string RedirectHost => new Uri(RedirectUri!).Authority;
 
     private void Refuse(string reason)
     {

@@ -70,6 +70,18 @@ public class OAuthServiceTests
     }
 
     [Fact]
+    public async Task A_registration_that_names_no_redirect_uris_at_all_is_refused()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var oauth = db.OAuth();
+
+        var refused = await Assert.ThrowsAsync<OAuthException>(() =>
+            oauth.RegisterAsync(new OAuthClientRegistration("Client", null!, "none")));
+
+        Assert.Equal("invalid_redirect_uri", refused.Error);
+    }
+
+    [Fact]
     public async Task A_loopback_redirect_uri_may_be_plain_http()
     {
         await using var db = await TestDatabase.CreateAsync();
