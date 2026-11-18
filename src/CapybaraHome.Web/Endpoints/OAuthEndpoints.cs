@@ -182,6 +182,7 @@ public static class OAuthEndpoints
             [FromForm] string? scope,
             [FromForm] string? resource,
             OAuthService oauth,
+            OAuthIssuer issuer,
             CancellationToken cancellationToken) =>
         {
             // Checked again here rather than trusted from the form, so a posted redirect URI can
@@ -189,6 +190,15 @@ public static class OAuthEndpoints
             if (!await oauth.IsRegisteredRedirectUriAsync(clientId, redirectUri, cancellationToken))
             {
                 return Results.BadRequest("That client and redirect URI are not registered here.");
+            }
+
+            if (!issuer.IsOwnResource(http.Request, resource))
+            {
+                return Results.Redirect(OAuthRedirect.Error(
+                    redirectUri!,
+                    "invalid_target",
+                    "That resource is not the one this server protects.",
+                    state));
             }
 
             if (!string.Equals(decision, "approve", StringComparison.Ordinal))

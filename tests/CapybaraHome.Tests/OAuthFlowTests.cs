@@ -167,6 +167,120 @@ public class OAuthFlowTests
     }
 
     [Fact]
+    public async Task A_callback_this_installation_does_not_allow_is_refused_at_registration()
+    {
+        await using var app = await AppFactory.CreateAsync(stubSignIn: false);
+        var client = Client(app);
+
+        // The phishing this closes: register a client calling itself Claude, with a callback of
+        // your own, then send the owner a link to the consent page.
+        var response = await client.PostAsJsonAsync("/oauth/register", new
+        {
+            client_name = "Claude",
+            redirect_uris = new[] { "https://evil.example/cb" },
+            token_endpoint_auth_method = "none",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var answer = await JsonAsync(response);
+        Assert.Equal("invalid_redirect_uri", answer.GetProperty("error").GetString());
+        Assert.Contains("OAuth:AllowedRedirectUris", answer.GetProperty("error_description").GetString());
+    }
+
+    [Fact]
+    public async Task A_configured_allowlist_replaces_the_default_one()
+    {
+        await using var app = await AppFactory.CreateAsync(
+            stubSignIn: false,
+            settings: new Dictionary<string, string>
+            {
+                ["OAuth:AllowedRedirectUris:0"] = "https://somewhere.example/cb",
+            });
+        var client = Client(app);
+
+        var allowed = await client.PostAsJsonAsync("/oauth/register", new
+        {
+            client_name = "Something else",
+            redirect_uris = new[] { "https://somewhere.example/cb" },
+            token_endpoint_auth_method = "none",
+        });
+        Assert.Equal(HttpStatusCode.Created, allowed.StatusCode);
+
+        var refused = await RegisterAsync(client);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+    }
+
+    [Fact]
+    public async Task An_allowlist_variable_left_blank_falls_back_to_the_default_rather_than_refusing_everything()
+    {
+        // What a compose file that names the variable without a value produces.
+        await using var app = await AppFactory.CreateAsync(
+            stubSignIn: false,
+            settings: new Dictionary<string, string> { ["OAuth:AllowedRedirectUris:0"] = string.Empty });
+        var client = Client(app);
+
+        Assert.Equal(HttpStatusCode.Created, (await RegisterAsync(client)).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_consent_page_names_the_host_the_access_goes_to_and_says_the_client_named_itself()
+    {
+        await using var app = await AppFactory.CreateAsync(stubSignIn: false);
+        var browser = Client(app);
+        var clientId = await RegisteredClientIdAsync(browser);
+        await SignInAsync(browser);
+
+        var consent = await browser.GetStringAsync(AuthorizeUrl(clientId));
+
+        Assert.Contains("It will be sent to <strong style=\"font-size:1.15rem\">claude.ai</strong>", consent);
+        Assert.Contains("may register itself under any name", consent);
+        Assert.Contains(Callback, consent);
+    }
+
+    [Fact]
+    public async Task An_authorize_request_naming_somebody_elses_resource_is_sent_back_as_an_error()
+    {
+        await using var app = await AppFactory.CreateAsync(stubSignIn: false);
+        var browser = Client(app);
+        var clientId = await RegisteredClientIdAsync(browser);
+        await SignInAsync(browser);
+
+        var response = await browser.GetAsync(
+            AuthorizeUrl(clientId).Replace(
+                Uri.EscapeDataString("http://localhost/mcp"),
+                Uri.EscapeDataString("https://somewhere.example/mcp")));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("invalid_target", HttpUtility.ParseQueryString(response.Headers.Location!.Query)["error"]);
+    }
+
+    [Fact]
+    public async Task An_approval_posted_with_somebody_elses_resource_issues_no_code()
+    {
+        await using var app = await AppFactory.CreateAsync(stubSignIn: false);
+        var browser = Client(app);
+        var clientId = await RegisteredClientIdAsync(browser);
+        await SignInAsync(browser);
+
+        var consent = await browser.GetStringAsync(AuthorizeUrl(clientId));
+        var response = await browser.PostAsync("/oauth/authorize/decide", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = FormPost.Hidden(consent, "__RequestVerificationToken"),
+            ["decision"] = "approve",
+            ["clientId"] = clientId,
+            ["redirectUri"] = Callback,
+            ["codeChallenge"] = Challenge(Verifier),
+            ["state"] = "the-state",
+            ["resource"] = "https://somewhere.example/mcp",
+        }));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var query = HttpUtility.ParseQueryString(response.Headers.Location!.Query);
+        Assert.Equal("invalid_target", query["error"]);
+        Assert.Null(query["code"]);
+    }
+
+    [Fact]
     public async Task The_consent_page_sends_a_signed_out_visitor_through_the_apps_own_sign_in_first()
     {
         await using var app = await AppFactory.CreateAsync(stubSignIn: false);
@@ -226,7 +340,11 @@ public class OAuthFlowTests
         });
 
         Assert.Equal(HttpStatusCode.OK, initialized.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await connector.GetAsync("/api/tasks")).StatusCode);
+
+        // The grant is for the MCP endpoint. /api carries the whole export and an import that
+        // replaces the data, which the MCP tools cannot reach, so the same token is refused there.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await connector.GetAsync("/api/tasks")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await connector.GetAsync("/api/export")).StatusCode);
     }
 
     [Fact]
@@ -251,7 +369,7 @@ public class OAuthFlowTests
         Assert.NotEqual(
             granted.GetProperty("access_token").GetString(),
             refreshed.GetProperty("access_token").GetString());
-        Assert.Equal(HttpStatusCode.OK, (await ApiAsync(app, refreshed)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await McpAsync(app, refreshed)).StatusCode);
 
         var replay = await browser.PostAsync("/oauth/token", new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -482,7 +600,7 @@ public class OAuthFlowTests
         await SignInAsync(browser);
 
         var granted = await GrantAsync(app, browser, clientId);
-        Assert.Equal(HttpStatusCode.OK, (await ApiAsync(app, granted)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await McpAsync(app, granted)).StatusCode);
 
         var revoked = await browser.PostAsync("/oauth/revoke", new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -496,7 +614,7 @@ public class OAuthFlowTests
         }));
         Assert.Equal(HttpStatusCode.OK, unknown.StatusCode);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, (await ApiAsync(app, granted)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await McpAsync(app, granted)).StatusCode);
     }
 
     [Fact]
@@ -517,7 +635,7 @@ public class OAuthFlowTests
         var revoked = await FormPost.PostAsync(browser, "/settings", $"revoke-client-1");
         Assert.Equal(HttpStatusCode.Redirect, revoked.StatusCode);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, (await ApiAsync(app, granted)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await McpAsync(app, granted)).StatusCode);
         Assert.Contains("revoked", await browser.GetStringAsync("/settings"));
     }
 
@@ -558,11 +676,24 @@ public class OAuthFlowTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    private static async Task<HttpResponseMessage> ApiAsync(AppFactory app, JsonElement tokens)
+    private static async Task<HttpResponseMessage> McpAsync(AppFactory app, JsonElement tokens)
     {
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", tokens.GetProperty("access_token").GetString());
-        return await client.GetAsync("/api/tasks");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/json, text/event-stream");
+
+        return await client.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method = "initialize",
+            @params = new
+            {
+                protocolVersion = "2024-11-05",
+                capabilities = new { },
+                clientInfo = new { name = "tests", version = "1.0" },
+            },
+        });
     }
 
     private static async Task<JsonElement> GrantAsync(AppFactory app, HttpClient browser, string clientId)

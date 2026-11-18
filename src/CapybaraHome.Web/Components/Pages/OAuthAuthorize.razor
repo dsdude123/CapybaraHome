@@ -1,5 +1,6 @@
 @page "/oauth/authorize"
 @inject OAuthService OAuth
+@inject OAuthIssuer Issuer
 @inject NavigationManager Navigation
 
 <PageTitle>Authorize</PageTitle>
@@ -17,12 +18,28 @@ else if (client is not null)
     <h1>Authorize @client.ClientName</h1>
     <p>
         <strong>@client.ClientName</strong> is asking to reach this CapybaraHome installation as
-        <strong>@DisplayName</strong>. It will be able to read and change everything that account can:
-        tasks, meals and plans, the grocery list and the home search.
+        <strong>@DisplayName</strong>, through its home task tools. It will be able to read and
+        change what that account can: tasks, meals and plans, the grocery list and the home search.
     </p>
+
+    <div class="notice">
+        <p style="margin:0">
+            It will be sent to <strong style="font-size:1.15rem">@RedirectHost</strong>, which is
+            where your access ends up.
+        </p>
+        @if (client.RegisteredDynamically)
+        {
+            <p class="muted" style="margin:.4rem 0 0">
+                Anything that can reach this installation may register itself under any name, so
+                <strong>@client.ClientName</strong> is only what this one calls itself. Allow it
+                only if you started this from @RedirectHost and recognise that address.
+            </p>
+        }
+        <p class="muted" style="margin:.4rem 0 0">Full callback: <code>@RedirectUri</code></p>
+    </div>
+
     <p class="muted">
-        It will be sent back to <code>@RedirectUri</code>. You can take the access away again under
-        Connected apps in <a href="/settings">settings</a>.
+        You can take the access away again under Connected apps in <a href="/settings">settings</a>.
     </p>
 
     <form method="post" action="/oauth/authorize/decide" class="stack">
@@ -107,8 +124,17 @@ else if (client is not null)
         if (!string.Equals(CodeChallengeMethod, OAuthService.ChallengeMethod, StringComparison.Ordinal))
         {
             Redirect("invalid_request", $"The code challenge method has to be {OAuthService.ChallengeMethod}.");
+            return;
+        }
+
+        if (!Issuer.IsOwnResource(HttpContext.Request, Resource))
+        {
+            Redirect("invalid_target", "That resource is not the one this server protects.");
         }
     }
+
+    private string RedirectHost =>
+        Uri.TryCreate(RedirectUri, UriKind.Absolute, out var uri) ? uri.Authority : RedirectUri ?? "(none)";
 
     private void Refuse(string reason)
     {

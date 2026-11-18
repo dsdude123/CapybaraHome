@@ -1,4 +1,5 @@
 using CapybaraHome.Application.Users;
+using Microsoft.Extensions.Options;
 
 namespace CapybaraHome.Web.Auth;
 
@@ -9,7 +10,7 @@ namespace CapybaraHome.Web.Auth;
 /// — unless <c>OAuth:Issuer</c> names it outright, which is what a proxy that rewrites the path
 /// or serves a different host needs.
 /// </summary>
-public class OAuthIssuer(IConfiguration configuration)
+public class OAuthIssuer(IOptions<OAuthOptions> options)
 {
     /// <summary>Where the protected resource metadata is served from.</summary>
     public const string ResourceMetadataPath = "/.well-known/oauth-protected-resource";
@@ -17,7 +18,7 @@ public class OAuthIssuer(IConfiguration configuration)
     /// <summary>Where the authorization server metadata is served from.</summary>
     public const string AuthorizationServerMetadataPath = "/.well-known/oauth-authorization-server";
 
-    private readonly string? configured = configuration["OAuth:Issuer"]?.TrimEnd('/');
+    private readonly string? configured = options.Value.Issuer?.TrimEnd('/');
 
     /// <summary>The issuer identifier, with no trailing slash.</summary>
     /// <param name="request">The request the address is read off.</param>
@@ -34,6 +35,17 @@ public class OAuthIssuer(IConfiguration configuration)
     /// <param name="request">The request the address is read off.</param>
     public string ResourceMetadataFor(HttpRequest request) =>
         $"{For(request)}{ResourceMetadataPath}/mcp";
+
+    /// <summary>
+    /// Whether a resource indicator names this installation's MCP endpoint. A request that
+    /// carries none is accepted, since not every client sends one, but one that names somewhere
+    /// else is refused rather than silently granted against this installation.
+    /// </summary>
+    /// <param name="request">The request the address is read off.</param>
+    /// <param name="resource">The resource indicator the client asked for, or null.</param>
+    public bool IsOwnResource(HttpRequest request, string? resource) =>
+        string.IsNullOrWhiteSpace(resource)
+        || string.Equals(resource.TrimEnd('/'), ResourceFor(request).TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>What <c>/.well-known/oauth-protected-resource</c> answers.</summary>
     /// <param name="request">The request the address is read off.</param>

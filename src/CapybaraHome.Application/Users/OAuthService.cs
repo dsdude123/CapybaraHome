@@ -3,6 +3,7 @@ using System.Text;
 using CapybaraHome.Application.Abstractions;
 using CapybaraHome.Domain.Users;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace CapybaraHome.Application.Users;
 
@@ -11,7 +12,7 @@ namespace CapybaraHome.Application.Users;
 /// authorization codes the consent screen hands out, and trades them for access and refresh
 /// tokens. Every secret is kept only as a SHA-256 hash, as the hand-minted tokens are.
 /// </summary>
-public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
+public class OAuthService(ICapybaraHomeDbContext context, IOptions<OAuthOptions> options, TimeProvider clock)
 {
     /// <summary>Prefix that tells an access token apart from a hand-minted bearer token.</summary>
     public const string AccessTokenPrefix = "capy_at_";
@@ -52,15 +53,7 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
         }
 
         await PruneAsync(cancellationToken);
-
-        var live = await context.OAuthClients
-            .CountAsync(c => c.RegisteredDynamically && c.RevokedAt == null, cancellationToken);
-        if (live >= MaxDynamicClients)
-        {
-            throw new OAuthException(
-                "invalid_client_metadata",
-                $"This installation already holds {MaxDynamicClients} registered clients. Revoke one in settings first.");
-        }
+        await MakeRoomAsync(cancellationToken);
 
         var secret = method == "none" ? null : NewSecret(string.Empty);
         var client = new OAuthClient
@@ -84,7 +77,9 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
     public async Task<OAuthConsentClient?> FindClientAsync(string? clientId, CancellationToken cancellationToken = default)
     {
         var client = await LiveClientAsync(clientId, cancellationToken);
-        return client is null ? null : new OAuthConsentClient(client.Id, client.ClientId, client.ClientName);
+        return client is null
+            ? null
+            : new OAuthConsentClient(client.Id, client.ClientId, client.ClientName, client.RegisteredDynamically);
     }
 
     /// <summary>Whether <paramref name="redirectUri"/> is one the client registered, compared whole.</summary>
@@ -169,7 +164,8 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
         }
 
         var hash = Hash(code);
-        var stored = await context.OAuthAuthorizationCodes.SingleOrDefaultAsync(c => c.CodeHash == hash, cancellationToken);
+        var stored = await context.OAuthAuthorizationCodes.AsNoTracking()
+            .SingleOrDefaultAsync(c => c.CodeHash == hash, cancellationToken);
         var now = clock.GetUtcNow();
 
         if (stored is null || stored.ClientId != client.Id)
@@ -201,7 +197,19 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
             throw new OAuthException("invalid_grant", "The code verifier does not match the challenge.");
         }
 
-        stored.RedeemedAt = now;
+        // One conditional update, so two requests arriving together cannot both walk past the
+        // check above and come away with tokens. The one that loses is a replay like any other.
+        var claimed = await context.OAuthAuthorizationCodes
+            .Where(c => c.Id == stored.Id && c.RedeemedAt == null)
+            .ExecuteUpdateAsync(set => set.SetProperty(c => c.RedeemedAt, now), cancellationToken);
+
+        if (claimed == 0)
+        {
+            await RevokeTokensOfAsync(stored.ClientId, stored.UserId, now, cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
+            throw new OAuthException("invalid_grant", "That authorization code has already been used.");
+        }
+
         return await IssueTokensAsync(client, stored.UserId, stored.Scope, now, cancellationToken);
     }
 
@@ -221,7 +229,7 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
         }
 
         var hash = Hash(refreshToken);
-        var stored = await context.OAuthTokens
+        var stored = await context.OAuthTokens.AsNoTracking()
             .SingleOrDefaultAsync(t => t.SecretHash == hash && t.Kind == OAuthTokenKind.Refresh, cancellationToken);
         var now = clock.GetUtcNow();
 
@@ -242,8 +250,21 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
             throw new OAuthException("invalid_grant", "That refresh token has expired.");
         }
 
-        stored.RevokedAt = now;
-        stored.LastUsedAt = now;
+        // Retired with the same conditional update the codes use, so a refresh token raced by
+        // two requests buys one pair of tokens, not two.
+        var claimed = await context.OAuthTokens
+            .Where(t => t.Id == stored.Id && t.RevokedAt == null)
+            .ExecuteUpdateAsync(
+                set => set.SetProperty(t => t.RevokedAt, now).SetProperty(t => t.LastUsedAt, now),
+                cancellationToken);
+
+        if (claimed == 0)
+        {
+            await RevokeTokensOfAsync(stored.ClientId, stored.UserId, now, cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
+            throw new OAuthException("invalid_grant", "That refresh token has already been used or revoked.");
+        }
+
         return await IssueTokensAsync(client, stored.UserId, stored.Scope, now, cancellationToken);
     }
 
@@ -398,6 +419,41 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
         }
     }
 
+    /// <summary>
+    /// Keeps the registered clients under the cap by dropping the oldest that never took a
+    /// token. Registration needs no sign-in, so without this one caller could fill the cap and
+    /// keep a real connector from registering at all; a client somebody actually authorized has
+    /// a <c>LastUsedAt</c> and is never touched.
+    /// </summary>
+    /// <exception cref="OAuthException">Every registered client has been used, so none may go.</exception>
+    private async Task MakeRoomAsync(CancellationToken cancellationToken)
+    {
+        var live = await context.OAuthClients
+            .Where(c => c.RegisteredDynamically && c.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+
+        if (live.Count < MaxDynamicClients)
+        {
+            return;
+        }
+
+        var droppable = live
+            .Where(c => c.LastUsedAt is null)
+            .OrderBy(c => c.Id)
+            .Take(live.Count - MaxDynamicClients + 1)
+            .ToList();
+
+        if (droppable.Count < live.Count - MaxDynamicClients + 1)
+        {
+            throw new OAuthException(
+                "invalid_client_metadata",
+                $"This installation already holds {MaxDynamicClients} authorized clients. Revoke one in settings first.");
+        }
+
+        context.OAuthClients.RemoveRange(droppable);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task<IssuedOAuthTokens> IssueTokensAsync(
         OAuthClient client,
         int userId,
@@ -492,8 +548,10 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
         user.CreatedAt,
         user.LastSignInAt);
 
-    private static IReadOnlyList<string> NormalizeRedirectUris(IReadOnlyList<string>? uris)
+    private IReadOnlyList<string> NormalizeRedirectUris(IReadOnlyList<string>? uris)
     {
+        var allowed = options.Value.AllowedRedirects();
+
         var candidates = (uris ?? [])
             .Where(u => !string.IsNullOrWhiteSpace(u))
             .Select(u => u.Trim())
@@ -529,10 +587,26 @@ public class OAuthService(ICapybaraHomeDbContext context, TimeProvider clock)
                     "invalid_redirect_uri",
                     $"{candidate} is not https, and only a loopback address may be plain http.");
             }
+
+            // Registration needs no sign-in, so without this anyone who can reach the app could
+            // register a client named after one you trust and point its callback at themselves.
+            if (!allowed.Any(a => SameOrigin(a, uri)))
+            {
+                throw new OAuthException(
+                    "invalid_redirect_uri",
+                    $"{candidate} is not a callback this installation accepts. "
+                    + "Add its address to OAuth:AllowedRedirectUris to register it.");
+            }
         }
 
         return candidates;
     }
+
+    private static bool SameOrigin(string allowed, Uri candidate) =>
+        Uri.TryCreate(allowed, UriKind.Absolute, out var origin)
+        && string.Equals(origin.Scheme, candidate.Scheme, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(origin.Host, candidate.Host, StringComparison.OrdinalIgnoreCase)
+        && origin.Port == candidate.Port;
 
     private static string NormalizeAuthMethod(string? method)
     {

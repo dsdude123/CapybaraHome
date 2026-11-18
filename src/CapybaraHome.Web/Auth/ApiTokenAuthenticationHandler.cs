@@ -32,9 +32,26 @@ public class ApiTokenAuthenticationHandler(
         }
 
         var secret = header["Bearer ".Length..].Trim();
-        var user = secret.StartsWith(OAuthService.AccessTokenPrefix, StringComparison.Ordinal)
-            ? await oauth.AuthenticateAccessTokenAsync(secret, Context.RequestAborted)
-            : await tokens.AuthenticateAsync(secret, Context.RequestAborted);
+        UserView? user;
+
+        if (secret.StartsWith(OAuthService.AccessTokenPrefix, StringComparison.Ordinal))
+        {
+            // An OAuth token is granted for the MCP endpoint and nothing else. Everything under
+            // /api is reachable with far less ceremony than the MCP tools allow — the whole
+            // export, and an import that replaces the data — so a connector's token, or one
+            // taken from it, must not open that door.
+            if (!Request.Path.StartsWithSegments("/mcp"))
+            {
+                return AuthenticateResult.Fail("An OAuth access token reaches the MCP endpoint only.");
+            }
+
+            user = await oauth.AuthenticateAccessTokenAsync(secret, Context.RequestAborted);
+        }
+        else
+        {
+            user = await tokens.AuthenticateAsync(secret, Context.RequestAborted);
+        }
+
         if (user is null)
         {
             return AuthenticateResult.Fail("The bearer token is not valid.");

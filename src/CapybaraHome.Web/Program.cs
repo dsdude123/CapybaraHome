@@ -98,6 +98,7 @@ builder.Services.AddHostedService<DailyReportRunner>();
 // The wizard's pages render statically, so what step one learned is held here between posts.
 builder.Services.AddSingleton<JiraWizardStore>();
 
+builder.Services.Configure<OAuthOptions>(builder.Configuration.GetSection(OAuthOptions.SectionName));
 builder.Services.AddSingleton<OAuthIssuer>();
 builder.Services.AddCapybaraAuthentication();
 builder.Services.AddCapybaraForwardedHeaders(builder.Configuration);

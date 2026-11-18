@@ -49,7 +49,8 @@ public record OAuthClientView(
 /// <param name="Id">Primary key.</param>
 /// <param name="ClientId">Identifier the client presents.</param>
 /// <param name="ClientName">Name the client gave for itself, shown to the person.</param>
-public record OAuthConsentClient(int Id, string ClientId, string ClientName);
+/// <param name="RegisteredDynamically">Whether the client registered itself, and so named itself.</param>
+public record OAuthConsentClient(int Id, string ClientId, string ClientName, bool RegisteredDynamically);
 
 /// <summary>An access token with the refresh token that replaces it.</summary>
 /// <param name="AccessToken">The token the client sends as a bearer token.</param>

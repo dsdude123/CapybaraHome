@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using CapybaraHome.Application.Users;
 using CapybaraHome.Domain.Users;
+using Microsoft.Extensions.Options;
 
 namespace CapybaraHome.Tests;
 
@@ -18,7 +19,7 @@ public class OAuthServiceTests
     public async Task A_public_client_registers_with_no_secret_and_a_confidential_one_with_one()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
 
         var publicClient = await oauth.RegisterAsync(new OAuthClientRegistration(
             "Claude",
@@ -42,7 +43,7 @@ public class OAuthServiceTests
     public async Task A_registration_with_no_name_is_given_one()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
 
         var registered = await oauth.RegisterAsync(new OAuthClientRegistration(
             null,
@@ -60,7 +61,7 @@ public class OAuthServiceTests
     public async Task A_redirect_uri_this_server_will_not_take_is_refused(string uri, string error)
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
 
         var refused = await Assert.ThrowsAsync<OAuthException>(() =>
             oauth.RegisterAsync(new OAuthClientRegistration("Client", [uri], "none")));
@@ -72,7 +73,7 @@ public class OAuthServiceTests
     public async Task A_loopback_redirect_uri_may_be_plain_http()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
 
         var registered = await oauth.RegisterAsync(new OAuthClientRegistration(
             "A client on this machine",
@@ -86,7 +87,7 @@ public class OAuthServiceTests
     public async Task A_registration_with_no_redirect_uri_or_an_unknown_auth_method_is_refused()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
 
         var noUri = await Assert.ThrowsAsync<OAuthException>(() =>
             oauth.RegisterAsync(new OAuthClientRegistration("Client", [], "none")));
@@ -96,48 +97,124 @@ public class OAuthServiceTests
             oauth.RegisterAsync(new OAuthClientRegistration(
                 "Client",
                 [
-                    "https://a.test/c",
-                    "https://b.test/c",
-                    "https://c.test/c",
-                    "https://d.test/c",
-                    "https://e.test/c",
-                    "https://f.test/c",
+                    "https://example.test/c1",
+                    "https://example.test/c2",
+                    "https://example.test/c3",
+                    "https://example.test/c4",
+                    "https://example.test/c5",
+                    "https://example.test/c6",
                 ],
                 "none")));
         Assert.Equal("invalid_redirect_uri", tooMany.Error);
 
         var method = await Assert.ThrowsAsync<OAuthException>(() =>
-            oauth.RegisterAsync(new OAuthClientRegistration("Client", ["https://a.test/c"], "private_key_jwt")));
+            oauth.RegisterAsync(new OAuthClientRegistration("Client", ["https://example.test/c"], "private_key_jwt")));
         Assert.Equal("invalid_client_metadata", method.Error);
     }
 
     [Fact]
-    public async Task Registration_stops_once_the_installation_holds_its_fill_of_clients()
+    public async Task A_registration_past_the_cap_drops_the_oldest_that_was_never_approved()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
 
         for (var i = 0; i < 50; i++)
         {
-            await oauth.RegisterAsync(new OAuthClientRegistration($"Client {i}", [$"https://c{i}.test/cb"], "none"));
+            await oauth.RegisterAsync(new OAuthClientRegistration($"Client {i}", [$"https://example.test/cb{i}"], "none"));
+        }
+
+        var before = await oauth.ListClientsAsync();
+        Assert.Equal(50, before.Count);
+
+        // Registration needs no sign-in, so a caller that registers and walks away must not be
+        // able to keep a real connector out. The oldest unapproved one goes instead.
+        var latest = await oauth.RegisterAsync(
+            new OAuthClientRegistration("One more", ["https://example.test/last"], "none"));
+
+        var after = await oauth.ListClientsAsync();
+        Assert.Equal(50, after.Count);
+        Assert.Contains(after, c => c.ClientId == latest.ClientId);
+        Assert.DoesNotContain(after, c => c.ClientId == before[^1].ClientId);
+    }
+
+    [Fact]
+    public async Task Registration_stops_once_every_registered_client_has_been_authorized()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var oauth = db.OAuth();
+        await SeedUserAsync(db);
+
+        for (var i = 0; i < 50; i++)
+        {
+            var client = await oauth.RegisterAsync(
+                new OAuthClientRegistration($"Client {i}", [$"https://example.test/cb{i}"], "none"));
+            await GrantAsync(db, oauth, client, $"https://example.test/cb{i}");
         }
 
         var refused = await Assert.ThrowsAsync<OAuthException>(() =>
-            oauth.RegisterAsync(new OAuthClientRegistration("One too many", ["https://last.test/cb"], "none")));
+            oauth.RegisterAsync(new OAuthClientRegistration("One too many", ["https://example.test/last"], "none")));
 
         Assert.Equal("invalid_client_metadata", refused.Error);
+        Assert.Contains("Revoke one in settings", refused.Message);
 
         // Revoking one makes room again, which is what the message tells the reader to do.
         var clients = await oauth.ListClientsAsync();
         Assert.True(await oauth.RevokeClientAsync(clients[0].Id));
-        await oauth.RegisterAsync(new OAuthClientRegistration("Now it fits", ["https://last.test/cb"], "none"));
+        await oauth.RegisterAsync(new OAuthClientRegistration("Now it fits", ["https://example.test/last"], "none"));
+    }
+
+    [Fact]
+    public async Task A_callback_outside_the_allowlist_is_refused_however_the_client_names_itself()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var oauth = db.OAuth("https://claude.ai/api/mcp/auth_callback");
+
+        var refused = await Assert.ThrowsAsync<OAuthException>(() =>
+            oauth.RegisterAsync(new OAuthClientRegistration("Claude", ["https://evil.example/cb"], "none")));
+
+        Assert.Equal("invalid_redirect_uri", refused.Error);
+        Assert.Contains("OAuth:AllowedRedirectUris", refused.Message);
+    }
+
+    [Fact]
+    public async Task The_allowlist_matches_the_whole_origin_so_a_callback_path_may_move()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var oauth = db.OAuth("https://claude.ai/api/mcp/auth_callback");
+
+        var registered = await oauth.RegisterAsync(
+            new OAuthClientRegistration("Claude", ["https://claude.ai/api/mcp/somewhere_else"], "none"));
+
+        Assert.Equal("https://claude.ai/api/mcp/somewhere_else", Assert.Single(registered.RedirectUris));
+
+        // A different host on the same scheme is still somewhere else.
+        var refused = await Assert.ThrowsAsync<OAuthException>(() =>
+            oauth.RegisterAsync(new OAuthClientRegistration("Claude", ["https://claude.ai.evil.example/cb"], "none")));
+        Assert.Equal("invalid_redirect_uri", refused.Error);
+    }
+
+    [Fact]
+    public async Task Claudes_own_callbacks_are_what_an_unconfigured_installation_accepts()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var oauth = new OAuthService(db.Context, Options.Create(new OAuthOptions()), db.Clock);
+
+        foreach (var callback in OAuthOptions.DefaultAllowedRedirectUris)
+        {
+            var registered = await oauth.RegisterAsync(new OAuthClientRegistration("Claude", [callback], "none"));
+            Assert.Equal(callback, Assert.Single(registered.RedirectUris));
+        }
+
+        var refused = await Assert.ThrowsAsync<OAuthException>(() =>
+            oauth.RegisterAsync(new OAuthClientRegistration("Claude", ["https://evil.example/cb"], "none")));
+        Assert.Equal("invalid_redirect_uri", refused.Error);
     }
 
     [Fact]
     public async Task A_code_becomes_tokens_that_name_the_user_who_approved_it()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var user = await SeedUserAsync(db);
         var client = await RegisterAsync(oauth);
 
@@ -168,7 +245,7 @@ public class OAuthServiceTests
     public async Task A_hand_minted_token_is_not_taken_as_an_oauth_one()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var user = await SeedUserAsync(db);
         var minted = await new ApiTokenService(db.Context, db.Clock).CreateAsync("By hand", user);
 
@@ -179,7 +256,7 @@ public class OAuthServiceTests
     public async Task The_wrong_code_verifier_does_not_redeem_the_code()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var user = await SeedUserAsync(db);
         var client = await RegisterAsync(oauth);
 
@@ -196,7 +273,7 @@ public class OAuthServiceTests
     public async Task A_code_redeemed_against_another_redirect_uri_or_client_is_refused()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var user = await SeedUserAsync(db);
         var client = await RegisterAsync(oauth);
         var other = await oauth.RegisterAsync(new OAuthClientRegistration(
@@ -218,7 +295,7 @@ public class OAuthServiceTests
     public async Task A_code_offered_twice_takes_the_tokens_the_first_use_bought_with_it()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var user = await SeedUserAsync(db);
         var client = await RegisterAsync(oauth);
 
@@ -240,7 +317,7 @@ public class OAuthServiceTests
     public async Task An_expired_code_is_refused()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var user = await SeedUserAsync(db);
         var client = await RegisterAsync(oauth);
 
@@ -259,7 +336,7 @@ public class OAuthServiceTests
     public async Task An_access_token_stops_working_once_its_hour_is_up()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var tokens = await GrantAsync(db, oauth);
 
         Assert.NotNull(await oauth.AuthenticateAccessTokenAsync(tokens.AccessToken));
@@ -273,7 +350,7 @@ public class OAuthServiceTests
     public async Task A_refresh_rotates_the_pair_and_the_retired_token_is_refused()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var client = await RegisterAsync(oauth);
         var tokens = await GrantAsync(db, oauth, client);
 
@@ -295,7 +372,7 @@ public class OAuthServiceTests
     public async Task An_expired_refresh_token_is_refused()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var client = await RegisterAsync(oauth);
         var tokens = await GrantAsync(db, oauth, client);
 
@@ -311,7 +388,7 @@ public class OAuthServiceTests
     public async Task A_confidential_client_has_to_show_its_secret()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var user = await SeedUserAsync(db);
         var client = await oauth.RegisterAsync(new OAuthClientRegistration(
             "Confidential", ["https://example.test/callback"], "client_secret_post"));
@@ -332,7 +409,7 @@ public class OAuthServiceTests
     public async Task A_code_for_an_unregistered_client_or_redirect_uri_is_never_issued()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var user = await SeedUserAsync(db);
         var client = await RegisterAsync(oauth);
 
@@ -353,7 +430,7 @@ public class OAuthServiceTests
     public async Task Revoking_a_client_stops_the_tokens_it_holds()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var client = await RegisterAsync(oauth);
         var tokens = await GrantAsync(db, oauth, client);
 
@@ -378,7 +455,7 @@ public class OAuthServiceTests
     public async Task Revoking_a_refresh_token_takes_the_access_token_with_it()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var tokens = await GrantAsync(db, oauth);
 
         Assert.False(await oauth.RevokeTokenAsync("nothing-like-a-token"));
@@ -392,7 +469,7 @@ public class OAuthServiceTests
     public async Task Revoking_one_access_token_leaves_the_refresh_token_alone()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var client = await RegisterAsync(oauth);
         var tokens = await GrantAsync(db, oauth, client);
 
@@ -407,7 +484,7 @@ public class OAuthServiceTests
     public async Task Pruning_clears_what_expired_long_ago_and_leaves_what_is_live()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var client = await RegisterAsync(oauth);
         var spent = await GrantAsync(db, oauth, client);
 
@@ -428,7 +505,7 @@ public class OAuthServiceTests
     public async Task A_registration_nobody_ever_approved_is_dropped_so_the_cap_cannot_be_filled()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var approved = await RegisterAsync(oauth);
         await GrantAsync(db, oauth, approved);
         await oauth.RegisterAsync(new OAuthClientRegistration("Never used", ["https://idle.test/cb"], "none"));
@@ -446,7 +523,7 @@ public class OAuthServiceTests
     public async Task A_fresh_registration_is_left_alone_by_a_prune()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         await oauth.RegisterAsync(new OAuthClientRegistration("Just registered", ["https://new.test/cb"], "none"));
 
         db.Clock.Advance(TimeSpan.FromHours(2));
@@ -459,7 +536,7 @@ public class OAuthServiceTests
     public async Task The_consent_screen_only_finds_a_client_that_is_registered_and_live()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var oauth = new OAuthService(db.Context, db.Clock);
+        var oauth = db.OAuth();
         var client = await RegisterAsync(oauth);
 
         Assert.Null(await oauth.FindClientAsync(null));
@@ -473,6 +550,56 @@ public class OAuthServiceTests
         var listed = Assert.Single(await oauth.ListClientsAsync());
         Assert.True(await oauth.RevokeClientAsync(listed.Id));
         Assert.Null(await oauth.FindClientAsync(client.ClientId));
+    }
+
+    [Fact]
+    public async Task Changing_a_password_drops_the_grants_that_were_authorized_under_it()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var oauth = db.OAuth();
+        var users = new UserService(db.Context, db.Clock);
+        var user = await users.CreateFirstUserAsync("conner", "Conner", "a-long-enough-password");
+        var tokens = await GrantAsync(db, oauth);
+
+        Assert.NotNull(await oauth.AuthenticateAccessTokenAsync(tokens.AccessToken));
+
+        await users.ChangePasswordAsync(user.Id, "a-long-enough-password", "a-different-long-password");
+
+        Assert.Null(await oauth.AuthenticateAccessTokenAsync(tokens.AccessToken));
+        Assert.Equal(0, Assert.Single(await oauth.ListClientsAsync()).LiveTokens);
+    }
+
+    [Fact]
+    public async Task Resetting_a_password_or_turning_the_authenticator_off_drops_them_too()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var oauth = db.OAuth();
+        var users = new UserService(db.Context, db.Clock);
+        var first = await users.CreateFirstUserAsync("conner", "Conner", "a-long-enough-password");
+
+        var reset = await GrantAsync(db, oauth);
+        await users.ResetPasswordAsync(first.Id, "another-long-enough-password", first.Id);
+        Assert.Null(await oauth.AuthenticateAccessTokenAsync(reset.AccessToken));
+
+        var afterTotp = await GrantAsync(db, oauth);
+        await users.DisableTotpAsync(first.Id, "another-long-enough-password");
+        Assert.Null(await oauth.AuthenticateAccessTokenAsync(afterTotp.AccessToken));
+    }
+
+    [Fact]
+    public async Task A_hand_minted_token_survives_a_password_change()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var users = new UserService(db.Context, db.Clock);
+        var user = await users.CreateFirstUserAsync("conner", "Conner", "a-long-enough-password");
+        var tokens = new ApiTokenService(db.Context, db.Clock);
+        var minted = await tokens.CreateAsync("Home Assistant", user.Id);
+
+        await users.ChangePasswordAsync(user.Id, "a-long-enough-password", "a-different-long-password");
+
+        // Deliberate: these are not tied to a sign-in, and revoking them would quietly stop
+        // Home Assistant and every script. They are revoked by name on the settings screen.
+        Assert.NotNull(await tokens.AuthenticateAsync(minted.Secret));
     }
 
     private static async Task<RegisteredOAuthClient> RegisterAsync(OAuthService oauth) =>
