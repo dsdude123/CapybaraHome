@@ -47,7 +47,9 @@ public class TourMediaTests : IDisposable
         var small = await media.ShrinkPictureAsync(picture);
         Assert.NotNull(small);
         Assert.Equal([0xFF, 0xD8], small[..2]);
-        Assert.True(small.Length < new FileInfo(picture).Length);
+        var shrunk = Path.Combine(directory, "small.jpg");
+        await File.WriteAllBytesAsync(shrunk, small);
+        Assert.StartsWith("1568,104", Size(shrunk));
 
         Assert.Null(await media.ShrinkPictureAsync(broken));
 
@@ -75,6 +77,20 @@ public class TourMediaTests : IDisposable
         {
             return false;
         }
+    }
+
+    private static string Size(string picture)
+    {
+        var start = new ProcessStartInfo("ffprobe") { RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in new[] { "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", picture })
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(start)!;
+        var size = process.StandardOutput.ReadToEnd().Trim();
+        process.WaitForExit();
+        return size;
     }
 
     private static void Make(params string[] arguments)
