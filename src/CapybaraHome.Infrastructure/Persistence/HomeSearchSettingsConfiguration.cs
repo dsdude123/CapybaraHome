@@ -13,5 +13,9 @@ public class HomeSearchSettingsConfiguration : IEntityTypeConfiguration<HomeSear
         builder.Property(s => s.Id).ValueGeneratedNever();
         builder.Property(s => s.RoutingBaseUrl).HasMaxLength(500);
         builder.Property(s => s.RoutingApiKey).HasMaxLength(500);
+        builder.Property(s => s.TourAiBaseUrl).HasMaxLength(500);
+        builder.Property(s => s.TourAiModel).HasMaxLength(200);
+        builder.Property(s => s.TourTranscriptionModel).HasMaxLength(200);
+        builder.Property(s => s.TourAiTimeoutSeconds).HasDefaultValue(3600);
     }
 }

@@ -71,6 +71,12 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Pictures of the properties.</summary>
     public DbSet<PropertyPhoto> PropertyPhotos => Set<PropertyPhoto>();
 
+    /// <inheritdoc />
+    public DbSet<PropertyAttachment> PropertyAttachments => Set<PropertyAttachment>();
+
+    /// <inheritdoc />
+    public DbSet<PropertyTour> PropertyTours => Set<PropertyTour>();
+
     /// <summary>The scenarios the search is scored under, one of them active.</summary>
     public DbSet<SearchProfile> SearchProfiles => Set<SearchProfile>();
 

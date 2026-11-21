@@ -24,7 +24,13 @@ ENV ASPNETCORE_HTTP_PORTS=8080 \
     ConnectionStrings__CapybaraHome="Data Source=/data/capybarahome.db" \
     Backups__Destination=/data/backups \
     Photos__Path=/data/photos \
+    Attachments__Path=/data/attachments \
     DataProtection__KeyPath=/data/keys
+
+# ffmpeg takes the sound out of a tour's video and scales its pictures down for the model.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /data && chown app:app /data
 VOLUME /data

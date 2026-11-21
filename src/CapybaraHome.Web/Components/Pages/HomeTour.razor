@@ -1,0 +1,116 @@
+@page "/homes/{Id:int}/tour"
+@inject PropertyService Properties
+@inject PropertyTourService Tours
+@inject PropertyPhotoService Photos
+@inject PropertyAttachmentService Attachments
+@inject TourDraftStore Drafts
+
+<PageTitle>@(property is null ? "Tour" : $"Tour of {property.Name}")</PageTitle>
+
+@if (property is null)
+{
+    <p class="muted">That property is not here.</p>
+}
+else if (property.IsCurrent)
+{
+    <div class="page-head">
+        <h1>@property.Name</h1>
+        <div class="row">
+            <a class="btn btn-small" href="homes/@Id">Back to the property</a>
+        </div>
+    </div>
+    <p class="muted">This is the home you live in, so there is no tour to take.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>Tour of @property.Name</h1>
+        <div class="row">
+            <a class="btn btn-small" href="homes/@Id">Back to the property</a>
+        </div>
+    </div>
+
+    @if (Error is { Length: > 0 })
+    {
+        <p class="error">@Error</p>
+    }
+
+    <section class="card stack">
+        <h2 class="card-title">Still to find out</h2>
+        @if (unmarked.Count == 0)
+        {
+            <p class="muted">Every priority is already marked for this property.</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var priority in unmarked)
+                {
+                    <li>@priority.Name</li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="card stack">
+        <h2 class="card-title">What you found</h2>
+        <form method="post" action="homes/@Id/tour" enctype="multipart/form-data" class="stack">
+            <AntiforgeryToken />
+            <div class="field">
+                <label for="tour-notes">Notes</label>
+                <textarea id="tour-notes" name="notes" rows="10">@notes</textarea>
+            </div>
+            <div class="field">
+                <label for="tour-pictures">Pictures</label>
+                <input id="tour-pictures" type="file" name="pictures" multiple
+                       accept="@string.Join(",", PropertyPhotoService.AcceptedTypes)" />
+                <span class="muted">JPEG, PNG, GIF or WebP, up to @FileSizes.Label(Photos.MaxBytes) each.</span>
+            </div>
+            <div class="field">
+                <label for="tour-video">Video</label>
+                <input id="tour-video" type="file" name="video" accept="video/*" />
+                <span class="muted">One video, up to @FileSizes.Label(Attachments.MaxBytes).</span>
+            </div>
+            <p class="muted">
+                Submitting keeps the notes, the pictures and the video with the property straight away.
+                The upload can take a while on a slow connection, so leave this page open until the
+                property page appears. The summary, the priorities and the pros and cons follow once
+                the model has read everything.
+            </p>
+            <div class="row">
+                <button class="btn btn-primary" type="submit">Submit the tour</button>
+            </div>
+        </form>
+    </section>
+}
+
+@code {
+    /// <summary>Id of the property being toured.</summary>
+    [Parameter]
+    public int Id { get; set; }
+
+    /// <summary>Why a submission was refused, carried back from the endpoint that took the files.</summary>
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    /// <summary>Ticket for the notes of a refused submission.</summary>
+    [SupplyParameterFromQuery(Name = "draft")]
+    private string? Draft { get; set; }
+
+    private PropertyView? property;
+    private IReadOnlyList<SearchPriorityView> unmarked = [];
+    private string? notes;
+
+    /// <summary>Loads the property and the priorities it has not been marked against.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        property = await Properties.GetAsync(Id);
+        if (property is null || property.IsCurrent)
+        {
+            return;
+        }
+
+        unmarked = await Tours.UnmarkedPrioritiesAsync(Id);
+        notes = Drafts.Read(Draft);
+    }
+}
