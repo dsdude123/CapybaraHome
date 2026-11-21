@@ -5,6 +5,8 @@
 @inject HomeSearchBoardService Board
 @inject DriveTimeMeasurer Measurer
 @inject PropertyPhotoService Photos
+@inject PropertyAttachmentService Attachments
+@inject PropertyTourService Tours
 @inject NavigationManager Navigation
 
 <PageTitle>@(property?.Name ?? "Property")</PageTitle>
@@ -25,9 +27,42 @@ else
         </h1>
         <div class="row">
             <a class="btn btn-small" href="homes">All properties</a>
+            @if (!property.IsCurrent)
+            {
+                <a class="btn btn-small" href="homes/@Id/tour">Start tour</a>
+            }
             <a class="btn btn-primary btn-small" href="homes/@Id/edit">Edit</a>
         </div>
     </div>
+
+    @foreach (var tour in tours)
+    {
+        var submitted = DateNames.LongWithTime(tour.SubmittedAt, TimeZoneInfo.Local);
+
+        @if (tour.Status == PropertyTourStatus.Processing)
+        {
+            <p class="notice" role="status">
+                The tour submitted on @submitted is being processed. This can take a long while;
+                reload the page to see whether it has finished.
+            </p>
+        }
+        else
+        {
+            <div class="notice stack" role="alert">
+                <p class="error">Processing the tour submitted on @submitted failed. @tour.Error</p>
+                <div class="row">
+                    <form method="post" @formname="@($"tour-retry-{tour.Id}")" @onsubmit="() => RetryTourAsync(tour.Id)">
+                        <AntiforgeryToken />
+                        <button class="btn btn-primary btn-small" type="submit">Retry</button>
+                    </form>
+                    <form method="post" @formname="@($"tour-dismiss-{tour.Id}")" @onsubmit="() => DismissTourAsync(tour.Id)">
+                        <AntiforgeryToken />
+                        <button class="btn btn-small" type="submit">Dismiss</button>
+                    </form>
+                </div>
+            </div>
+        }
+    }
 
     @if (property.Address is { Length: > 0 })
     {
@@ -558,6 +593,33 @@ else
             </div>
         }
     </section>
+
+    <section class="card stack">
+        <h2 class="card-title">Attachments</h2>
+        @if (attachments.Count == 0)
+        {
+            <p class="muted">No attachments yet. A tour's notes and video are kept here.</p>
+        }
+        else
+        {
+            <ul class="task-list">
+                @foreach (var attachment in attachments)
+                {
+                    <li>
+                        <div class="task-line">
+                            <a href="homes/attachments/@attachment.Id">@attachment.FileName</a>
+                            <form method="post" @formname="@($"attachment-delete-{attachment.Id}")" @onsubmit="() => DeleteAttachmentAsync(attachment.Id)">
+                                <AntiforgeryToken />
+                                <button class="btn btn-small btn-danger" type="submit"
+                                        aria-label="@($"Delete {attachment.FileName}")">Delete</button>
+                            </form>
+                        </div>
+                        <p class="task-meta">@FileSizes.Label(attachment.ByteCount), @DateNames.Day(attachment.CreatedAt)</p>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
 }
 
 @code {
@@ -583,6 +645,8 @@ else
     private IReadOnlyList<SearchPriorityView> priorities = [];
     private IReadOnlyList<VehicleView> vehicles = [];
     private IReadOnlyList<TollRoadView> tollRoads = [];
+    private IReadOnlyList<PropertyAttachmentView> attachments = [];
+    private IReadOnlyList<PropertyTourView> tours = [];
     private PropertyDrivingCost? driving;
     private HomeSearchSettingsView settings = new(0m, 0m, 0m, 0m, 0m, 0m, 0m, null, false);
     private decimal priorityPoints;
@@ -616,6 +680,28 @@ else
         tollRoads = await Search.ListTollRoadsAsync();
         settings = await Search.GetSettingsAsync();
         priorityPoints = priorities.Sum(p => Math.Abs(p.Points));
+        attachments = await Attachments.ListAsync(Id);
+        tours = await Tours.ListOpenAsync(Id);
+    }
+
+    // Each of these goes back to the page with a redirect: the alert says to reload, and a reload
+    // straight after a post would send it again to a form that is no longer on the page.
+    private async Task RetryTourAsync(int tourId)
+    {
+        await Tours.RetryAsync(tourId);
+        Navigation.NavigateTo($"homes/{Id}");
+    }
+
+    private async Task DismissTourAsync(int tourId)
+    {
+        await Tours.DismissAsync(tourId);
+        Navigation.NavigateTo($"homes/{Id}");
+    }
+
+    private async Task DeleteAttachmentAsync(int attachmentId)
+    {
+        await Attachments.DeleteAsync(attachmentId);
+        Navigation.NavigateTo($"homes/{Id}");
     }
 
     private async Task SavePrioritiesAsync()

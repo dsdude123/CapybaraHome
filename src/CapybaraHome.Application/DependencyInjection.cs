@@ -29,6 +29,10 @@ public static class DependencyInjection
         services.AddScoped<MealTagService>();
         services.AddScoped<PropertyService>();
         services.AddScoped<PropertyPhotoService>();
+        services.AddScoped<PropertyAttachmentService>();
+        services.AddScoped<PropertyTourService>();
+        services.AddScoped<PropertyTourProcessor>();
+        services.AddSingleton<TourMedia>();
         services.AddScoped<HomeSearchService>();
         services.AddScoped<HomeSearchBoardService>();
         services.AddScoped<DriveTimeMeasurer>();
@@ -51,6 +55,10 @@ public static class DependencyInjection
         // A route is one short call, and a page waits on one per destination, so the routing
         // service gets a short leash rather than the default minute.
         services.AddHttpClient<RoutingClient>(client => client.Timeout = TimeSpan.FromSeconds(20));
+
+        // The model that reads a tour is slow enough that a call can take an hour, so the client has
+        // no timeout of its own and each call is held to the one in the settings.
+        services.AddHttpClient<TourAiClient>(client => client.Timeout = Timeout.InfiniteTimeSpan);
 
         // The report's sources are read one after the other every morning, so each one is given
         // the same short patience the script this was ported from had: none of them is worth

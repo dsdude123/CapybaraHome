@@ -81,6 +81,12 @@ public interface ICapybaraHomeDbContext
     /// <summary>How the properties were marked against the priorities.</summary>
     DbSet<PropertyPriority> PropertyPriorities { get; }
 
+    /// <summary>Files kept with the properties.</summary>
+    DbSet<PropertyAttachment> PropertyAttachments { get; }
+
+    /// <summary>The tours submitted for the properties.</summary>
+    DbSet<PropertyTour> PropertyTours { get; }
+
     /// <summary>The cars the drives are made in.</summary>
     DbSet<Vehicle> Vehicles { get; }
 

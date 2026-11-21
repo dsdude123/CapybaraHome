@@ -1,5 +1,6 @@
 @page "/homes/settings"
 @inject HomeSearchService Search
+@inject PropertyTourService Tours
 @inject NavigationManager Navigation
 
 <PageTitle>Home search settings</PageTitle>
@@ -159,6 +160,50 @@
                     disabled="@(!settings.HasRoutingApiKey)">Forget the key</button>
         </div>
     </form>
+</section>
+
+<section class="card stack">
+    <h2 class="card-title">Tour processing</h2>
+    <p class="muted">
+        A submitted tour is read by a model behind an OpenAI-compatible address: it transcribes
+        the video, describes the pictures, and writes the summary, the priorities and the pros
+        and cons. With the address or the model empty, a tour still keeps its notes and files,
+        and its processing fails until they are set and it is retried. The model is slow, so
+        the timeout is how long a single call may take.
+    </p>
+
+    <form method="post" @formname="home-tour-model" @onsubmit="SaveTourModelAsync" class="stack">
+        <AntiforgeryToken />
+        <div class="field">
+            <label for="tour-url">Base address</label>
+            <input id="tour-url" type="text" name="url" value="@tourUrl" placeholder="http://host.docker.internal:8080/v1" />
+        </div>
+        <div class="field">
+            <label for="tour-model">Model</label>
+            <input id="tour-model" type="text" name="model" value="@tourModel" />
+        </div>
+        <div class="field">
+            <label for="tour-transcription">Transcription model</label>
+            <input id="tour-transcription" type="text" name="transcription" value="@tourTranscription" />
+        </div>
+        <div class="field">
+            <label for="tour-timeout">Timeout, in seconds</label>
+            <input id="tour-timeout" type="number" name="timeout" min="1" max="@PropertyTourService.MaxTimeoutSeconds" value="@tourTimeout" />
+        </div>
+        <div class="row">
+            <button class="btn btn-primary btn-small" type="submit">Save the model</button>
+        </div>
+    </form>
+
+    @if (tourError is not null)
+    {
+        <p class="error">@tourError</p>
+    }
+
+    @if (tourSaved is not null)
+    {
+        <p class="notice">@tourSaved</p>
+    }
 </section>
 
 <section class="card stack">
@@ -512,6 +557,12 @@
     private string? con;
     private string? size;
     private string? routingUrl;
+    private string? tourUrl;
+    private string? tourModel;
+    private string? tourTranscription;
+    private string? tourTimeout;
+    private string? tourError;
+    private string? tourSaved;
     private string? profileName;
     private string? profileError;
     private string? destinationName;
@@ -558,6 +609,44 @@
         con = Typed(settings.ConPoints);
         size = Typed(settings.SizePointsPerSquareFoot);
         routingUrl = settings.RoutingBaseUrl;
+
+        var tour = await Tours.GetSettingsAsync();
+        tourUrl = tour.BaseUrl;
+        tourModel = tour.Model;
+        tourTranscription = tour.TranscriptionModel;
+        tourTimeout = tour.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private async Task SaveTourModelAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        var form = HttpContext.Request.Form;
+        await LoadAsync();
+
+        tourUrl = form["url"];
+        tourModel = form["model"];
+        tourTranscription = form["transcription"];
+        tourTimeout = form["timeout"];
+
+        try
+        {
+            if (!int.TryParse(tourTimeout, System.Globalization.CultureInfo.InvariantCulture, out var seconds))
+            {
+                throw new PropertyTourException("The timeout has to be a whole number of seconds.");
+            }
+
+            await Tours.SaveSettingsAsync(tourUrl, tourModel, tourTranscription, seconds);
+            tourSaved = "Saved the model.";
+            await LoadAsync();
+        }
+        catch (PropertyTourException ex)
+        {
+            tourError = ex.Message;
+        }
     }
 
     private SearchProfileView? Active => profiles.FirstOrDefault(p => p.IsActive);
