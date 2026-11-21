@@ -1281,6 +1281,160 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Users.OAuthAuthorizationCode", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ClientId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CodeChallenge")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("RedeemedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RedirectUri")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Resource")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scope")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("OAuthAuthorizationCodes", (string)null);
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Users.OAuthClient", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RedirectUris")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("RegisteredDynamically")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SecretHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenEndpointAuthMethod")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.ToTable("OAuthClients", (string)null);
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Users.OAuthToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ClientId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scope")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SecretHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("SecretHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("OAuthTokens", (string)null);
+                });
+
             modelBuilder.Entity("MealMealTag", b =>
                 {
                     b.Property<int>("MealsId")
@@ -1573,6 +1727,36 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("CapybaraHome.Domain.Users.ApiToken", b =>
                 {
+                    b.HasOne("CapybaraHome.Domain.Users.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Users.OAuthAuthorizationCode", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Users.OAuthClient", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CapybaraHome.Domain.Users.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Users.OAuthToken", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Users.OAuthClient", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("CapybaraHome.Domain.Users.AppUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")

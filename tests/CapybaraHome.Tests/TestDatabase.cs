@@ -3,6 +3,8 @@ using CapybaraHome.Application.Tasks;
 using CapybaraHome.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using CapybaraHome.Application.Users;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 namespace CapybaraHome.Tests;
@@ -37,6 +39,33 @@ public sealed class TestDatabase : IAsyncDisposable
     /// <param name="webhooks">Sender the webhook operations use, or null for one that answers 200.</param>
     public TaskCloseOperationService CloseOperations(TaskWebhookSender? webhooks = null) =>
         new(Context, webhooks ?? Sender(new FakeHttp().Reply("ok")), Clock);
+
+    /// <summary>
+    /// The callbacks the tests are allowed to register. Registration is held to an allowlist, so
+    /// a test that registers a client has to name a host on it.
+    /// </summary>
+    private static readonly string[] TestRedirects =
+    [
+        "https://example.test/callback",
+        "https://other.test/callback",
+        "https://idle.test/cb",
+        "https://new.test/cb",
+        "https://last.test/cb",
+        "https://claude.ai/api/mcp/auth_callback",
+        "http://localhost:3000/callback",
+        "http://127.0.0.1:3000/callback",
+    ];
+
+    /// <summary>An authorization server over this database.</summary>
+    /// <param name="allowedRedirectUris">Callbacks a client may register, or none for the test list.</param>
+    public OAuthService OAuth(params string[] allowedRedirectUris) =>
+        new(
+            Context,
+            Options.Create(new OAuthOptions
+            {
+                AllowedRedirectUris = allowedRedirectUris.Length > 0 ? allowedRedirectUris : TestRedirects,
+            }),
+            Clock);
 
     /// <summary>Returns a sender that answers from <paramref name="http"/>.</summary>
     /// <param name="http">The canned replies to answer with.</param>

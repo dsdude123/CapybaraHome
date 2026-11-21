@@ -2,6 +2,7 @@
 @inject CategoryService Categories
 @inject UserService Users
 @inject ApiTokenService Tokens
+@inject OAuthService OAuth
 @inject GroceryService Grocery
 @inject BackupWriter Backups
 @inject NavigationManager Navigation
@@ -170,8 +171,9 @@
 <section class="card stack" style="margin-bottom:1rem">
     <h2 class="card-title">Connector tokens</h2>
     <p class="muted">
-        A token lets the Claude connector reach this installation. Point the connector at
-        <code>@McpUrl</code> and send the token as a bearer token.
+        A token reaches this installation from a client that sends a bearer header of its own,
+        such as a script or Home Assistant. Point it at <code>@McpUrl</code>. A Claude connector
+        signs in with OAuth instead and needs no token here.
     </p>
 
     @if (mintedSecret is not null)
@@ -220,6 +222,57 @@
     @if (tokenError is not null)
     {
         <p class="error">@tokenError</p>
+    }
+</section>
+
+<section class="card stack" style="margin-bottom:1rem">
+    <h2 class="card-title">Connected apps</h2>
+    <p class="muted">
+        A Claude connector pointed at <code>@McpUrl</code> signs in through this installation's own
+        username, password and authenticator code, and registers itself here when it does. Revoking
+        an app drops its access straight away and it has to be authorized again.
+    </p>
+
+    @if (clients.Count == 0)
+    {
+        <p class="muted">Nothing has been authorized yet.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr><th>App</th><th>Sent back to</th><th>Last authorized</th><th>Live tokens</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var client in clients)
+                {
+                    <tr>
+                        <td>@client.ClientName</td>
+                        <td>
+                            @foreach (var uri in client.RedirectUris)
+                            {
+                                <div><code>@uri</code></div>
+                            }
+                        </td>
+                        <td>@(client.LastUsedAt?.ToString("d MMM yyyy") ?? "never")</td>
+                        <td>@client.LiveTokens</td>
+                        <td>
+                            @if (client.RevokedAt is null)
+                            {
+                                <form method="post" @formname="@($"revoke-client-{client.Id}")" @onsubmit="() => RevokeClientAsync(client.Id)">
+                                    <AntiforgeryToken />
+                                    <button class="btn btn-small btn-danger" type="submit">Revoke</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <span class="muted">revoked</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     }
 </section>
 
@@ -278,6 +331,7 @@
     private IReadOnlyList<CategoryView> categories = [];
     private IReadOnlyList<UserView> users = [];
     private IReadOnlyList<ApiTokenView> tokens = [];
+    private IReadOnlyList<OAuthClientView> clients = [];
     private IReadOnlyList<FrequentGroceryItemView> frequentItems = [];
     private bool isFirstUser;
 
@@ -332,6 +386,7 @@
         categories = await Categories.ListAsync();
         users = await Users.ListAsync();
         tokens = await Tokens.ListAsync();
+        clients = await OAuth.ListClientsAsync();
         frequentItems = await Grocery.ListFrequentAsync();
 
         var state = AuthenticationState is null ? null : await AuthenticationState;
@@ -500,6 +555,12 @@
     private async Task RevokeTokenAsync(int id)
     {
         await Tokens.RevokeAsync(id);
+        Reload();
+    }
+
+    private async Task RevokeClientAsync(int id)
+    {
+        await OAuth.RevokeClientAsync(id);
         Reload();
     }
 

@@ -247,11 +247,55 @@ home search tools (`get_home_search`, `get_property`, `add_property`, `add_prope
 the grocery tools (`get_grocery_list`, `add_grocery_item`, `remove_grocery_item`,
 `start_fresh_grocery_list`, `list_grocery_candidates`).
 
-Mint a token under Settings, then point a custom connector at `https://your-host/mcp` and
-send the token as `Authorization: Bearer <token>`. Only a SHA-256 hash of each token is
-stored, so the secret is shown once and cannot be recovered. The same token works against
-the REST API under `/api`. A token is how the connector signs in; it does not use the sign-in
-cookie and is not affected by an authenticator.
+### Signing in with OAuth
+
+A Claude custom connector offers OAuth or no authentication; it has no field for a fixed
+header, so a hand-minted token cannot be used with one. The app is therefore its own OAuth 2.1
+authorization server as well as the protected resource, with no external identity provider
+involved. Add a custom connector pointed at `https://your-host/mcp`, leave the client id and
+secret empty, and the rest is discovery:
+
+- `GET /.well-known/oauth-protected-resource` (and `/.well-known/oauth-protected-resource/mcp`)
+  names `/mcp` as the resource and this host as its authorization server. An unauthenticated
+  call to `/mcp` answers `401` with a `WWW-Authenticate` header pointing at that document.
+- `GET /.well-known/oauth-authorization-server` names the authorize, token, registration and
+  revocation endpoints. Only the authorization code grant with PKCE `S256` is offered, plus
+  refresh tokens.
+- `POST /oauth/register` registers the connector and hands back a client id (RFC 7591). A
+  client that asks for `client_secret_post` or `client_secret_basic` is given a secret too; one
+  that asks for `none` relies on PKCE. **Registration needs no sign-in**, so the callback a
+  client may name is held to an allowlist: `OAuth__AllowedRedirectUris__0` and so on, defaulting
+  to Claude's own connector callbacks. What is compared is the scheme, host and port, not the
+  path. Without it, anyone who can reach the app could register a client calling itself Claude
+  with a callback of their own and send you a consent link. Registrations are also capped, and
+  the oldest one nobody ever approved is dropped to make room.
+- `GET /oauth/authorize` is the consent screen. It needs a signed-in browser, so it goes through
+  this installation's own username, password and authenticator code first, and then names the
+  app and the account it would act as.
+- `POST /oauth/token` trades the code for an access token that lasts an hour and a refresh token
+  that lasts sixty days. A refresh rotates both; offering a spent code or refresh token back is
+  treated as a leak and drops the whole grant. An access token reaches **`/mcp` only** — the
+  grant is for the home task tools, and `/api` carries the whole export and an import that
+  replaces the data, which those tools cannot do.
+- `POST /oauth/revoke` retires a token (RFC 7009), and **Connected apps** under Settings lists
+  everything that has been authorized and revokes it. Changing or resetting a password, or
+  turning an authenticator off, revokes that account's grants as well, so a sixty-day refresh
+  token cannot outlive the credentials it was granted under.
+
+If a proxy serves the app under a different host or scheme than the app sees, set
+`OAuth__Issuer` to the address clients reach it at; otherwise the documents follow the request.
+Behind a proxy, also set `ForwardedHeaders__KnownProxies__0` to its address and stop publishing
+the container's port directly: with no known proxy the app trusts `X-Forwarded-*` from anyone,
+which lets a caller reaching it straight on the LAN fake its address past the per-caller rate
+limit and change the host the metadata names.
+
+### Signing in with a token
+
+A client that sends a bearer header of its own — a script, Home Assistant, curl — mints a token
+under Settings and sends it as `Authorization: Bearer <token>`. Only a SHA-256 hash of each
+token is stored, so the secret is shown once and cannot be recovered. The same token works
+against the REST API under `/api`. Neither kind of token uses the sign-in cookie, and neither is
+affected by an authenticator once issued.
 
 ## Home Assistant
 

@@ -127,6 +127,7 @@ public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
         }
 
         user.PasswordHash = PasswordHasher.Hash(newPassword);
+        await RevokeOAuthGrantsAsync(userId, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -142,6 +143,7 @@ public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
 
         var user = await Require(userId, cancellationToken);
         user.PasswordHash = PasswordHasher.Hash(newPassword);
+        await RevokeOAuthGrantsAsync(userId, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -222,7 +224,28 @@ public class UserService(ICapybaraHomeDbContext context, TimeProvider clock)
         user.TotpSecret = null;
         user.TotpConfirmedAt = null;
         user.TotpLastUsedStep = null;
+        await RevokeOAuthGrantsAsync(userId, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Drops every OAuth grant this account holds, so a credential change shuts out a connector
+    /// that was authorized before it. A refresh token lasts sixty days and would otherwise
+    /// outlive the password it was granted under. The hand-minted tokens are deliberately left
+    /// alone: they are not tied to a sign-in and revoking them would quietly stop Home Assistant
+    /// and any script, so they are revoked by name on the settings screen instead.
+    /// </summary>
+    private async Task RevokeOAuthGrantsAsync(int userId, CancellationToken cancellationToken)
+    {
+        var tokens = await context.OAuthTokens
+            .Where(t => t.UserId == userId && t.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+
+        var now = clock.GetUtcNow();
+        foreach (var token in tokens)
+        {
+            token.RevokedAt = now;
+        }
     }
 
     /// <summary>Removes an account, on the authority of the first user. Returns false when no account has that id.</summary>

@@ -122,6 +122,15 @@ public class CapybaraHomeDbContext(DbContextOptions<CapybaraHomeDbContext> optio
     /// <summary>Bearer tokens issued to the connector.</summary>
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 
+    /// <summary>OAuth clients that may ask for access, such as a Claude connector.</summary>
+    public DbSet<OAuthClient> OAuthClients => Set<OAuthClient>();
+
+    /// <summary>Authorization codes waiting to be redeemed.</summary>
+    public DbSet<OAuthAuthorizationCode> OAuthAuthorizationCodes => Set<OAuthAuthorizationCode>();
+
+    /// <summary>Access and refresh tokens issued to the OAuth clients.</summary>
+    public DbSet<OAuthToken> OAuthTokens => Set<OAuthToken>();
+
     /// <summary>Stamps <c>CreatedAt</c> and <c>UpdatedAt</c> on tasks, meals and properties before saving.</summary>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

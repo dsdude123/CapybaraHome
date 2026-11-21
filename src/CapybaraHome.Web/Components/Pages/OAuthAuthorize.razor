@@ -1,0 +1,152 @@
+@page "/oauth/authorize"
+@inject OAuthService OAuth
+@inject OAuthIssuer Issuer
+@inject NavigationManager Navigation
+
+<PageTitle>Authorize</PageTitle>
+
+@if (refusal is not null)
+{
+    <h1>That request cannot be authorized</h1>
+    <p class="error">@refusal</p>
+    <p class="muted">
+        Nothing was granted. Close this page and start again from the client that sent you here.
+    </p>
+}
+else if (client is not null)
+{
+    <h1>Authorize @client.ClientName</h1>
+    <p>
+        <strong>@client.ClientName</strong> is asking to reach this CapybaraHome installation as
+        <strong>@DisplayName</strong>, through its home task tools. It will be able to read and
+        change what that account can: tasks, meals and plans, the grocery list and the home search.
+    </p>
+
+    <div class="notice">
+        <p style="margin:0">
+            It will be sent to <strong style="font-size:1.15rem">@RedirectHost</strong>, which is
+            where your access ends up.
+        </p>
+        @if (client.RegisteredDynamically)
+        {
+            <p class="muted" style="margin:.4rem 0 0">
+                Anything that can reach this installation may register itself under any name, so
+                <strong>@client.ClientName</strong> is only what this one calls itself. Allow it
+                only if you started this from @RedirectHost and recognise that address.
+            </p>
+        }
+        <p class="muted" style="margin:.4rem 0 0">Full callback: <code>@RedirectUri</code></p>
+    </div>
+
+    <p class="muted">
+        You can take the access away again under Connected apps in <a href="/settings">settings</a>.
+    </p>
+
+    <form method="post" action="/oauth/authorize/decide" class="stack">
+        <AntiforgeryToken />
+        <input type="hidden" name="clientId" value="@ClientId" />
+        <input type="hidden" name="redirectUri" value="@RedirectUri" />
+        <input type="hidden" name="codeChallenge" value="@CodeChallenge" />
+        <input type="hidden" name="state" value="@State" />
+        <input type="hidden" name="scope" value="@Scope" />
+        <input type="hidden" name="resource" value="@Resource" />
+        <div class="row">
+            <button class="btn btn-primary" type="submit" name="decision" value="approve">Allow access</button>
+            <button class="btn" type="submit" name="decision" value="deny">Deny</button>
+        </div>
+    </form>
+}
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "response_type")]
+    private string? ResponseType { get; set; }
+
+    [SupplyParameterFromQuery(Name = "client_id")]
+    private string? ClientId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "redirect_uri")]
+    private string? RedirectUri { get; set; }
+
+    [SupplyParameterFromQuery(Name = "code_challenge")]
+    private string? CodeChallenge { get; set; }
+
+    [SupplyParameterFromQuery(Name = "code_challenge_method")]
+    private string? CodeChallengeMethod { get; set; }
+
+    [SupplyParameterFromQuery(Name = "state")]
+    private string? State { get; set; }
+
+    [SupplyParameterFromQuery(Name = "scope")]
+    private string? Scope { get; set; }
+
+    [SupplyParameterFromQuery(Name = "resource")]
+    private string? Resource { get; set; }
+
+    private OAuthConsentClient? client;
+    private string? refusal;
+
+    private string DisplayName =>
+        HttpContext.User.FindFirst(CapybaraClaims.Username)?.Value ?? "this account";
+
+    protected override async Task OnInitializedAsync()
+    {
+        client = await OAuth.FindClientAsync(ClientId);
+
+        // A request that does not resolve to a registered client and one of its own redirect URIs
+        // has nowhere safe to send an error to, so it is answered here instead of redirected.
+        if (client is null)
+        {
+            Refuse("No client is registered here under that client id.");
+            return;
+        }
+
+        if (!await OAuth.IsRegisteredRedirectUriAsync(ClientId, RedirectUri))
+        {
+            Refuse($"{client.ClientName} is registered, but not for that redirect URI.");
+            return;
+        }
+
+        if (!string.Equals(ResponseType, "code", StringComparison.Ordinal))
+        {
+            Redirect("unsupported_response_type", "This server only issues authorization codes.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(CodeChallenge))
+        {
+            Redirect("invalid_request", "A code challenge is required.");
+            return;
+        }
+
+        if (!string.Equals(CodeChallengeMethod, OAuthService.ChallengeMethod, StringComparison.Ordinal))
+        {
+            Redirect("invalid_request", $"The code challenge method has to be {OAuthService.ChallengeMethod}.");
+            return;
+        }
+
+        if (!Issuer.IsOwnResource(HttpContext.Request, Resource))
+        {
+            Redirect("invalid_target", "That resource is not the one this server protects.");
+        }
+    }
+
+    // Only reached once the redirect URI has been matched against the client's registration,
+    // which every registered one is absolute, so there is nothing here to fall back to.
+    private string RedirectHost => new Uri(RedirectUri!).Authority;
+
+    private void Refuse(string reason)
+    {
+        client = null;
+        refusal = reason;
+        HttpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+    }
+
+    private void Redirect(string error, string description)
+    {
+        client = null;
+        Navigation.NavigateTo(OAuthRedirect.Error(RedirectUri!, error, description, State));
+    }
+}

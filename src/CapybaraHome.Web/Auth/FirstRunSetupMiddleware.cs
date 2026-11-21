@@ -5,7 +5,20 @@ namespace CapybaraHome.Web.Auth;
 /// <summary>Sends a browser to the setup page while the installation has no accounts at all.</summary>
 public static class FirstRunSetupMiddleware
 {
-    private static readonly string[] AlwaysAllowed = ["/setup", "/health", "/Error", "/not-found"];
+    private static readonly string[] AlwaysAllowed =
+    [
+        "/setup",
+        "/health",
+        "/Error",
+        "/not-found",
+
+        // The OAuth documents and endpoints a client reads are answered to machines, which have
+        // no use for a redirect to a page, and they say nothing about the accounts here.
+        "/.well-known",
+        "/oauth/token",
+        "/oauth/register",
+        "/oauth/revoke",
+    ];
 
     /// <summary>Adds the redirect. Static files, the API and the MCP endpoint are left alone.</summary>
     public static IApplicationBuilder UseFirstRunSetup(this IApplicationBuilder app)
