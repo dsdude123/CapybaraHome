@@ -289,6 +289,16 @@ the container's port directly: with no known proxy the app trusts `X-Forwarded-*
 which lets a caller reaching it straight on the LAN fake its address past the per-caller rate
 limit and change the host the metadata names.
 
+Only the client's servers call the discovery, registration, token and revocation endpoints, so
+those are what has to face the internet. The consent page is visited only by the person
+approving the client, in their own browser, so it can stay on an address that does not: set
+`OAuth__AuthorizationEndpoint` to it (for example
+`https://capybarahome.internal.example/oauth/authorize`) and publish only `/mcp`,
+`/oauth/register`, `/oauth/token`, `/oauth/revoke` and `/.well-known/oauth-*`. The sign-in page
+then never faces the internet, and a client can only be approved from somewhere that address is
+reachable. Set `OAuth__Issuer` alongside it: the consent page checks the resource a client asks
+for against the issuer, and on the internal address the request alone would name the wrong one.
+
 ### Signing in with a token
 
 A client that sends a bearer header of its own — a script, Home Assistant, curl — mints a token
