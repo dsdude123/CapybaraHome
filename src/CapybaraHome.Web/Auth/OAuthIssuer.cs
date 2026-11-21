@@ -20,6 +20,8 @@ public class OAuthIssuer(IOptions<OAuthOptions> options)
 
     private readonly string? configured = options.Value.Issuer?.TrimEnd('/');
 
+    private readonly string? authorizationEndpoint = options.Value.AuthorizationEndpoint?.Trim();
+
     /// <summary>The issuer identifier, with no trailing slash.</summary>
     /// <param name="request">The request the address is read off.</param>
     public string For(HttpRequest request) =>
@@ -47,6 +49,17 @@ public class OAuthIssuer(IOptions<OAuthOptions> options)
         string.IsNullOrWhiteSpace(resource)
         || string.Equals(resource.TrimEnd('/'), ResourceFor(request).TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Where the browser is sent to approve a client: <c>OAuth:AuthorizationEndpoint</c> when it
+    /// is set, so the consent page can live on an address that does not face the internet, and
+    /// the issuer's own <c>/oauth/authorize</c> otherwise.
+    /// </summary>
+    /// <param name="request">The request the address is read off.</param>
+    public string AuthorizationEndpointFor(HttpRequest request) =>
+        string.IsNullOrWhiteSpace(authorizationEndpoint)
+            ? $"{For(request)}/oauth/authorize"
+            : authorizationEndpoint;
+
     /// <summary>What <c>/.well-known/oauth-protected-resource</c> answers.</summary>
     /// <param name="request">The request the address is read off.</param>
     public object ResourceMetadata(HttpRequest request) => new
@@ -66,7 +79,7 @@ public class OAuthIssuer(IOptions<OAuthOptions> options)
         return new
         {
             issuer,
-            authorization_endpoint = $"{issuer}/oauth/authorize",
+            authorization_endpoint = AuthorizationEndpointFor(request),
             token_endpoint = $"{issuer}/oauth/token",
             registration_endpoint = $"{issuer}/oauth/register",
             revocation_endpoint = $"{issuer}/oauth/revoke",

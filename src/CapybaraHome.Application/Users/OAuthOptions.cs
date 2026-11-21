@@ -26,6 +26,15 @@ public class OAuthOptions
     public string? Issuer { get; set; }
 
     /// <summary>
+    /// Where a person's browser is sent to approve a client, when that is not the issuer's own
+    /// <c>/oauth/authorize</c>. The token, registration and discovery endpoints are called by the
+    /// client's servers and have to be public, but the consent page is visited only by the person
+    /// approving it, so it can stay on an address only they reach — which keeps the sign-in page
+    /// off the internet. Empty means the issuer's own.
+    /// </summary>
+    public string? AuthorizationEndpoint { get; set; }
+
+    /// <summary>
     /// Callbacks a registration may name, replacing <see cref="DefaultAllowedRedirectUris"/>
     /// when it is set. Each entry stands for its whole origin.
     /// </summary>

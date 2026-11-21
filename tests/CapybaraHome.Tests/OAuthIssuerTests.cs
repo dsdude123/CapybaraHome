@@ -60,8 +60,30 @@ public class OAuthIssuerTests
         Assert.False(Issuer(null).IsOwnResource(Request(), resource));
     }
 
-    private static OAuthIssuer Issuer(string? configured) =>
-        new(Options.Create(new OAuthOptions { Issuer = configured }));
+    [Fact]
+    public void With_no_authorization_endpoint_configured_the_consent_page_is_the_issuers_own()
+    {
+        Assert.Equal("https://home.example/oauth/authorize", Issuer(null).AuthorizationEndpointFor(Request()));
+        Assert.Equal(
+            "https://proxied.example/oauth/authorize",
+            Issuer("https://proxied.example").AuthorizationEndpointFor(Request()));
+    }
+
+    [Fact]
+    public void A_configured_authorization_endpoint_sends_the_browser_to_another_host()
+    {
+        var issuer = Issuer("https://public.example", "https://home.internal.example/oauth/authorize");
+
+        Assert.Equal("https://home.internal.example/oauth/authorize", issuer.AuthorizationEndpointFor(Request()));
+
+        // Only the consent page moves: the issuer, and so the token and registration endpoints
+        // and the resource the consent page checks against, stay on the public address.
+        Assert.Equal("https://public.example", issuer.For(Request()));
+        Assert.True(issuer.IsOwnResource(Request(), "https://public.example/mcp"));
+    }
+
+    private static OAuthIssuer Issuer(string? configured, string? authorizationEndpoint = null) =>
+        new(Options.Create(new OAuthOptions { Issuer = configured, AuthorizationEndpoint = authorizationEndpoint }));
 
     private static HttpRequest Request()
     {
