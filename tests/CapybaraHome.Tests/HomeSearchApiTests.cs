@@ -168,6 +168,36 @@ public class HomeSearchApiTests
     }
 
     [Fact]
+    public async Task A_priority_penalty_set_over_the_api_is_taken_off_a_property_marked_as_not_meeting_it()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = app.CreateClient();
+
+        var property = await PropertyAsync(client, "Penalised");
+
+        var priority = (await (await client.PostAsJsonAsync("/api/home-search/priorities",
+            new SearchPriorityRequest("Laundry", 10m, 3m), Json))
+            .Content.ReadFromJsonAsync<SearchPriorityView>(Json))!;
+
+        Assert.Equal(3m, priority.Penalty);
+
+        var unmarked = await client.GetFromJsonAsync<ScoredProperty>($"/api/properties/{property.Id}", Json);
+        Assert.Equal(0m, unmarked!.Score.Priorities);
+
+        await client.PutAsJsonAsync(
+            $"/api/properties/{property.Id}/priorities/{priority.Id}", new PropertyPriorityRequest(false), Json);
+
+        var scored = await client.GetFromJsonAsync<ScoredProperty>($"/api/properties/{property.Id}", Json);
+        Assert.Equal(-3m, scored!.Score.Priorities);
+        Assert.Equal(3m, scored.Property.Priorities.Single().Penalty);
+
+        var changed = await (await client.PutAsJsonAsync(
+            $"/api/home-search/priorities/{priority.Id}", new SearchPriorityRequest("Laundry", 10m), Json))
+            .Content.ReadFromJsonAsync<SearchPriorityView>(Json);
+        Assert.Equal(0m, changed!.Penalty);
+    }
+
+    [Fact]
     public async Task Toll_roads_are_listed_changed_and_deleted_over_the_api()
     {
         await using var app = await AppFactory.CreateAsync();

@@ -29,9 +29,10 @@ public static partial class TourAnalysis
         {
           "summary": "what the tour found, in a few short paragraphs of plain text",
           "priorities": [ { "id": 0, "decision": "yes", "evidence": "the words from the tour that settle it" } ],
-          "pros": [ "a short point in the property's favour" ],
-          "cons": [ "a short point against it" ],
-          "discrepancies": [ "where the tour disagrees with what was already recorded, and how" ]
+          "pros": [ { "text": "a short point in the property's favour", "priority": null } ],
+          "cons": [ { "text": "a short point against it", "priority": null } ],
+          "discrepancies": [ "where the tour disagrees with what was already recorded, and how" ],
+          "suggestions": [ { "kind": "pro", "text": "something beyond a priority that may be worth adding" } ]
         }
 
         Rules:
@@ -41,11 +42,20 @@ public static partial class TourAnalysis
         - "evidence" is required for "yes" and "no": an exact quote, copied word for word from the typed
           notes, the transcript or a picture description, that settles it. Find the quote first, then make
           the decision agree with it. A decision whose quote is not in the tour material is discarded.
-        - "pros" and "cons" hold only points the tour itself brought up that are not already recorded.
+        - "pros" and "cons" are for extra things the tour discovered: points that are not already recorded
+          and are not about any priority. Priorities are scored on their own, so one repeated here would
+          be counted twice. Never list a priority being met as a pro, or one not being met as a con. That
+          holds for every priority shown, unmarked or already marked. "priority" is null for a real extra;
+          when a point is about a priority after all, put that priority's name there and it is left out.
           Leave a list empty when there is nothing.
         - "discrepancies" holds only real conflicts between the tour and the recorded data, such as a
           different rent or a missing amenity. List every one here even when the summary mentions it.
           Leave it empty when there are none.
+        - "suggestions" holds what the tour revealed that goes beyond what a priority asks for. A priority
+          of air conditioning that the property meets is not a pro, but separate mini split units that
+          allow cooling room by room is more than the priority asks, so it belongs here as a "pro" for the
+          household to consider adding. "kind" is "pro" or "con". Do not repeat the priority itself, and
+          leave the list empty when there is nothing of the kind.
         - Use only what you were given. Do not invent facts.
         """;
 
@@ -126,14 +136,21 @@ public static partial class TourAnalysis
     /// <summary>
     /// Reads the model's answer. A priority is kept only when it was asked about, answered with a
     /// plain yes or no, and backed by a quote that really is in the tour; anything else leaves that
-    /// priority as it was.
+    /// priority as it was. A pro or con that is about a priority is left out, because the priority
+    /// already scores on its own.
     /// </summary>
     /// <param name="answer">What the model sent back.</param>
     /// <param name="unmarked">Ids of the priorities it was asked to decide.</param>
     /// <param name="tour">The notes, transcript and picture descriptions the quotes have to come from.</param>
+    /// <param name="priorities">The name of every priority, marked or not, which no pro or con may repeat.</param>
     /// <exception cref="PropertyTourException">The answer is not the JSON object asked for, or has no summary.</exception>
-    public static TourFindings Parse(string? answer, IReadOnlyCollection<int> unmarked, string? tour)
+    public static TourFindings Parse(
+        string? answer,
+        IReadOnlyCollection<int> unmarked,
+        string? tour,
+        IReadOnlyCollection<string>? priorities = null)
     {
+        var named = (priorities ?? []).Select(Words).Where(words => words.Count > 0).ToList();
         var spoken = Plain(tour);
         var text = Clean(answer);
         var start = text.IndexOf('{');
@@ -172,9 +189,9 @@ public static partial class TourAnalysis
             }
 
             var decided = new Dictionary<int, bool>();
-            if (root.TryGetProperty("priorities", out var priorities) && priorities.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty("priorities", out var answered) && answered.ValueKind == JsonValueKind.Array)
             {
-                foreach (var entry in priorities.EnumerateArray())
+                foreach (var entry in answered.EnumerateArray())
                 {
                     if (entry.ValueKind == JsonValueKind.Object
                         && Id(entry) is { } id
@@ -190,16 +207,29 @@ public static partial class TourAnalysis
             return new TourFindings(
                 summary,
                 decided,
-                Strings(root, "pros"),
-                Strings(root, "cons"),
-                Strings(root, "discrepancies"));
+                Extras(root, "pros", named),
+                Extras(root, "cons", named),
+                Strings(root, "discrepancies"),
+                Suggestions(root));
         }
     }
 
-    /// <summary>Builds the note left on the property: the summary, and the discrepancies when there are any.</summary>
+    /// <summary>
+    /// Builds the note left on the property: the summary, then what might be worth adding as a pro
+    /// or con and the discrepancies, each only when there are any.
+    /// </summary>
     public static string Note(TourFindings findings)
     {
         var note = new StringBuilder("Tour Summary\n\n").Append(findings.Summary);
+
+        if (findings.Suggestions is { Count: > 0 } suggestions)
+        {
+            note.Append("\n\nConsider Adding\n");
+            foreach (var suggestion in suggestions)
+            {
+                note.Append("\n- ").Append(suggestion);
+            }
+        }
 
         if (findings.Discrepancies.Count > 0)
         {
@@ -276,6 +306,129 @@ public static partial class TourAnalysis
         };
     }
 
+    private static readonly HashSet<string> Fillers = new(StringComparer.Ordinal)
+    {
+        "a", "an", "and", "at", "for", "has", "have", "in", "is", "it", "of", "on", "or", "the", "to", "with",
+    };
+
+    // A point is about a priority when the model says so, or when it uses every word of the
+    // priority's name. Plurals are folded so "balconies" still matches "balcony".
+    private static List<string> Extras(JsonElement root, string name, List<HashSet<string>> priorities)
+    {
+        if (!root.TryGetProperty(name, out var node) || node.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var kept = new List<string>();
+
+        foreach (var item in node.EnumerateArray())
+        {
+            string? text = null;
+
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                text = item.GetString();
+            }
+            else if (item.ValueKind == JsonValueKind.Object
+                && item.TryGetProperty("text", out var body)
+                && body.ValueKind == JsonValueKind.String
+                && !Tagged(item))
+            {
+                text = body.GetString();
+            }
+
+            text = text?.Trim();
+            if (string.IsNullOrEmpty(text) || kept.Contains(text, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var words = Words(text);
+            if (!priorities.Any(priority => priority.IsSubsetOf(words)))
+            {
+                kept.Add(text);
+            }
+        }
+
+        return kept;
+    }
+
+    private static bool Tagged(JsonElement point)
+    {
+        if (!point.TryGetProperty("priority", out var node))
+        {
+            return false;
+        }
+
+        return node.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.False => false,
+            JsonValueKind.String => node.GetString()!.Trim().ToLowerInvariant() is not ("" or "null" or "none"),
+            _ => true,
+        };
+    }
+
+    private static HashSet<string> Words(string text) =>
+        Word().Matches(text.ToLowerInvariant())
+            .Select(match => Stem(match.Value))
+            .Where(word => !Fillers.Contains(word))
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static string Stem(string word) => word switch
+    {
+        _ when word.Length > 4 && word.EndsWith("ies", StringComparison.Ordinal) => word[..^3] + "y",
+        _ when word.Length > 3 && word.EndsWith('s') && !word.EndsWith("ss", StringComparison.Ordinal) => word[..^1],
+        _ => word,
+    };
+
+    private static List<string> Suggestions(JsonElement root)
+    {
+        if (!root.TryGetProperty("suggestions", out var node) || node.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var kept = new List<string>();
+
+        foreach (var item in node.EnumerateArray())
+        {
+            var text = item.ValueKind switch
+            {
+                JsonValueKind.String => item.GetString(),
+                JsonValueKind.Object when item.TryGetProperty("text", out var body) && body.ValueKind == JsonValueKind.String
+                    => body.GetString(),
+                _ => null,
+            };
+
+            text = text?.Trim();
+            if (string.IsNullOrEmpty(text))
+            {
+                continue;
+            }
+
+            var kind = item.ValueKind == JsonValueKind.Object
+                && item.TryGetProperty("kind", out var named)
+                && named.ValueKind == JsonValueKind.String
+                    ? named.GetString()!.Trim().ToLowerInvariant()
+                    : null;
+
+            var line = kind switch
+            {
+                "pro" => $"Pro: {text}",
+                "con" => $"Con: {text}",
+                _ => text,
+            };
+
+            if (!kept.Contains(line, StringComparer.OrdinalIgnoreCase))
+            {
+                kept.Add(line);
+            }
+        }
+
+        return kept;
+    }
+
     private static List<string> Strings(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out var node) || node.ValueKind != JsonValueKind.Array)
@@ -323,6 +476,9 @@ public static partial class TourAnalysis
 
     private static string? Money(decimal? value) =>
         value is null ? null : "$" + value.Value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    [GeneratedRegex(@"[\p{L}\p{Nd}]+")]
+    private static partial Regex Word();
 
     [GeneratedRegex(@"<think>.*?</think>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
     private static partial Regex ThinkBlock();

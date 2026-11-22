@@ -171,6 +171,7 @@ public class PropertyTourProcessor(
 
         var unmarked = await tours.UnmarkedPrioritiesAsync(tour.PropertyId, cancellationToken);
         var ids = unmarked.Select(p => p.Id).ToHashSet();
+        var names = unmarked.Select(p => p.Name).Concat(property.Priorities.Select(p => p.Name)).ToList();
 
         var material = TourAnalysis.Material(
             property,
@@ -191,7 +192,7 @@ public class PropertyTourProcessor(
 
         try
         {
-            return TourAnalysis.Parse(answer, ids, spoken);
+            return TourAnalysis.Parse(answer, ids, spoken, names);
         }
         catch (PropertyTourException)
         {
@@ -205,7 +206,7 @@ public class PropertyTourProcessor(
                 "analysing the tour",
                 cancellationToken);
 
-            return TourAnalysis.Parse(answer, ids, spoken);
+            return TourAnalysis.Parse(answer, ids, spoken, names);
         }
     }
 

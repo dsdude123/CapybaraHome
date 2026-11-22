@@ -82,7 +82,8 @@ public record PropertyDriveTimeView(
 /// <param name="Name">What the priority is.</param>
 /// <param name="Points">Points meeting it is worth.</param>
 /// <param name="Meets">Whether the property meets it, or null when it has not been marked.</param>
-public record PropertyPriorityView(int PriorityId, string Name, decimal Points, bool? Meets);
+/// <param name="Penalty">Points not meeting it takes off; zero for none.</param>
+public record PropertyPriorityView(int PriorityId, string Name, decimal Points, bool? Meets, decimal Penalty = 0m);
 
 /// <summary>A property as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
@@ -330,7 +331,8 @@ public record VehicleView(
 /// <summary>Fields accepted when creating or updating a priority.</summary>
 /// <param name="Name">What the priority is; required.</param>
 /// <param name="Points">Points a property earns for meeting it.</param>
-public record SearchPriorityRequest(string Name, decimal Points = 0m);
+/// <param name="Penalty">Points a property loses when marked as not meeting it; zero for none.</param>
+public record SearchPriorityRequest(string Name, decimal Points = 0m, decimal Penalty = 0m);
 
 /// <summary>A priority as the API and the UI show it.</summary>
 /// <param name="Id">Primary key.</param>
@@ -338,7 +340,8 @@ public record SearchPriorityRequest(string Name, decimal Points = 0m);
 /// <param name="Points">Points a property earns for meeting it.</param>
 /// <param name="SortOrder">Position in the list.</param>
 /// <param name="MetCount">How many properties are marked as meeting it.</param>
-public record SearchPriorityView(int Id, string Name, decimal Points, int SortOrder, int MetCount);
+/// <param name="Penalty">Points a property loses when marked as not meeting it; zero for none.</param>
+public record SearchPriorityView(int Id, string Name, decimal Points, int SortOrder, int MetCount, decimal Penalty = 0m);
 
 /// <summary>The scoring weights and the routing service, as the API and the UI show them.</summary>
 /// <param name="MonthlyFeePointsPerDollar">Points per dollar a month cheaper than the current home.</param>

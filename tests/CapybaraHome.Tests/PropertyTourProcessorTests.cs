@@ -46,8 +46,13 @@ public class PropertyTourProcessorTests
                     { "id": {{parking.Id}}, "decision": "unclear" },
                     { "id": {{dishwasher.Id}}, "decision": "no", "evidence": "No balcony" }
                   ],
-                  "pros": ["Bright kitchen", "quiet street"],
-                  "cons": ["Small bathroom"],
+                  "pros": [
+                    "Bright kitchen",
+                    "quiet street",
+                    "Has a dishwasher",
+                    { "text": "Washer and dryer inside", "priority": "In-unit laundry" }
+                  ],
+                  "cons": [{ "text": "Small bathroom", "priority": null }, "There is no balcony"],
                   "discrepancies": ["Rent was quoted at $2,300 but $2,100 is recorded"]
                 }
                 """));

@@ -518,7 +518,7 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
         property.Priorities
             .OrderBy(m => m.Priority!.SortOrder)
             .ThenBy(m => m.PriorityId)
-            .Select(m => new PropertyPriorityView(m.PriorityId, m.Priority!.Name, m.Priority!.Points, m.Meets))
+            .Select(m => new PropertyPriorityView(m.PriorityId, m.Priority!.Name, m.Priority!.Points, m.Meets, m.Priority!.Penalty))
             .ToList(),
         property.CreatedAt,
         property.UpdatedAt);

@@ -431,7 +431,8 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
                 p.Name,
                 p.Points,
                 p.SortOrder,
-                p.Properties.Count(m => m.Meets)))
+                p.Properties.Count(m => m.Meets),
+                p.Penalty))
             .ToListAsync(cancellationToken);
     }
 
@@ -452,13 +453,14 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
         {
             Name = name,
             Points = request.Points,
+            Penalty = Math.Abs(request.Penalty),
             SortOrder = (last ?? -1) + 1,
         };
 
         context.SearchPriorities.Add(priority);
         await context.SaveChangesAsync(cancellationToken);
 
-        return new SearchPriorityView(priority.Id, priority.Name, priority.Points, priority.SortOrder, 0);
+        return new SearchPriorityView(priority.Id, priority.Name, priority.Points, priority.SortOrder, 0, priority.Penalty);
     }
 
     /// <summary>Changes a priority, or returns null when none has that id.</summary>
@@ -476,6 +478,7 @@ public class HomeSearchService(ICapybaraHomeDbContext context, TimeProvider cloc
 
         priority.Name = Required(request.Name, "A priority needs a name.", nameof(request));
         priority.Points = request.Points;
+        priority.Penalty = Math.Abs(request.Penalty);
         await context.SaveChangesAsync(cancellationToken);
 
         return (await ListPrioritiesAsync(cancellationToken)).FirstOrDefault(p => p.Id == id);

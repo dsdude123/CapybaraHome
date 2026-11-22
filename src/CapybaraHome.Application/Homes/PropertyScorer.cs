@@ -3,7 +3,7 @@ namespace CapybaraHome.Application.Homes;
 /// <summary>
 /// Turns a property into a score. Fees, size and drive times are scored as differences from the home
 /// lived in now, so a search with no current home scores only what stands on its own: the
-/// amenities, the pros and cons, and the priorities met.
+/// amenities, the pros and cons, and the priorities met or not met.
 /// </summary>
 public static class PropertyScorer
 {
@@ -48,7 +48,7 @@ public static class PropertyScorer
             Amenities: property.Amenities.Count * settings.AmenityPoints,
             Pros: property.Pros.Count() * settings.ProPoints,
             Cons: -property.Cons.Count() * settings.ConPoints,
-            Priorities: property.Priorities.Where(p => p.Meets == true).Sum(p => p.Points),
+            Priorities: property.Priorities.Sum(p => p.Meets switch { true => p.Points, false => -p.Penalty, null => 0m }),
             DriveTimeLines: driveLines,
             MonthlyDifference: monthlyDifference,
             DepositDifference: depositDifference,

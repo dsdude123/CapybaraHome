@@ -172,6 +172,107 @@ public class TourAnalysisTests
     }
 
     [Fact]
+    public void What_goes_beyond_a_priority_is_suggested_in_the_note_and_not_added_as_a_pro_or_con()
+    {
+        var findings = TourAnalysis.Parse(
+            """
+            {
+              "summary": "Cool and quiet.",
+              "pros": [],
+              "cons": [],
+              "discrepancies": ["Rent differs"],
+              "suggestions": [
+                { "kind": "Pro", "text": "Separate mini split units allow zonal cooling" },
+                { "kind": "con", "text": "The units hang low over the beds" },
+                { "kind": "other", "text": "Filters were just changed" },
+                { "text": "No kind given" },
+                "A plain line",
+                { "kind": "pro", "text": "separate mini split units allow zonal cooling" },
+                { "kind": "pro", "text": "  " },
+                { "kind": "pro" },
+                7
+              ]
+            }
+            """,
+            [],
+            null,
+            ["A/C"]);
+
+        Assert.Empty(findings.Pros);
+        Assert.Equal(
+            [
+                "Pro: Separate mini split units allow zonal cooling",
+                "Con: The units hang low over the beds",
+                "Filters were just changed",
+                "No kind given",
+                "A plain line",
+            ],
+            findings.Suggestions);
+
+        Assert.Equal(
+            "Tour Summary\n\nCool and quiet.\n\nConsider Adding\n\n- Pro: Separate mini split units allow zonal cooling"
+            + "\n- Con: The units hang low over the beds\n- Filters were just changed\n- No kind given\n- A plain line"
+            + "\n\nPossible Discrepancies\n\n- Rent differs",
+            TourAnalysis.Note(findings));
+
+        Assert.Empty(TourAnalysis.Parse("""{"summary":"Fine.","suggestions":"none"}""", [], null).Suggestions!);
+        Assert.Contains("zonal", TourAnalysis.Note(findings));
+        Assert.Contains("\"suggestions\"", TourAnalysis.SystemPrompt);
+    }
+
+    [Fact]
+    public void A_pro_or_con_about_a_priority_is_left_out()
+    {
+        var findings = TourAnalysis.Parse(
+            """
+            {
+              "summary": "Seen.",
+              "pros": [
+                "Has a dishwasher",
+                { "text": "Washer and dryer in the unit", "priority": 9 },
+                { "text": "Two balconies, both small", "priority": null },
+                { "text": "Bright kitchen", "priority": null },
+                { "text": "South light", "priority": "none" },
+                { "text": "bright kitchen" },
+                { "text": "Tall ceilings", "priority": false },
+                { "text": "Near the park", "priority": "7" },
+                { "text": 3 },
+                { "priority": null },
+                "  ",
+                4
+              ],
+              "cons": [
+                "No covered parking, only street",
+                { "text": "Street noise", "priority": "" },
+                { "text": "Glass shower", "priority": "null" }
+              ]
+            }
+            """,
+            [],
+            null,
+            ["Dishwasher", "Balcony", "Covered parking", "In-unit laundry", "the", ""]);
+
+        Assert.Equal(["Bright kitchen", "South light", "Tall ceilings"], findings.Pros);
+        Assert.Equal(["Street noise", "Glass shower"], findings.Cons);
+    }
+
+    [Fact]
+    public void Without_priorities_every_pro_and_con_is_kept_and_a_missing_list_is_empty()
+    {
+        var findings = TourAnalysis.Parse("""{"summary":"Seen.","pros":["Has a dishwasher","A glass wall"],"cons":"none"}""", [], null);
+
+        Assert.Equal(["Has a dishwasher", "A glass wall"], findings.Pros);
+        Assert.Empty(findings.Cons);
+    }
+
+    [Fact]
+    public void The_prompt_keeps_priorities_out_of_the_pros_and_cons()
+    {
+        Assert.Contains("Never list a priority being met as a pro", TourAnalysis.SystemPrompt);
+        Assert.Contains("\"priority\": null", TourAnalysis.SystemPrompt);
+    }
+
+    [Fact]
     public void The_prompts_hold_the_rule_that_an_unclear_priority_is_left_alone()
     {
         Assert.Contains("\"unclear\"", TourAnalysis.SystemPrompt);

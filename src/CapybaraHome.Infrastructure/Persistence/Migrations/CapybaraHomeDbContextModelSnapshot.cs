@@ -604,6 +604,9 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("TEXT");
 
+                    b.Property<double>("Penalty")
+                        .HasColumnType("REAL");
+
                     b.Property<double>("Points")
                         .HasColumnType("REAL");
 
