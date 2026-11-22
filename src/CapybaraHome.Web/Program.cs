@@ -8,6 +8,7 @@ using CapybaraHome.Application.Reports;
 using CapybaraHome.Application.Tasks;
 using CapybaraHome.Application.Users;
 using CapybaraHome.Infrastructure;
+using CapybaraHome.Web;
 using CapybaraHome.Infrastructure.Persistence;
 using CapybaraHome.Web.Auth;
 using CapybaraHome.Web.Components;
@@ -17,16 +18,26 @@ using CapybaraHome.Web.Mcp;
 using CapybaraHome.Web.Reports;
 using CapybaraHome.Web.Security;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// A property photo is the largest request the app accepts, so the request body limit follows
-// the photo limit with room for the multipart framing around the file.
+// A property photo is the largest request the app accepts outside a tour, so the request body
+// limit follows the photo limit with room for the multipart framing around the file.
 var photoOptions = builder.Configuration.GetSection(PropertyPhotoOptions.SectionName)
     .Get<PropertyPhotoOptions>() ?? new PropertyPhotoOptions();
+
+var attachmentOptions = builder.Configuration.GetSection(PropertyAttachmentOptions.SectionName)
+    .Get<PropertyAttachmentOptions>() ?? new PropertyAttachmentOptions();
+
+// Kestrel's limit below is what holds an ordinary request down; this only stops the form reader
+// refusing a tour's video on the one endpoint that raises that limit for itself.
+builder.Services.Configure<FormOptions>(options =>
+    options.MultipartBodyLengthLimit = attachmentOptions.MaxBytes
+        + (photoOptions.MaxBytes * HomeSearchEndpoints.MaxTourPictures));
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -87,6 +98,9 @@ builder.Services.AddInfrastructure(
 
 builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(BackupOptions.SectionName));
 builder.Services.Configure<PropertyPhotoOptions>(builder.Configuration.GetSection(PropertyPhotoOptions.SectionName));
+builder.Services.Configure<PropertyAttachmentOptions>(builder.Configuration.GetSection(PropertyAttachmentOptions.SectionName));
+builder.Services.AddSingleton<TourDraftStore>();
+builder.Services.AddHostedService<PropertyTourRunner>();
 builder.Services.AddHostedService<ScheduledBackupService>();
 builder.Services.AddHostedService<TaskAutomationRunner>();
 builder.Services.AddHostedService<TaskCloseOperationRunner>();

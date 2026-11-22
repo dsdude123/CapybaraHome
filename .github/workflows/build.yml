@@ -20,6 +20,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Install ffmpeg for the tour media tests
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - run: dotnet restore
 
       - run: dotnet build --no-restore --configuration Release

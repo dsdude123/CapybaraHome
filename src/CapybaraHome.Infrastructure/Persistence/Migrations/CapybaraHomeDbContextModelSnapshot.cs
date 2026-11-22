@@ -148,6 +148,23 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TourAiBaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TourAiModel")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TourAiTimeoutSeconds")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(3600);
+
+                    b.Property<string>("TourTranscriptionModel")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -238,6 +255,46 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.HasIndex("PropertyId");
 
                     b.ToTable("PropertyAmenities");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyAttachment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ByteCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StoredName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId");
+
+                    b.HasIndex("StoredName")
+                        .IsUnique();
+
+                    b.ToTable("PropertyAttachments");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyDriveTime", b =>
@@ -404,6 +461,52 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.HasIndex("PriorityId");
 
                     b.ToTable("PropertyPriorities");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyTour", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("PhotoIds")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PropertyId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("SubmittedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Transcript")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("VideoAttachmentId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("PropertyTours");
                 });
 
             modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyUtility", b =>
@@ -1482,6 +1585,17 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Property");
                 });
 
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyAttachment", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("Attachments")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
             modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyDriveTime", b =>
                 {
                     b.HasOne("CapybaraHome.Domain.Homes.SearchDestination", "Destination")
@@ -1549,6 +1663,17 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Priority");
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("CapybaraHome.Domain.Homes.PropertyTour", b =>
+                {
+                    b.HasOne("CapybaraHome.Domain.Homes.Property", "Property")
+                        .WithMany("Tours")
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Property");
                 });
@@ -1788,6 +1913,8 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                 {
                     b.Navigation("Amenities");
 
+                    b.Navigation("Attachments");
+
                     b.Navigation("DriveTimes");
 
                     b.Navigation("Notes");
@@ -1797,6 +1924,8 @@ namespace CapybaraHome.Infrastructure.Persistence.Migrations
                     b.Navigation("Points");
 
                     b.Navigation("Priorities");
+
+                    b.Navigation("Tours");
 
                     b.Navigation("Utilities");
                 });

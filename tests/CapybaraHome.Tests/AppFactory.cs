@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using CapybaraHome.Application.Homes;
 using CapybaraHome.Application.Reports;
 using CapybaraHome.Application.Users;
 using CapybaraHome.Web.Auth;
@@ -99,6 +100,12 @@ public class AppFactory : WebApplicationFactory<Program>
             services.AddHttpClient<WeatherFeed>().ConfigurePrimaryHttpMessageHandler(() => new OfflineHandler());
             services.AddHttpClient<CalendarFeed>().ConfigurePrimaryHttpMessageHandler(() => new OfflineHandler());
             services.AddHttpClient<NewsFeed>().ConfigurePrimaryHttpMessageHandler(() => new OfflineHandler());
+            services.AddHttpClient<TourAiClient>().ConfigurePrimaryHttpMessageHandler(() => new OfflineHandler());
+
+            // The tour runner would read a submitted tour in the background part-way through a
+            // test; the tests that are about reading a tour call the processor themselves.
+            var runner = services.Single(s => s.ImplementationType == typeof(PropertyTourRunner));
+            services.Remove(runner);
         });
 
         if (configureServices is not null)

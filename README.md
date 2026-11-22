@@ -205,6 +205,35 @@ driving comes to is scored, at the points a dollar a month already carries.
 Pictures are kept as files rather than in the database, so an export stays a readable
 document. `Photos__Path` says where, `/data/photos` in the container.
 
+### Touring a property
+
+Every property but the one you live in has a **Start tour** button. The tour page lists the
+priorities not yet marked for it and takes typed notes, pictures and one video. Submitting
+keeps the notes as a text file, the pictures and the video with the property at once, and
+queues the tour for a model. The property page says a tour is being processed until it is
+done; if it fails it says why, with a button to retry, and a retry does not redo the
+transcript or the captions that already worked.
+
+The model, once it has read the tour:
+
+- captions each picture and transcribes the video;
+- leaves a note titled "Tour Summary", with a "Possible Discrepancies" section when the tour
+  disagrees with what was recorded;
+- marks an unmarked priority only when it answers a plain yes or no **and** quotes words that
+  really are in the notes, the transcript or a caption — anything else leaves it unmarked;
+- adds the pros and cons the tour brought up.
+
+The model is any OpenAI-compatible service, set under **Tour processing** on
+`/homes/settings`: a base address, a model that takes pictures (`/chat/completions`), a
+transcription model (`/audio/transcriptions`) and how long one call may take, an hour unless
+changed. Nothing is set to begin with, and a tour submitted before it is fails with a message
+saying so and waits for a retry. The image carries ffmpeg, which takes the sound out of the
+video as a small WAV file and scales the pictures down before they are sent.
+
+Notes and videos are attachments, kept as files under `Attachments__Path`
+(`/data/attachments` in the container). `Attachments__MaxBytes` caps one file, 8 GB by
+default; a reverse proxy in front has to allow an upload that long as well.
+
 ## Signing in
 
 CapybaraHome holds its own accounts. There is no identity provider to register and nothing to

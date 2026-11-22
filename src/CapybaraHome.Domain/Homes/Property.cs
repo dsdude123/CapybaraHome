@@ -60,6 +60,12 @@ public class Property
     /// <summary>Pictures of the place.</summary>
     public ICollection<PropertyPhoto> Photos { get; set; } = [];
 
+    /// <summary>Files kept with the place.</summary>
+    public ICollection<PropertyAttachment> Attachments { get; set; } = [];
+
+    /// <summary>The tours submitted for the place.</summary>
+    public ICollection<PropertyTour> Tours { get; set; } = [];
+
     /// <summary>The measured or typed drive times to the destinations.</summary>
     public ICollection<PropertyDriveTime> DriveTimes { get; set; } = [];
 
