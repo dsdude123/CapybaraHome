@@ -252,6 +252,91 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
     }
 
     /// <summary>
+    /// Adds a pro or a con to the end of its list, or returns null when no property has that id.
+    /// </summary>
+    /// <param name="propertyId">The property the point is about.</param>
+    /// <param name="kind">Which way the point cuts.</param>
+    /// <param name="text">What the point is.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <exception cref="ArgumentException">The text is blank or too long.</exception>
+    public async Task<PropertyPointView?> AddPointAsync(
+        int propertyId,
+        PropertyPointKind kind,
+        string text,
+        CancellationToken cancellationToken = default)
+    {
+        var written = PointText(text, nameof(text));
+
+        if (!await context.Properties.AnyAsync(p => p.Id == propertyId, cancellationToken))
+        {
+            return null;
+        }
+
+        var point = new PropertyPoint
+        {
+            PropertyId = propertyId,
+            Kind = kind,
+            Text = written,
+            SortOrder = await NextPointOrderAsync(propertyId, kind, cancellationToken),
+        };
+
+        context.PropertyPoints.Add(point);
+        await context.SaveChangesAsync(cancellationToken);
+
+        return new PropertyPointView(point.Id, point.Kind, point.Text, point.SortOrder);
+    }
+
+    /// <summary>
+    /// Rewords a pro or a con, or moves it to the other list, and returns it as saved. Returns
+    /// null when no point has that id.
+    /// </summary>
+    /// <param name="pointId">The point being changed.</param>
+    /// <param name="text">What the point now says, or null to keep its wording.</param>
+    /// <param name="kind">Which way it now cuts, or null to keep it where it is.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <exception cref="ArgumentException">The text is blank or too long.</exception>
+    public async Task<PropertyPointView?> UpdatePointAsync(
+        int pointId,
+        string? text,
+        PropertyPointKind? kind,
+        CancellationToken cancellationToken = default)
+    {
+        var point = await context.PropertyPoints.SingleOrDefaultAsync(p => p.Id == pointId, cancellationToken);
+        if (point is null)
+        {
+            return null;
+        }
+
+        if (text is not null)
+        {
+            point.Text = PointText(text, nameof(text));
+        }
+
+        if (kind is { } moved && moved != point.Kind)
+        {
+            point.SortOrder = await NextPointOrderAsync(point.PropertyId, moved, cancellationToken);
+            point.Kind = moved;
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+        return new PropertyPointView(point.Id, point.Kind, point.Text, point.SortOrder);
+    }
+
+    /// <summary>Removes a pro or a con. Returns false when no point has that id.</summary>
+    public async Task<bool> DeletePointAsync(int pointId, CancellationToken cancellationToken = default)
+    {
+        var point = await context.PropertyPoints.SingleOrDefaultAsync(p => p.Id == pointId, cancellationToken);
+        if (point is null)
+        {
+            return false;
+        }
+
+        context.PropertyPoints.Remove(point);
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>
     /// Marks a property against a priority, or clears the marking when <paramref name="meets"/> is
     /// null. Returns false when the property or the priority is not there.
     /// </summary>
@@ -425,6 +510,25 @@ public class PropertyService(ICapybaraHomeDbContext context, TimeProvider clock)
                 SortOrder = index,
             })
             .ToList();
+
+    private static string PointText(string? text, string parameter)
+    {
+        var written = (text ?? string.Empty).Trim();
+        if (written.Length == 0)
+        {
+            throw new ArgumentException("A pro or a con needs something in it.", parameter);
+        }
+
+        return written.Length <= 1000
+            ? written
+            : throw new ArgumentException("A pro or a con can be at most 1000 characters.", parameter);
+    }
+
+    private async Task<int> NextPointOrderAsync(int propertyId, PropertyPointKind kind, CancellationToken cancellationToken) =>
+        (await context.PropertyPoints.AsNoTracking()
+            .Where(p => p.PropertyId == propertyId && p.Kind == kind)
+            .Select(p => (int?)p.SortOrder)
+            .MaxAsync(cancellationToken) ?? -1) + 1;
 
     private static int? Size(int? squareFeet) => squareFeet > 0 ? squareFeet : null;
 

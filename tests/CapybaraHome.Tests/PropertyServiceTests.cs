@@ -478,4 +478,62 @@ public class PropertyServiceTests
         Assert.Null(await service.GetAsync(404));
         Assert.Null(await service.UpdateAsync(404, new UpdatePropertyRequest(Name: "Nothing")));
     }
+
+    [Fact]
+    public async Task A_pro_or_con_is_added_to_the_end_of_its_list_reworded_moved_and_removed()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+        var property = await service.CreateAsync(new CreatePropertyRequest(
+            "Harbor Steps",
+            Points:
+            [
+                new PropertyPointInput(PropertyPointKind.Pro, "Walk to the water"),
+                new PropertyPointInput(PropertyPointKind.Con, "Small kitchen"),
+            ]));
+
+        var pro = await service.AddPointAsync(property.Id, PropertyPointKind.Pro, "  Quiet street  ");
+        Assert.Equal("Quiet street", pro!.Text);
+        Assert.Equal(1, pro.SortOrder);
+
+        var reworded = await service.UpdatePointAsync(pro.Id, "Very quiet street", null);
+        Assert.Equal(PropertyPointKind.Pro, reworded!.Kind);
+        Assert.Equal("Very quiet street", reworded.Text);
+
+        var moved = await service.UpdatePointAsync(pro.Id, null, PropertyPointKind.Con);
+        Assert.Equal(PropertyPointKind.Con, moved!.Kind);
+        Assert.Equal("Very quiet street", moved.Text);
+        Assert.Equal(2, moved.SortOrder);
+
+        var kept = await service.UpdatePointAsync(pro.Id, null, PropertyPointKind.Con);
+        Assert.Equal(2, kept!.SortOrder);
+
+        var held = await service.GetAsync(property.Id);
+        Assert.Equal(["Small kitchen", "Very quiet street"], held!.Cons.Select(p => p.Text));
+        Assert.Equal(["Walk to the water"], held.Pros.Select(p => p.Text));
+
+        Assert.True(await service.DeletePointAsync(pro.Id));
+        Assert.False(await service.DeletePointAsync(pro.Id));
+        Assert.Equal(["Small kitchen"], (await service.GetAsync(property.Id))!.Cons.Select(p => p.Text));
+    }
+
+    [Fact]
+    public async Task A_pro_or_con_that_is_blank_too_long_or_about_nothing_is_not_written()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new PropertyService(db.Context, db.Clock);
+        var property = await service.CreateAsync(new CreatePropertyRequest("Harbor Steps"));
+
+        Assert.Null(await service.AddPointAsync(property.Id + 1, PropertyPointKind.Pro, "Quiet"));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AddPointAsync(property.Id, PropertyPointKind.Pro, "  "));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.AddPointAsync(property.Id, PropertyPointKind.Con, new string('x', 1001)));
+
+        var first = await service.AddPointAsync(property.Id, PropertyPointKind.Con, "Loud");
+        Assert.Equal(0, first!.SortOrder);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.UpdatePointAsync(first.Id, "", null));
+        Assert.Null(await service.UpdatePointAsync(first.Id + 1, "Quiet", null));
+
+        Assert.Equal("Loud", Assert.Single((await service.GetAsync(property.Id))!.Points).Text);
+    }
 }

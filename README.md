@@ -276,7 +276,10 @@ cookies the old one wrote, and everybody is signed out on every image pull.
 The app serves MCP over streamable HTTP at `/mcp`. It carries the task tools (`search_tasks`,
 `get_task`, `create_task`, `update_task`, `list_categories`), the meal tools (`search_meals`,
 `get_meal`, `create_meal`, `update_meal`, `create_meal_variant`, `list_meal_tags`), the
-home search tools (`get_home_search`, `get_property`, `add_property`, `add_property_note`) and
+home search tools (`get_home_search`, `get_property`, `add_property`, `update_property`,
+`add_property_note`, `set_property_priority`, `add_property_point`, `update_property_point`,
+`remove_property_point`, `list_priorities`, `create_priority`, `update_priority`,
+`update_search_settings`) and
 the grocery tools (`get_grocery_list`, `add_grocery_item`, `remove_grocery_item`,
 `start_fresh_grocery_list`, `list_grocery_candidates`).
 

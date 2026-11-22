@@ -4,6 +4,7 @@ using CapybaraHome.Application.Grocery;
 using CapybaraHome.Application.Homes;
 using CapybaraHome.Application.Meals;
 using CapybaraHome.Application.Tasks;
+using CapybaraHome.Domain.Homes;
 using CapybaraHome.Domain.Meals;
 using CapybaraHome.Domain.Tasks;
 using CapybaraHome.Web.Mcp;
@@ -211,6 +212,92 @@ public class McpToolTests
         var search = await HomeSearchTools.GetHomeSearchAsync(board, log, http);
         Assert.Contains(added.Id, search.Candidates.Select(candidate => candidate.Property.Id));
         Assert.Contains("[MCP] get_home_search user=first", log.Single());
+    }
+
+    [Fact]
+    public async Task Every_home_search_editing_tool_answers_and_names_the_caller()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var properties = new PropertyService(db.Context, db.Clock);
+        var search = new HomeSearchService(db.Context, db.Clock);
+        var log = new McpAuditLog<HomeSearchTools>();
+        var http = McpAuditLog<HomeSearchTools>.RequestFrom("first");
+        var added = await HomeSearchTools.AddPropertyAsync(properties, log, http, "Maple Court", rent: 2400m, amenities: ["Gym"]);
+
+        log.Clear();
+        var updated = await HomeSearchTools.UpdatePropertyAsync(properties, log, http, added.Id, rent: 2300m, squareFeet: 900);
+        Assert.Equal(2300m, updated!.Rent);
+        Assert.Equal(900, updated.SquareFeet);
+        Assert.Equal("Maple Court", updated.Name);
+        Assert.Equal(["Gym"], updated.Amenities.Select(a => a.Name));
+        Assert.Contains($"[MCP] update_property user=first propertyId={added.Id} name=(unchanged) rent=2300 address=(unchanged)", log.Single());
+
+        log.Clear();
+        var renamed = await HomeSearchTools.UpdatePropertyAsync(properties, log, http, added.Id, name: "Maple Ct", address: "1 Maple Court", amenities: []);
+        Assert.Equal("Maple Ct", renamed!.Name);
+        Assert.Equal(2300m, renamed.Rent);
+        Assert.Empty(renamed.Amenities);
+        Assert.Contains("name=Maple Ct rent=(unchanged) address=1 Maple Court", log.Single());
+
+        log.Clear();
+        var priority = await HomeSearchTools.CreatePriorityAsync(search, log, http, "Air conditioning", points: 20m, penalty: 5m);
+        Assert.Equal(5m, priority.Penalty);
+        Assert.Contains("[MCP] create_priority user=first name=Air conditioning points=20 penalty=5", log.Single());
+
+        log.Clear();
+        var repointed = await HomeSearchTools.UpdatePriorityAsync(search, log, http, priority.Id, points: 30m);
+        Assert.Equal("Air conditioning", repointed!.Name);
+        Assert.Equal(30m, repointed.Points);
+        Assert.Equal(5m, repointed.Penalty);
+        Assert.Contains($"[MCP] update_priority user=first priorityId={priority.Id} name=(unchanged) points=30 penalty=(unchanged)", log.Single());
+
+        log.Clear();
+        Assert.Null(await HomeSearchTools.UpdatePriorityAsync(search, log, http, priority.Id + 1, name: "Nothing"));
+
+        log.Clear();
+        Assert.True(await HomeSearchTools.SetPropertyPriorityAsync(properties, log, http, added.Id, priority.Id, meets: true));
+        Assert.Contains($"[MCP] set_property_priority user=first propertyId={added.Id} priorityId={priority.Id} meets=True", log.Single());
+
+        log.Clear();
+        var listed = Assert.Single(await HomeSearchTools.ListPrioritiesAsync(search, log, http));
+        Assert.Equal(1, listed.MetCount);
+        Assert.Contains("[MCP] list_priorities user=first", log.Single());
+
+        log.Clear();
+        Assert.True(await HomeSearchTools.SetPropertyPriorityAsync(properties, log, http, added.Id, priority.Id));
+        Assert.Contains("meets=(unmarked)", log.Single());
+        Assert.Empty((await properties.GetAsync(added.Id))!.Priorities);
+
+        log.Clear();
+        var point = await HomeSearchTools.AddPropertyPointAsync(properties, log, http, added.Id, PropertyPointKind.Pro, "Has A/C");
+        Assert.Equal("Has A/C", point!.Text);
+        Assert.Contains($"[MCP] add_property_point user=first propertyId={added.Id} kind=Pro textLength=7", log.Single());
+
+        log.Clear();
+        var moved = await HomeSearchTools.UpdatePropertyPointAsync(properties, log, http, point.Id, kind: PropertyPointKind.Con);
+        Assert.Equal(PropertyPointKind.Con, moved!.Kind);
+        Assert.Contains($"[MCP] update_property_point user=first pointId={point.Id} kind=Con textLength=(unchanged)", log.Single());
+
+        log.Clear();
+        await HomeSearchTools.UpdatePropertyPointAsync(properties, log, http, point.Id, text: "No A/C");
+        Assert.Contains("kind=(unchanged) textLength=6", log.Single());
+
+        log.Clear();
+        Assert.True(await HomeSearchTools.RemovePropertyPointAsync(properties, log, http, point.Id));
+        Assert.Contains($"[MCP] remove_property_point user=first pointId={point.Id}", log.Single());
+        Assert.Empty((await properties.GetAsync(added.Id))!.Points);
+
+        log.Clear();
+        var settings = await HomeSearchTools.UpdateSearchSettingsAsync(search, log, http, proPoints: 4m, conPoints: 3m);
+        Assert.Equal(4m, settings.ProPoints);
+        Assert.Equal(3m, settings.ConPoints);
+        Assert.Equal(0m, settings.MonthlyFeePointsPerDollar);
+        Assert.Contains("[MCP] update_search_settings user=first", log.Single());
+
+        log.Clear();
+        var kept = await HomeSearchTools.UpdateSearchSettingsAsync(search, log, http, amenityPoints: 2m);
+        Assert.Equal(4m, kept.ProPoints);
+        Assert.Equal(2m, kept.AmenityPoints);
     }
 
     [Fact]
