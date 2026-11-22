@@ -12,6 +12,9 @@ public class SearchPriority
     /// <summary>Points a property earns for meeting it, which can be negative.</summary>
     public decimal Points { get; set; }
 
+    /// <summary>Points a property loses when it is marked as not meeting it; zero for no penalty.</summary>
+    public decimal Penalty { get; set; }
+
     /// <summary>Position in the list; lower sorts first.</summary>
     public int SortOrder { get; set; }
 

@@ -37,9 +37,11 @@ public record TourSettingsView(string? BaseUrl, string? Model, string? Transcrip
 /// <param name="Pros">Things in the property's favour.</param>
 /// <param name="Cons">Things against it.</param>
 /// <param name="Discrepancies">Where the tour disagrees with what was already recorded.</param>
+/// <param name="Suggestions">Things that go beyond a priority, offered as pros or cons to add by hand.</param>
 public record TourFindings(
     string Summary,
     IReadOnlyDictionary<int, bool> Priorities,
     IReadOnlyList<string> Pros,
     IReadOnlyList<string> Cons,
-    IReadOnlyList<string> Discrepancies);
+    IReadOnlyList<string> Discrepancies,
+    IReadOnlyList<string>? Suggestions = null);

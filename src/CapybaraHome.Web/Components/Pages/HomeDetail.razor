@@ -252,7 +252,7 @@ else
                 {
                     var held = property.Priorities.FirstOrDefault(p => p.PriorityId == priority.Id);
                     <div class="choice-line">
-                        <label for="priority-@priority.Id">@priority.Name <span class="muted">@Points(priority.Points)</span></label>
+                        <label for="priority-@priority.Id">@priority.Name <span class="muted">@Points(priority.Points)@(priority.Penalty > 0m ? $", {Points(-priority.Penalty)} if not met" : string.Empty)</span></label>
                         <select id="priority-@priority.Id" name="priority-@priority.Id">
                             @foreach (var choice in PriorityMarks.All)
                             {
@@ -679,7 +679,7 @@ else
         vehicles = await Search.ListVehiclesAsync();
         tollRoads = await Search.ListTollRoadsAsync();
         settings = await Search.GetSettingsAsync();
-        priorityPoints = priorities.Sum(p => Math.Abs(p.Points));
+        priorityPoints = priorities.Sum(p => Math.Abs(p.Points) + p.Penalty);
         attachments = await Attachments.ListAsync(Id);
         tours = await Tours.ListOpenAsync(Id);
     }

@@ -158,6 +158,26 @@ public class PropertyScorerTests
     }
 
     [Fact]
+    public void A_penalty_is_taken_off_only_for_a_priority_marked_as_not_met()
+    {
+        var property = Property(1, "Marked") with
+        {
+            Priorities =
+            [
+                new PropertyPriorityView(1, "Met", 10m, true, 4m),
+                new PropertyPriorityView(2, "Not met", 20m, false, 7m),
+                new PropertyPriorityView(3, "Not met, no penalty", 20m, false),
+                new PropertyPriorityView(4, "Unmarked", 5m, null, 9m),
+            ],
+        };
+
+        var score = PropertyScorer.Score(property, null, [], Weights);
+
+        Assert.Equal(3m, score.Priorities);
+        Assert.Equal(3m, score.Total);
+    }
+
+    [Fact]
     public void The_current_home_is_not_compared_with_itself()
     {
         var destinations = new List<SearchDestinationView> { new(1, "Work", null, 1m, 0, 0m, null, null, 0) };

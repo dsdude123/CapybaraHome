@@ -82,7 +82,7 @@ public class PropertyTourService(
             .Where(p => !p.Properties.Any(m => m.PropertyId == propertyId))
             .OrderBy(p => p.SortOrder)
             .ThenBy(p => p.Id)
-            .Select(p => new SearchPriorityView(p.Id, p.Name, p.Points, p.SortOrder, 0))
+            .Select(p => new SearchPriorityView(p.Id, p.Name, p.Points, p.SortOrder, 0, p.Penalty))
             .ToListAsync(cancellationToken);
     }
 

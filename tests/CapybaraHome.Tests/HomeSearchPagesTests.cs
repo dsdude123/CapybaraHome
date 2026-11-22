@@ -223,7 +223,35 @@ public class HomeSearchPagesTests
         var html = WebUtility.HtmlDecode(await saved.Content.ReadAsStringAsync());
         Assert.Contains($"value=\"{posted}\" selected", html);
         Assert.Contains("+10", html);
+        Assert.DoesNotContain("if not met", html);
         Assert.Contains(expected == true ? "1 of 1" : "0 of 1", html);
+    }
+
+    [Fact]
+    public async Task A_penalty_shows_beside_its_priority_and_comes_off_the_score_when_marked_as_not_met()
+    {
+        await using var app = await AppFactory.CreateAsync();
+        var client = Client(app);
+
+        var property = await CreateAsync(app, new CreatePropertyRequest("Penalised"));
+        using (var scope = app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HomeSearchService>()
+                .CreatePriorityAsync(new SearchPriorityRequest("Balcony", 0m, 4m));
+        }
+
+        var priority = (await PrioritiesAsync(app)).Single();
+
+        var before = WebUtility.HtmlDecode(await client.GetStringAsync($"/homes/{property.Id}"));
+        Assert.Contains("-4 if not met", before);
+        Assert.DoesNotContain("No scoring weights are set yet", before);
+        Assert.DoesNotContain("No scoring weights are set yet", await client.GetStringAsync("/homes"));
+
+        var saved = await PostAsync(client, $"/homes/{property.Id}", "property-priorities",
+            new() { [$"priority-{priority.Id}"] = "no" });
+
+        var html = WebUtility.HtmlDecode(await saved.Content.ReadAsStringAsync());
+        Assert.Contains("<p class=\"metric\">-4</p>", html);
     }
 
     [Fact]
@@ -454,17 +482,27 @@ public class HomeSearchPagesTests
         var client = Client(app);
 
         var added = await PostAsync(client, "/homes/settings", "priority-new",
-            new() { ["name"] = "In-unit laundry", ["points"] = "10" });
+            new() { ["name"] = "In-unit laundry", ["points"] = "10", ["penalty"] = "4" });
 
-        Assert.Contains("In-unit laundry", await added.Content.ReadAsStringAsync());
+        var addedPage = await added.Content.ReadAsStringAsync();
+        Assert.Contains("In-unit laundry", addedPage);
+        Assert.Contains("name=\"penalty\" value=\"4\"", addedPage);
+        Assert.Equal(4m, (await PrioritiesAsync(app)).Single().Penalty);
 
         var id = (await PrioritiesAsync(app)).Single().Id;
 
         var changed = await PostAsync(client, "/homes/settings", $"priority-{id}",
-            new() { ["action"] = "save", ["name"] = "Laundry in the unit", ["points"] = "-5" });
+            new() { ["action"] = "save", ["name"] = "Laundry in the unit", ["points"] = "-5", ["penalty"] = "-2.5" });
 
         Assert.Contains("Laundry in the unit", await changed.Content.ReadAsStringAsync());
         Assert.Equal(-5m, (await PrioritiesAsync(app)).Single().Points);
+        Assert.Equal(2.5m, (await PrioritiesAsync(app)).Single().Penalty);
+
+        var cleared = await PostAsync(client, "/homes/settings", $"priority-{id}",
+            new() { ["action"] = "save", ["name"] = "Laundry in the unit", ["points"] = "-5", ["penalty"] = "" });
+
+        Assert.DoesNotContain("name=\"penalty\" value=\"", await cleared.Content.ReadAsStringAsync());
+        Assert.Equal(0m, (await PrioritiesAsync(app)).Single().Penalty);
 
         var blank = await PostAsync(client, "/homes/settings", $"priority-{id}",
             new() { ["action"] = "save", ["name"] = "", ["points"] = "1" });

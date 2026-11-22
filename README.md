@@ -143,7 +143,9 @@ showing, and starts at zero, so nothing is scored until you fill them in:
 - **Points per square foot** larger than the home you live in now; a smaller place loses them.
   Each property also shows its rent a square foot, which is not scored.
 - **Points per amenity**, **per pro** and **off per con**.
-- Each priority carries its own points, earned by a property you mark as meeting it.
+- Each priority carries its own points, earned by a property you mark as meeting it. A priority
+  can also carry a penalty, taken off a property you mark as not meeting it; a property not
+  marked either way loses nothing.
 
 A property can carry the link to the listing it was found on, shown on its page and opened in a
 new tab. Only an http or https address is kept, and a plain host is read as https.
@@ -217,11 +219,13 @@ transcript or the captions that already worked.
 The model, once it has read the tour:
 
 - captions each picture and transcribes the video;
-- leaves a note titled "Tour Summary", with a "Possible Discrepancies" section when the tour
-  disagrees with what was recorded;
+- leaves a note titled "Tour Summary", with a "Consider Adding" section for anything that goes
+  beyond a priority and may be worth a pro or con of its own, and a "Possible Discrepancies"
+  section when the tour disagrees with what was recorded;
 - marks an unmarked priority only when it answers a plain yes or no **and** quotes words that
   really are in the notes, the transcript or a caption — anything else leaves it unmarked;
-- adds the pros and cons the tour brought up.
+- adds the pros and cons the tour brought up. A priority never becomes a pro or a con, since it
+  already scores on its own.
 
 The model is any OpenAI-compatible service, set under **Tour processing** on
 `/homes/settings`: a base address, a model that takes pictures (`/chat/completions`), a

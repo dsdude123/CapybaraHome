@@ -26,7 +26,7 @@ public record DriveTimeScore(
 /// <param name="Amenities">Points for the amenities.</param>
 /// <param name="Pros">Points for the pros.</param>
 /// <param name="Cons">Points taken off for the cons.</param>
-/// <param name="Priorities">Points for the priorities the property meets.</param>
+/// <param name="Priorities">Points for the priorities the property meets, less the penalties for those it does not.</param>
 /// <param name="DriveTimeLines">The drive comparisons behind <paramref name="DriveTimes"/>.</param>
 /// <param name="MonthlyDifference">How much cheaper a month is than the current home's, as money.</param>
 /// <param name="DepositDifference">How much lower the deposit is than the current home's, as money.</param>

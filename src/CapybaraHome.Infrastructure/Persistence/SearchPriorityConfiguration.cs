@@ -12,5 +12,6 @@ public class SearchPriorityConfiguration : IEntityTypeConfiguration<SearchPriori
     {
         builder.Property(p => p.Name).IsRequired().HasMaxLength(300);
         builder.Property(p => p.Points).HasConversion<double>();
+        builder.Property(p => p.Penalty).HasConversion<double>();
     }
 }

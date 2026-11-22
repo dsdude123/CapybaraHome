@@ -44,7 +44,7 @@ else
         </p>
     }
 
-    @if (!board.Settings.AnyWeightSet && board.Priorities.All(p => p.Points == 0m))
+    @if (!board.Settings.AnyWeightSet && board.Priorities.All(p => p.Points == 0m && p.Penalty == 0m))
     {
         <p class="notice">
             No scoring weights are set yet, so every property scores zero.

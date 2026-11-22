@@ -342,7 +342,8 @@
     <h2 class="card-title">Priorities</h2>
     <p class="muted">
         What a home has to do. Each one is worth its own points, earned by a property marked as
-        meeting it on the property's own page.
+        meeting it on the property's own page. A penalty, when you set one, is taken off a property
+        marked as not meeting it; a property not marked either way loses nothing.
     </p>
 
     @if (priorities.Count == 0)
@@ -366,6 +367,10 @@
                                 <label for="priority-points-@priority.Id">Points</label>
                                 <input id="priority-points-@priority.Id" type="number" step="0.1" name="points" value="@Typed(priority.Points)" />
                             </div>
+                            <div class="field">
+                                <label for="priority-penalty-@priority.Id">Penalty if not met</label>
+                                <input id="priority-penalty-@priority.Id" type="number" step="0.1" min="0" name="penalty" value="@(priority.Penalty == 0m ? null : Typed(priority.Penalty))" />
+                            </div>
                         </div>
                         <div class="row">
                             <button class="btn btn-small" type="submit" name="action" value="save">Save</button>
@@ -388,6 +393,10 @@
             <div class="field">
                 <label for="new-priority-points">Points</label>
                 <input id="new-priority-points" type="number" step="0.1" name="points" value="@priorityPoints" />
+            </div>
+            <div class="field">
+                <label for="new-priority-penalty">Penalty if not met</label>
+                <input id="new-priority-penalty" type="number" step="0.1" min="0" name="penalty" value="@priorityPenalty" />
             </div>
         </div>
         <div class="row">
@@ -578,6 +587,7 @@
     private string? tollError;
     private string? priorityName;
     private string? priorityPoints;
+    private string? priorityPenalty;
     private string? vehicleName;
     private string? vehicleMpg;
     private string? vehiclePrice;
@@ -870,14 +880,18 @@
         var form = HttpContext.Request.Form;
         priorityName = form["name"];
         priorityPoints = form["points"];
+        priorityPenalty = form["penalty"];
 
         try
         {
             await Search.CreatePriorityAsync(new SearchPriorityRequest(
-                priorityName ?? string.Empty, PropertyRows.Money(priorityPoints) ?? 0m));
+                priorityName ?? string.Empty,
+                PropertyRows.Money(priorityPoints) ?? 0m,
+                PropertyRows.Money(priorityPenalty) ?? 0m));
 
             priorityName = null;
             priorityPoints = null;
+            priorityPenalty = null;
             priorityError = null;
         }
         catch (ArgumentException ex)
@@ -907,7 +921,9 @@
         try
         {
             await Search.UpdatePriorityAsync(id, new SearchPriorityRequest(
-                form["name"].ToString(), PropertyRows.Money(form["points"]) ?? 0m));
+                form["name"].ToString(),
+                PropertyRows.Money(form["points"]) ?? 0m,
+                PropertyRows.Money(form["penalty"]) ?? 0m));
 
             priorityError = null;
         }
