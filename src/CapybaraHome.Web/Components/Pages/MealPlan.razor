@@ -134,6 +134,13 @@
     </form>
 
     <MealPlanRows Options="matches" Slot="nextSlot" Prefix="search" Plan="PlanAsync" ChooseLink="ChooseLink" Return="@CurrentLink" />
+
+    @if (hasMoreMatches)
+    {
+        <div class="row">
+            <a class="btn" href="@MoreLink()">Load more</a>
+        </div>
+    }
 </section>
 
 @code {
@@ -149,8 +156,18 @@
     [SupplyParameterFromQuery(Name = "sort")]
     private string? Sort { get; set; }
 
-    /// <summary>How many rows each of the two lists shows.</summary>
+    /// <summary>
+    /// How many rows the search shows, grown by the Load more link. It is read as text so that a
+    /// hand-typed number cannot answer the page with an error.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "shown")]
+    private string? Shown { get; set; }
+
+    /// <summary>How many rows each of the two lists shows to begin with.</summary>
     private const int ListSize = 25;
+
+    /// <summary>The most rows the search will show, so a typed-in number cannot read everything.</summary>
+    private const int MostShown = 500;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -160,6 +177,7 @@
     private IReadOnlyList<MealView> unslotted = [];
     private IReadOnlyList<MealPlanOption> matches = [];
     private IReadOnlyList<MealPlanOption> review = [];
+    private bool hasMoreMatches;
     private List<MealPlanSlotCount> counts = [];
     private List<int> selectedTags = [];
     private IReadOnlyDictionary<MealSlot, int> targets = new Dictionary<MealSlot, int>();
@@ -190,13 +208,17 @@
         // The pickers start on whichever slot still needs the most, so the common case is one click.
         nextSlot = counts.OrderByDescending(c => c.Remaining).ThenBy(c => c.Slot).First().Slot;
 
-        matches = await Meals.ListOptionsAsync(
+        // One row past what is shown, so the Load more link appears only when there is more to read.
+        var found = await Meals.ListOptionsAsync(
             new MealFilter(
                 Text: string.IsNullOrWhiteSpace(Text) ? null : Text,
                 Statuses: [MealStatus.Pooled, MealStatus.Available, MealStatus.Queued],
                 TagIds: selectedTags,
-                Limit: ListSize),
+                Limit: ShownCount + 1),
             MealSortNames.Parse(Sort));
+
+        hasMoreMatches = found.Count > ShownCount;
+        matches = found.Take(ShownCount).ToList();
 
         review = await ReviewAsync();
     }
@@ -422,8 +444,17 @@
             .ToList();
     }
 
+    /// <summary>How many search rows this reading of the page shows.</summary>
+    private int ShownCount =>
+        int.TryParse(Shown, out var asked) ? Math.Clamp(asked, ListSize, MostShown) : ListSize;
+
     /// <summary>Returns a link to this page with the search cleared.</summary>
     private static string PlanLink() => "meals/plan";
+
+    /// <summary>This page again, showing one more page of search rows and keeping the search itself.</summary>
+    private string MoreLink() =>
+        Navigation.ToBaseRelativePath(
+            Navigation.GetUriWithQueryParameter("shown", ShownCount + ListSize));
 
     /// <summary>Where a planned row points: the variant that was planned, or the meal itself.</summary>
     private static string PlannedLink(MealView meal) =>
